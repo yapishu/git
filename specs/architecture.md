@@ -30,7 +30,7 @@ ship-configured object storage
 
 Git HTTP is stateless. Discovery and service requests carry everything needed for each exchange, which maps cleanly to Eyre request pokes and Gall responses.
 
-Eyre opens a Gall subscription at `/http-response/<request-id>` before delivering each HTTP poke. `%git` accepts that watch explicitly, sends the response header and binary data as facts, and closes the subscription. The `/git` binding is re-established on every load.
+Eyre opens a Gall subscription at `/http-response/<request-id>` before delivering each HTTP poke. `%git` accepts that watch explicitly, sends the response header and binary data as facts, and closes the subscription. The `/git` and `/apps/git/api` bindings are re-established on every load.
 
 ## Object model
 
@@ -53,6 +53,18 @@ A repository may bind one branch to one Clay desk. The Git tree is flattened int
 Linked pushes use a two-phase Gall transaction. `%git` stages the objects and proposed ref in memory, computes a Clay delta against the current desk, and starts the Clay mutation from a later Behn event. The Git ref is not advanced until Clay succeeds. This event boundary lets Behn return a failed Clay/Ford computation as a structured `tang` instead of aborting the original Eyre request.
 
 The result is recorded before a separate one-shot report event answers the Git client. A failure becomes a receive-pack `ng <ref> <reason>` result containing the rendered Ford trace; success commits the staged repository and returns `ok <ref>`. An error notification on either timer wire is consumed rather than replayed, so a failed response to a disconnected HTTP client cannot re-enter Clay or block Behn's global timer queue.
+
+The inverse path is an explicit `%publish-desk` action. `%git` verifies that the binding still names a live desk, enumerates its files, and reads each stored Clay page through typeless `%q` requests. Source marks are rendered to their canonical mounted bytes; `%hoon` and `%kelvin` have bootstrap renderers so a minimal desk does not need to compile its own complete mark graph before it can be published. Other marks use their normal mark-to-`%mime` conversion.
+
+The resulting path-to-byte map is assembled into canonical blobs and recursively sorted Git trees. A new commit names the ship as author and committer, uses the supplied message, and parents the current linked branch tip. The new objects and ref are installed together only after every Clay page has been read and rendered. A concurrent push to the linked branch is rejected while publication is in progress.
+
+Repository metadata is projected into JSON scries for the forge frontend. Separate paths expose the repository list, one repository with its refs and binding, a bounded first-parent history, and the current head tree's file names and sizes. Write credentials and object bytes are not included in this read model.
+
+## Personal forge
+
+`%git-fileserver` serves the built React application from `/web` at `/apps/git`. It watches Clay for frontend changes, clears Eyre's static-response cache when the tree changes, and unconditionally replaces its binding on load. Extensionless routes fall back to the application shell.
+
+The main `%git` agent owns `/apps/git/api`. Every API request requires an authenticated Urbit web session; Git Basic credentials are deliberately limited to Git and LFS operations. Read routes return the same projections as the public Gall scries. Mutation routes create and delete repositories, change public access, rotate the hashed write token, manage a desk binding, and begin publication. Mutations reuse the same state transitions as native `%git-action` pokes.
 
 ## Git LFS
 

@@ -1,0 +1,107 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { api } from './api'
+import CreateRepository from './components/CreateRepository'
+import { RefreshIcon } from './components/Icons'
+import PublishDesk from './components/PublishDesk'
+import RepositoryView from './components/RepositoryView'
+import Sidebar from './components/Sidebar'
+
+const repoFromHash = () => decodeURIComponent(location.hash.replace(/^#\/?/, ''))
+
+export default function App() {
+  const [repositories, setRepositories] = useState([])
+  const [selected, setSelected] = useState(repoFromHash())
+  const [creating, setCreating] = useState(false)
+  const [publishingDesk, setPublishingDesk] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [theme, setTheme] = useState(() => localStorage.getItem('git-theme') || 'system')
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('git-theme', theme)
+  }, [theme])
+
+  const refresh = useCallback(async (preferred) => {
+    setError('')
+    try {
+      const data = await api.repositories()
+      const repos = data.repositories || []
+      setRepositories(repos)
+      const target = preferred || selected
+      if (target && repos.some((repo) => repo.name === target)) {
+        setSelected(target)
+        return true
+      }
+      setSelected(repos[0]?.name || '')
+      return false
+    } catch (cause) {
+      setError(cause.message)
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [selected])
+
+  useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    const pop = () => { setSelected(repoFromHash()); setCreating(false); setPublishingDesk(false) }
+    addEventListener('popstate', pop)
+    return () => removeEventListener('popstate', pop)
+  }, [])
+
+  function choose(name) {
+    setCreating(false)
+    setPublishingDesk(false)
+    setSelected(name)
+    history.pushState({}, '', `#/${encodeURIComponent(name)}`)
+  }
+
+  async function published(name) {
+    await refresh(name)
+    choose(name)
+    setTimeout(() => refresh(name), 1200)
+  }
+
+  async function create(name, publicRead) {
+    try {
+      await api.create(name, publicRead)
+      await refresh(name)
+      choose(name)
+    } catch (cause) {
+      setError(cause.message)
+    }
+  }
+
+  const repo = useMemo(() => repositories.find((item) => item.name === selected), [repositories, selected])
+  const nextTheme = { system: 'light', light: 'dark', dark: 'system' }[theme]
+
+  return (
+    <div className="app-shell">
+      <Sidebar repositories={repositories} selected={selected} onSelect={choose} onCreate={() => { setPublishingDesk(false); setCreating(true) }} onPublishDesk={() => { setCreating(false); setPublishingDesk(true) }} />
+      <div className="workspace">
+        <div className="topbar">
+          <span className="topbar-label">{repo ? repo.owner : 'your personal forge'}</span>
+          <div className="topbar-actions">
+            <button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button>
+            <button className="icon-button" onClick={() => refresh(selected)} title="Refresh"><RefreshIcon /></button>
+          </div>
+        </div>
+        {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError('')}>×</button></div>}
+        {publishingDesk ? (
+          <PublishDesk repositories={repositories} onComplete={published} onCancel={() => setPublishingDesk(false)} />
+        ) : creating ? (
+          <CreateRepository onCreate={create} onCancel={() => setCreating(false)} />
+        ) : repo ? (
+          <RepositoryView repo={repo} onRefresh={refresh} />
+        ) : (
+          <main className="content welcome">
+            <div className="welcome-mark">git</div>
+            <h1>{loading ? 'Opening your forge…' : 'Your code, on your ship.'}</h1>
+            {!loading && <><p>Create a repository, push with stock Git, or bind it to a Clay desk.</p><button className="button primary" onClick={() => setCreating(true)}>New repository</button></>}
+          </main>
+        )}
+      </div>
+    </div>
+  )
+}

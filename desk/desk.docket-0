@@ -1,0 +1,9 @@
+:~  title+'git'
+    info+'A personal Git forge native to Urbit'
+    color+0x1
+    version+[0 1 0]
+    image+'/apps/git/git.svg'
+    website+''
+    license+'MIT'
+    site+/apps/git
+==

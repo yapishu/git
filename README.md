@@ -12,6 +12,9 @@
 - atomic ref transactions protected by per-repository write credentials
 - optional branch-to-desk bindings that apply pushed commits directly to Clay
 - Clay-gated pushes: invalid desks are rejected by Git with the complete Ford stack trace
+- Clay-to-Git publishing that snapshots a bound desk as canonical blobs, trees, and commits
+- authenticated personal-forge interface for repositories, files, commits, access, tokens, and Clay publication
+- JSON scries and HTTP APIs for repository summaries, refs, first-parent history, and head-tree files
 - Git LFS batch uploads and downloads backed by the ship's configured object storage
 - direct, short-lived Signature V4 transfer actions so large LFS payloads bypass the loom
 - stable Smart HTTP remotes at:
@@ -20,7 +23,7 @@
 https://ship.example/git/<repository>
 ```
 
-Ames replication, LFS lifecycle policy, richer negotiation, Clay-to-Git publishing, and the repository UI are tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
+Ames replication, LFS lifecycle policy, richer negotiation, and expanded repository browsing are tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
 
 ## Development
 
@@ -40,6 +43,7 @@ Then commit the `%git` desk and run the protocol vectors:
 +git!git-delta-pack-vector
 +git!git-ofs-delta-pack-vector
 +git!git-storage-vector
++git!git-clay-vector
 ```
 
 The codec vector's blob OID must be `3b18e512dba79e4c8300dd08aeb37f8e728b8dad`, matching `git hash-object` for `hello world\n`. The pack vectors cover local round trips and stock Git packs containing binary tree data, `REF_DELTA`, and `OFS_DELTA` entries. The storage vector checks that object-store transfers contain authorization, date, and payload-hash headers.
@@ -47,3 +51,9 @@ The codec vector's blob OID must be `3b18e512dba79e4c8300dd08aeb37f8e728b8dad`, 
 Each repository can be assigned a write token with the `%set-write-token` action. Git and Git LFS clients use any Basic-auth username and that token as the password. Public repositories permit unauthenticated fetches and LFS downloads; uploads require the write token or an authenticated ship session.
 
 A repository branch can be linked to a Clay desk with `%bind-desk`. A push to that branch is accepted only after Clay applies and validates the projected desk. Ford failures are returned as ordinary Git `ng` report-status messages, so command-line clients, CI, and coding agents receive the compiler trace while the Git ref remains unchanged.
+
+`%publish-desk` snapshots the current bound desk into the linked branch. Clay pages are rendered to their canonical source representation, assembled into ordinary Git blobs and recursively sorted trees, and committed with the ship as author and committer. The existing branch tip becomes the parent.
+
+The forge-facing read model is available through `%git` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`.
+
+The authenticated forge is served at `/apps/git`. Its API creates and deletes repositories, changes public-read policy and hashed write tokens, binds and unbinds Clay desks, and starts Clay-to-Git publication. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.

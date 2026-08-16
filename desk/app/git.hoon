@@ -8,6 +8,7 @@
 +$  lfs-request  [eyre-id=@ta repository=@t oid=@t upload=lfs-upload:git]
 +$  clay-push
   $:  eyre-id=@ta
+      api-response=?
       repository=@t
       commands=(list receive-command:git)
       applied=repository:git
@@ -18,6 +19,14 @@
       result=(unit [ok=? message=@t])
       start-at=@da
       timeout-at=@da
+  ==
++$  publish-job
+  $:  repository=@t
+      desk-name=desk
+      branch=@t
+      message=@t
+      paths=(list path)
+      files=(map path octs)
   ==
 ::
 ++  update-binding-success
@@ -63,6 +72,209 @@
       :(weld out " | " i.remaining)
     $(remaining t.remaining, out next)
   (crip (scag 60.000 (join-lines lines ~)))
+::
+++  page-octs
+  |=  [our=@p desk-name=desk now=@da =page]
+  ^-  (unit octs)
+  ?:  =(%hoon p.page)
+    =/  source=@t  ;;(@ q.page)
+    `[(met 3 source) source]
+  ?:  =(%kelvin p.page)
+    =/  kal=waft:clay  ;;(waft:clay q.page)
+    =/  source=@t
+      %+  rap  3
+      %+  turn
+        %+  sort
+          ~(tap in (waft-to-wefts:clay kal))
+        |=  [a=weft b=weft]
+        ?:  =(lal.a lal.b)
+          (gte num.a num.b)
+        (gte lal.a lal.b)
+      |=  =weft
+      (rap 3 '[%' (scot %tas lal.weft) ' ' (scot %ud num.weft) ']\0a' ~)
+    `[(met 3 source) source]
+  =/  converted=(unit mime)
+    %-  mole
+    |.
+    ?:  =(%mime p.page)
+      ;;(mime q.page)
+    =/  =dais:clay
+      .^(dais:clay %cb /(scot %p our)/[desk-name]/(scot %da now)/[p.page])
+    =/  vax=vase  (vale:dais q.page)
+    =/  =tube:clay
+      .^(tube:clay %cc /(scot %p our)/[desk-name]/(scot %da now)/[p.page]/mime)
+    !<(mime (tube vax))
+  ?~  converted  ~
+  `q.u.converted
+::
+++  publish-repository
+  |=  [repo=repository:git job=publish-job author=@p now=@da]
+  ^-  (unit repository:git)
+  ?~  binding.repo  ~
+  ?.  ?&  =(desk-name.job desk-name.u.binding.repo)
+          =(branch.job branch.u.binding.repo)
+      ==
+    ~
+  =/  parent=(unit oid:git)  (~(get by refs.repo) branch.job)
+  =/  snapped=(unit [commit=oid:git objects=(map oid:git object:git)])
+    (snapshot:git-clay files.job objects.repo parent author now message.job)
+  ?~  snapped  ~
+  =/  linked=desk-binding:git
+    u.binding.repo(last-git `commit.u.snapped)
+  =/  published=repository:git
+    %_  repo
+      objects  objects.u.snapped
+      refs     (~(put by refs.repo) branch.job commit.u.snapped)
+      binding  `linked
+    ==
+  `published
+::
+++  binding-json
+  |=  binding=(unit desk-binding:git)
+  ^-  json
+  ?~  binding
+    %-  pairs:enjs:format
+    ~[['bound' b+%.n]]
+  %-  pairs:enjs:format
+  :~  ['bound' b+%.y]
+      ['desk' s+desk-name.u.binding]
+      ['branch' s+branch.u.binding]
+      ['lastClay' s+?~(last-clay.u.binding '' (scot %ud u.last-clay.u.binding))]
+      ['lastGit' s+?~(last-git.u.binding '' (oid-text:git-codec u.last-git.u.binding))]
+  ==
+::
+++  decimal
+  |=  value=@ud
+  ^-  @t
+  (crip ((d-co:co 1) value))
+::
+++  repository-json
+  |=  [name=@t repo=repository:git]
+  ^-  json
+  =/  refs-json=(list json)
+    %+  turn  ~(tap by refs.repo)
+    |=  [ref=@t oid=oid:git]
+    %-  pairs:enjs:format
+    ~[['name' s+ref] ['oid' s+(oid-text:git-codec oid)]]
+  %-  pairs:enjs:format
+  :~  ['name' s+name]
+      ['owner' s+(scot %p owner.repo)]
+      ['publicRead' b+public-read.repo]
+      ['head' s+head.repo]
+      ['refs' [%a refs-json]]
+      ['objectCount' n+(decimal (lent ~(tap by objects.repo)))]
+      ['lfsObjectCount' n+(decimal (lent ~(tap by lfs-objects.repo)))]
+      ['writeTokenSet' b+?=(^ write-token-hash.repo)]
+      ['binding' (binding-json binding.repo)]
+  ==
+::
+++  repositories-json
+  |=  repos=(map @t repository:git)
+  ^-  json
+  %-  pairs:enjs:format
+  :~  :-  'repositories'
+      :-  %a
+      %+  turn  ~(tap by repos)
+      |=  [name=@t repo=repository:git]
+      (repository-json name repo)
+  ==
+::
+++  repository-files-json
+  |=  [name=@t repo=repository:git]
+  ^-  json
+  =/  commit=(unit oid:git)  (~(get by refs.repo) head.repo)
+  =/  files=(unit (map path octs))
+    ?~  commit  `*(map path octs)
+    (flatten-commit:git-clay objects.repo u.commit)
+  =/  file-json=(list json)
+    ?~  files  ~
+    %+  turn  ~(tap by u.files)
+    |=  [file-path=path data=octs]
+    %-  pairs:enjs:format
+    ~[['path' s+(spat file-path)] ['size' n+(decimal p.data)]]
+  %-  pairs:enjs:format
+  :~  ['repository' s+name]
+      ['head' s+head.repo]
+      ['commit' s+?~(commit '' (oid-text:git-codec u.commit))]
+      ['files' [%a file-json]]
+  ==
+::
+++  repository-file
+  |=  [repo=repository:git file-path=path]
+  ^-  (unit octs)
+  =/  commit=(unit oid:git)  (~(get by refs.repo) head.repo)
+  ?~  commit  ~
+  =/  files=(unit (map path octs))
+    (flatten-commit:git-clay objects.repo u.commit)
+  ?~  files  ~
+  (~(get by u.files) file-path)
+::
+++  repository-file-json
+  |=  [name=@t repo=repository:git file-path=path data=octs]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['repository' s+name]
+      ['head' s+head.repo]
+      ['path' s+(spat file-path)]
+      ['size' n+(decimal p.data)]
+      ['encoding' s+'base64']
+      ['content' s+(en:base64:mimes:html data)]
+  ==
+::
+++  double-newline
+  |=  [data=octs offset=@ud]
+  ^-  (unit @ud)
+  ?:  (gte +(offset) p.data)  ~
+  ?:  ?&  =(10 (byte-at:git-codec data offset))
+          =(10 (byte-at:git-codec data +(offset)))
+      ==
+    `(add offset 2)
+  $(offset +(offset))
+::
+++  commit-parent
+  |=  data=octs
+  ^-  (unit oid:git)
+  ?:  (lte p.data 53)  ~
+  =/  tail=octs  (slice:git-codec data 46 (sub p.data 46))
+  ?.  (starts-with:git-protocol tail 'parent ')  ~
+  (oid-at:git-protocol data 53)
+::
+++  commit-subject
+  |=  data=octs
+  ^-  @t
+  =/  start=(unit @ud)  (double-newline data 0)
+  ?~  start  ''
+  =/  message=octs  (slice:git-codec data u.start (sub p.data u.start))
+  =/  end=(unit @ud)  (find-byte:git-clay message 0 10)
+  =/  width=@ud  ?~(end p.message u.end)
+  =/  subject=octs  (slice:git-codec message 0 width)
+  `@t`q.subject
+::
+++  repository-commits-json
+  |=  [name=@t repo=repository:git]
+  ^-  json
+  =/  current=(unit oid:git)  (~(get by refs.repo) head.repo)
+  =/  entries=(list json)  ~
+  =/  count=@ud  0
+  |-
+  ?:  |(?=(~ current) (gte count 100))
+    %-  pairs:enjs:format
+    ~[['repository' s+name] ['head' s+head.repo] ['commits' [%a (flop entries)]]]
+  =/  found=(unit object:git)  (~(get by objects.repo) u.current)
+  ?~  found
+    %-  pairs:enjs:format
+    ~[['repository' s+name] ['head' s+head.repo] ['commits' [%a (flop entries)]]]
+  ?.  =(%commit kind.u.found)
+    %-  pairs:enjs:format
+    ~[['repository' s+name] ['head' s+head.repo] ['commits' [%a (flop entries)]]]
+  =/  parent=(unit oid:git)  (commit-parent data.u.found)
+  =/  entry=json
+    %-  pairs:enjs:format
+    :~  ['oid' s+(oid-text:git-codec u.current)]
+        ['parent' s+?~(parent '' (oid-text:git-codec u.parent))]
+        ['subject' s+(commit-subject data.u.found)]
+    ==
+  $(current parent, entries [entry entries], count +(count))
 --
 ::
 %-  agent:dbug
@@ -71,6 +283,7 @@
 =/  in-flight  *(map @uv lfs-request)
 =/  request-count=@ud  0
 =/  pending-clay  *(unit clay-push)
+=/  pending-publish  *(unit publish-job)
 ^-  agent:gall
 |_  =bowl:gall
 +*  this  .
@@ -80,6 +293,7 @@
   ^-  (quip card _this)
   :_  this
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %git]
+      [%pass /eyre/api-connect %arvo %e %connect [~ /apps/git/api] %git]
   ==
 ::
 ++  on-save
@@ -89,8 +303,9 @@
   |=  old=vase
   ^-  (quip card _this)
   =/  loaded=state-0:git  !<(state-0:git old)
-  :_  this(state loaded, in-flight ~, request-count 0, pending-clay ~)
+  :_  this(state loaded, in-flight ~, request-count 0, pending-clay ~, pending-publish ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %git]
+      [%pass /eyre/api-connect %arvo %e %connect [~ /apps/git/api] %git]
   ==
 ::
 ++  on-poke
@@ -189,6 +404,11 @@
     ?~  found  `this
     ?.  (valid-ref:git-protocol branch.act)  `this
     ?.  (starts-with 'refs/heads/' branch.act)  `this
+    =/  desks=(unit (set desk))
+      %-  mole
+      |.(.^((set desk) %cd /(scot %p our.bowl)//(scot %da now.bowl)))
+    ?~  desks  `this
+    ?.  (~(has in u.desks) desk-name.act)  `this
     =/  binding=desk-binding:git  [desk-name.act branch.act ~ ~]
     `this(repositories (~(put by repositories) repository.act u.found(binding `binding)))
   ::
@@ -196,6 +416,45 @@
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)
     ?~  found  `this
     `this(repositories (~(put by repositories) repository.act u.found(binding ~)))
+  ::
+      %publish-desk
+    =/  found=(unit repository:git)  (~(get by repositories) repository.act)
+    ?~  found  `this
+    ?~  binding.u.found  `this
+    ?^  pending-clay  `this
+    ?^  pending-publish  `this
+    =/  desks=(unit (set desk))
+      %-  mole
+      |.(.^((set desk) %cd /(scot %p our.bowl)//(scot %da now.bowl)))
+    ?~  desks  `this
+    ?.  (~(has in u.desks) desk-name.u.binding.u.found)  `this
+    =/  desk-files=(unit (list spur))
+      %-  mole
+      |.(.^((list spur) %ct /(scot %p our.bowl)/[desk-name.u.binding.u.found]/(scot %da now.bowl)))
+    ?~  desk-files  `this
+    =/  job=publish-job
+      :*  repository.act
+          desk-name.u.binding.u.found
+          branch.u.binding.u.found
+          message.act
+          u.desk-files
+          ~
+      ==
+    ?~  paths.job
+      =/  published=(unit repository:git)
+        (publish-repository u.found job our.bowl now.bowl)
+      ?~  published  `this
+      =.  repositories  (~(put by repositories) repository.job u.published)
+      `this
+    :_  this(pending-publish `job)
+    (publish-next job)
+  ==
+::
+++  publish-next
+  |=  job=publish-job
+  ^-  (list card)
+  ?~  paths.job  ~
+  :~  [%pass /clay-publish %arvo %c %warp our.bowl desk-name.job ~ %sing %q da+now.bowl i.paths.job]
   ==
 ::
 ++  query-value
@@ -261,6 +520,14 @@
   ?.  ?=(%n -.u.value)  ~
   (parse-decimal p.u.value)
 ::
+++  bool-at
+  |=  [key=@t jon=json]
+  ^-  (unit ?)
+  =/  value=(unit json)  (json-at key jon)
+  ?~  value  ~
+  ?.  ?=(%b -.u.value)  ~
+  `p.u.value
+::
 ++  valid-lfs-oid
   |=  oid=@t
   ^-  ?
@@ -291,6 +558,368 @@
   :~  ['content-type' 'application/vnd.git-lfs+json']
       ['cache-control' 'no-store']
   ==
+::
+++  api-json-payload
+  |=  [status=@ud jon=json]
+  ^-  simple-payload:http
+  :_  `(json-to-octs:server jon)
+  :-  status
+  :~  ['content-type' 'application/json; charset=utf-8']
+      ['cache-control' 'no-store']
+  ==
+::
+++  api-error
+  |=  [eyre-id=@ta status=@ud message=@t]
+  ^-  (list card)
+  %+  give-simple-payload:app:server  eyre-id
+  (api-json-payload status (pairs:enjs:format ~[['error' s+message]]))
+::
+++  api-ok
+  |=  [eyre-id=@ta status=@ud]
+  ^-  (list card)
+  %+  give-simple-payload:app:server  eyre-id
+  (api-json-payload status (pairs:enjs:format ~[['ok' b+%.y]]))
+::
+++  api-json
+  |=  [eyre-id=@ta status=@ud jon=json]
+  ^-  (list card)
+  (give-simple-payload:app:server eyre-id (api-json-payload status jon))
+::
+++  api-body
+  |=  req=inbound-request:eyre
+  ^-  (unit json)
+  ?~  body.request.req  ~
+  (de:json:html q.u.body.request.req)
+::
+++  valid-repository-name
+  |=  name=@t
+  ^-  ?
+  =/  chars=tape  (trip name)
+  ?.  ?&((gth (lent chars) 0) (lte (lent chars) 100))  %.n
+  %+  levy  chars
+  |=  char=@tD
+  ?|  &((gte char 'a') (lte char 'z'))
+      &((gte char 'A') (lte char 'Z'))
+      &((gte char '0') (lte char '9'))
+      =('-' char)
+      =('_' char)
+      =('.' char)
+  ==
+::
+++  api-file-path
+  |=  segments=(list @t)
+  ^-  (unit path)
+  ?~  segments  ~
+  =/  parse
+    |=  [remaining=(list @t) out=path]
+    ^-  (unit path)
+    ?~  remaining  `(flop out)
+    =/  segment=(unit @tas)  (slaw %tas i.remaining)
+    ?~  segment  ~
+    $(remaining t.remaining, out [u.segment out])
+  (parse segments ~)
+::
+++  api-with-action
+  |=  [eyre-id=@ta status=@ud act=action:git]
+  ^-  (quip card _this)
+  =/  [cards=(list card) next=_this]  (handle-action act)
+  [(weld cards (api-ok eyre-id status)) next]
+::
+++  handle-api
+  |=  [eyre-id=@ta req=inbound-request:eyre line=request-line:server]
+  ^-  (quip card _this)
+  ?.  authenticated.req
+    :_  this
+    (api-error eyre-id 401 'Urbit login required')
+  =/  site=(list @t)  site.line
+  =/  method=@tas  method.request.req
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repositories ~] site)
+      ==
+    :_  this
+    (api-json eyre-id 200 (repositories-json repositories))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %desks ~] site)
+      ==
+    =/  desks=(unit (set desk))
+      %-  mole
+      |.(.^((set desk) %cd /(scot %p our.bowl)//(scot %da now.bowl)))
+    ?~  desks
+      :_  this
+      (api-error eyre-id 503 'unable to list Clay desks')
+    =/  entries=(list json)
+      %+  turn  ~(tap in u.desks)
+      |=(desk-name=desk s+desk-name)
+    :_  this
+    (api-json eyre-id 200 (pairs:enjs:format ~[['desks' [%a entries]]]))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repository @ ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    :_  this
+    (api-json eyre-id 200 (repository-json name u.found))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repository @ %files ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    :_  this
+    (api-json eyre-id 200 (repository-files-json name u.found))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repository @ %commits ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    :_  this
+    (api-json eyre-id 200 (repository-commits-json name u.found))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repository @ %file *] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.site)
+    ?~  file-path
+      :_  this
+      (api-error eyre-id 422 'valid file path required')
+    =/  data=(unit octs)  (repository-file u.found u.file-path)
+    ?~  data
+      :_  this
+      (api-error eyre-id 404 'file not found')
+    :_  this
+    (api-json eyre-id 200 (repository-file-json name u.found u.file-path u.data))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %file *] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.site)
+    ?~  file-path
+      :_  this
+      (api-error eyre-id 422 'valid file path required')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  encoded=(unit @t)  (string-at 'content' u.jon)
+    =/  message=(unit @t)  (string-at 'message' u.jon)
+    ?.  ?&(?=(^ encoded) ?=(^ message) !=('' u.message))
+      :_  this
+      (api-error eyre-id 422 'base64 content and a non-empty commit message are required')
+    =/  data=(unit octs)  (de:base64:mimes:html u.encoded)
+    ?~  data
+      :_  this
+      (api-error eyre-id 422 'content is not valid base64')
+    =/  parent=(unit oid:git)  (~(get by refs.u.found) head.u.found)
+    ?~  parent
+      :_  this
+      (api-error eyre-id 409 'repository has no branch head to edit')
+    =/  files=(unit (map path octs))
+      (flatten-commit:git-clay objects.u.found u.parent)
+    ?~  files
+      :_  this
+      (api-error eyre-id 409 'repository head is not a valid file tree')
+    ?.  (~(has by u.files) u.file-path)
+      :_  this
+      (api-error eyre-id 404 'file not found')
+    =/  updated-files=(map path octs)  (~(put by u.files) u.file-path u.data)
+    =/  snapped=(unit [commit=oid:git objects=(map oid:git object:git)])
+      (snapshot:git-clay updated-files objects.u.found `u.parent our.bowl now.bowl u.message)
+    ?~  snapped
+      :_  this
+      (api-error eyre-id 422 'file tree cannot be represented as a Git commit')
+    =/  applied=repository:git
+      u.found(objects objects.u.snapped, refs (~(put by refs.u.found) head.u.found commit.u.snapped))
+    ?~  binding.applied
+      =.  repositories  (~(put by repositories) name applied)
+      :_  this
+      (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec commit.u.snapped)]]))
+    ?.  =(head.applied branch.u.binding.applied)
+      =.  repositories  (~(put by repositories) name applied)
+      :_  this
+      (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec commit.u.snapped)]]))
+    ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+      :_  this
+      (api-error eyre-id 409 'another Clay operation is in progress')
+    =/  delta=(unit nori:clay)
+      (clay-delta desk-name.u.binding.applied updated-files)
+    ?~  delta
+      :_  this
+      (api-error eyre-id 409 'unable to read linked Clay desk')
+    ?>  ?=(%& -.u.delta)
+    ?:  =(~ p.u.delta)
+      =/  linked-binding=desk-binding:git
+        u.binding.applied(last-git `commit.u.snapped)
+      =/  linked=repository:git
+        applied(binding `linked-binding)
+      =.  repositories  (~(put by repositories) name linked)
+      :_  this
+      (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec commit.u.snapped)]]))
+    =/  start-at=@da  (add now.bowl ~s1)
+    =/  timeout-at=@da  (add now.bowl ~s15)
+    =/  pending=clay-push
+      :*  eyre-id
+          %.y
+          name
+          ~
+          applied
+          desk-name.u.binding.applied
+          branch.u.binding.applied
+          commit.u.snapped
+          u.delta
+          ~
+          start-at
+          timeout-at
+      ==
+    =.  pending-clay  `pending
+    :_  this
+    :~  [%pass /clay-start %arvo %b %wait start-at]
+        [%pass /clay-timeout %arvo %b %wait timeout-at]
+    ==
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repositories ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  name=(unit @t)  (string-at 'name' u.jon)
+    =/  public=(unit ?)  (bool-at 'publicRead' u.jon)
+    ?.  ?&(?=(^ name) ?=(^ public) (valid-repository-name u.name))
+      :_  this
+      (api-error eyre-id 422 'name and publicRead are required; name may contain letters, numbers, dot, dash, and underscore')
+    ?:  (~(has by repositories) u.name)
+      :_  this
+      (api-error eyre-id 409 'repository already exists')
+    (api-with-action eyre-id 201 [%create u.name u.public])
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %git %api %repository @ ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    (api-with-action eyre-id 200 [%delete name])
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %public ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  public=(unit ?)  (bool-at 'publicRead' u.jon)
+    ?~  public
+      :_  this
+      (api-error eyre-id 422 'publicRead is required')
+    (api-with-action eyre-id 200 [%set-public name u.public])
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %token ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  token=(unit @t)  (string-at 'token' u.jon)
+    ?.  ?&(?=(^ token) !=('' u.token))
+      :_  this
+      (api-error eyre-id 422 'non-empty token is required')
+    (api-with-action eyre-id 200 [%set-write-token name u.token])
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %git %api %repository @ %token ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    (api-with-action eyre-id 200 [%clear-write-token name])
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %bind ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  desk-text=(unit @t)  (string-at 'desk' u.jon)
+    =/  branch=(unit @t)  (string-at 'branch' u.jon)
+    ?.  ?&(?=(^ desk-text) ?=(^ branch))
+      :_  this
+      (api-error eyre-id 422 'desk and branch are required')
+    =/  desk-name=(unit @tas)  (slaw %tas u.desk-text)
+    ?~  desk-name
+      :_  this
+      (api-error eyre-id 422 'desk must be a valid term')
+    ?.  ?&  (starts-with 'refs/heads/' u.branch)
+            (valid-ref:git-protocol u.branch)
+        ==
+      :_  this
+      (api-error eyre-id 422 'branch must be a valid refs/heads/... ref')
+    =/  desks=(unit (set desk))
+      %-  mole
+      |.(.^((set desk) %cd /(scot %p our.bowl)//(scot %da now.bowl)))
+    ?.  ?&(?=(^ desks) (~(has in u.desks) u.desk-name))
+      :_  this
+      (api-error eyre-id 404 'Clay desk not found')
+    (api-with-action eyre-id 200 [%bind-desk name u.desk-name u.branch])
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %unbind ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    (api-with-action eyre-id 200 [%unbind-desk name])
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %publish ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  binding.u.found
+      :_  this
+      (api-error eyre-id 409 'repository is not bound to a Clay desk')
+    ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+      :_  this
+      (api-error eyre-id 409 'another Clay operation is in progress')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  message=(unit @t)  (string-at 'message' u.jon)
+    ?.  ?&(?=(^ message) !=('' u.message))
+      :_  this
+      (api-error eyre-id 422 'non-empty message is required')
+    (api-with-action eyre-id 202 [%publish-desk name u.message])
+  :_  this
+  (api-error eyre-id 404 'API route not found')
 ::
 ++  lfs-error
   |=  [status=@ud message=@t]
@@ -502,6 +1131,8 @@
   ^-  (quip card _this)
   =/  line=request-line:server  (parse-request-line:server url.request.req)
   =/  site=(list @t)  site.line
+  ?:  (starts-with '/apps/git/api' url.request.req)
+    (handle-api eyre-id req line)
   ?:  ?=([%git @ %info %lfs %objects %batch ~] site)
     (handle-lfs-batch eyre-id req (repository-name i.t.site))
   ?:  ?=([%git @ %info %lfs %objects @ %verify ~] site)
@@ -658,6 +1289,10 @@
       :_  this
       %+  give-simple-payload:app:server  eyre-id
       (receive-payload 'ok' (receive-results commands.u.parsed %.n 'linked desk update already in progress'))
+    ?^  pending-publish
+      :_  this
+      %+  give-simple-payload:app:server  eyre-id
+      (receive-payload 'ok' (receive-results commands.u.parsed %.n 'linked desk publish already in progress'))
     ?~  new.u.linked-command
       :_  this
       %+  give-simple-payload:app:server  eyre-id
@@ -684,6 +1319,7 @@
       =/  start-at=@da  (add now.bowl ~s1)
       =/  timeout-at=@da  (add now.bowl ~s15)
       :*  eyre-id
+          %.n
           repo-name
           commands.u.parsed
           u.applied
@@ -882,7 +1518,31 @@
   [[status headers] body]
 --
 ::
-++  on-peek   on-peek:def
+++  on-peek
+  |=  =path
+  ^-  (unit (unit cage))
+  ?+  path  (on-peek:def path)
+      [%x %repositories ~]
+    ``json+!>((repositories-json repositories))
+  ::
+      [%x %repository @ ~]
+    =/  name=@t  i.t.t.path
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found  [~ ~]
+    ``json+!>((repository-json name u.found))
+  ::
+      [%x %repository @ %files ~]
+    =/  name=@t  i.t.t.path
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found  [~ ~]
+    ``json+!>((repository-files-json name u.found))
+  ::
+      [%x %repository @ %commits ~]
+    =/  name=@t  i.t.t.path
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found  [~ ~]
+    ``json+!>((repository-commits-json name u.found))
+  ==
 ++  on-watch
   |=  =path
   ^-  (quip card _this)
@@ -933,6 +1593,43 @@
     [[status ~[['content-type' 'application/vnd.git-lfs+json'] ['cache-control' 'no-store']]] `(json-to-octs:server jon)]
   ?+  wire  (on-arvo:def wire sign-arvo)
       [%eyre *]  `this
+      [%clay-publish ~]
+    =/  maybe-job=(unit publish-job)  pending-publish
+    ?~  maybe-job  `this
+    =/  job=publish-job  u.maybe-job
+    ?.  ?=([%clay %writ *] sign-arvo)
+      `this(pending-publish ~)
+    =/  riot=riot:clay  p.sign-arvo
+    ?~  riot  `this(pending-publish ~)
+    ?~  paths.job  `this(pending-publish ~)
+    ?.  =(q.u.riot i.paths.job)
+      `this(pending-publish ~)
+    =/  raw-cage=cage  r.u.riot
+    =/  raw-page=page  [p.raw-cage q.q.raw-cage]
+    =/  data=(unit octs)
+      (page-octs our.bowl desk-name.job now.bowl raw-page)
+    ?~  data  `this(pending-publish ~)
+    =/  next-job=publish-job
+      :*  repository.job
+          desk-name.job
+          branch.job
+          message.job
+          `(list path)`t.paths.job
+          (~(put by files.job) i.paths.job u.data)
+      ==
+    =.  pending-publish  `next-job
+    ?^  paths.next-job
+      :_  this
+      :~  [%pass /clay-publish %arvo %c %warp our.bowl desk-name.next-job ~ %sing %q da+now.bowl i.paths.next-job]
+      ==
+    =/  current=(unit repository:git)  (~(get by repositories) repository.next-job)
+    ?~  current  `this(pending-publish ~)
+    =/  published=(unit repository:git)
+      (publish-repository u.current next-job our.bowl now.bowl)
+    ?~  published  `this(pending-publish ~)
+    =.  repositories  (~(put by repositories) repository.next-job u.published)
+    `this(pending-publish ~)
+  ::
       [%clay-start ~]
     ?.  ?=([%behn %wake *] sign-arvo)
       (on-arvo:def wire sign-arvo)
@@ -985,6 +1682,13 @@
     =/  result=[ok=? message=@t]  u.maybe-result
     =.  pending-clay  ~
     :_  this
+    ?:  api-response.pending
+      =/  jon=json
+        ?:  ok.result
+          (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec new-oid.pending)]])
+        (pairs:enjs:format ~[['error' s+message.result]])
+      %+  give-simple-payload:app:server  eyre-id.pending
+      [[?:(ok.result 200 422) ~[['content-type' 'application/json; charset=utf-8'] ['cache-control' 'no-store']]] `(json-to-octs:server jon)]
     %+  give-simple-payload:app:server  eyre-id.pending
     (receive-payload 'ok' (receive-results commands.pending ok.result message.result))
   ::

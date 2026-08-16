@@ -26,7 +26,14 @@
 - two-phase linked pushes that advance the Git ref only after Clay accepts the complete delta
 - Git-compatible rejection messages containing the Clay/Ford trace when a linked desk does not validate
 - non-reentrant timer error handling that cannot retry a failed Clay mutation or jam Behn
-- conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, and object-store request signing
+- Clay-to-Git publication of a bound desk as canonical blobs, recursively sorted trees, and a parented commit
+- typeless Clay page reads for publishing minimal desks without requiring every mark core to build first
+- binding and publication guards that reject nonexistent desks
+- JSON read models for repository metadata, refs, first-parent history, and head-tree file listings
+- authenticated forge API for repository lifecycle, access policy, write tokens, Clay bindings, and publication
+- componentized React forge with repository navigation, clone URLs, file trees, commit history, and settings
+- reload-safe, cache-invalidating static fileserver at `/apps/git` and a separately rebound API at `/apps/git/api`
+- conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, Clay snapshots, and object-store request signing
 
 ## Next
 
@@ -35,8 +42,9 @@
 3. Add protected-branch and fast-forward policy controls on top of compare-and-swap ref updates.
 4. Add peeled tag advertisements, shallow fetches, filters, and protocol v2.
 5. Add Ames discovery, ACL exchange, notifications, and repository replication.
-6. Add Clay-to-Git publishing, explicit resync controls, commit metadata, and conflict visibility for bound desks.
-7. Add the personal forge UI: repository list, files, commits, branches, diffs, access policy, clone URLs, and bound-desk controls.
+6. Add explicit resync controls, richer commit metadata, and conflict visibility for bound desks.
+7. Expand the forge with branch/tag browsing, blob views, commit detail, and textual diffs.
+8. Add activity notifications and explicit Clay resync/conflict controls.
 
 ## Storage direction
 

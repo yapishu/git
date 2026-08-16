@@ -80,5 +80,6 @@
       [%clear-write-token repository=@t]
       [%bind-desk repository=@t desk-name=desk branch=@t]
       [%unbind-desk repository=@t]
+      [%publish-desk repository=@t message=@t]
   ==
 --

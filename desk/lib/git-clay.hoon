@@ -9,6 +9,137 @@
       oid=oid:git
   ==
 ::
+++  text-before
+  |=  [left=@t right=@t]
+  ^-  ?
+  =/  a=tape  (trip left)
+  =/  b=tape  (trip right)
+  |-
+  ?~  a  ?=(^ b)
+  ?~  b  %.n
+  ?:  =(i.a i.b)
+    $(a t.a, b t.b)
+  (lth i.a i.b)
+::
+++  tree-record
+  |=  [mode=@t name=@t oid=oid:git]
+  ^-  octs
+  %-  join-all:git-codec
+  :~  (text:git-codec mode)
+      (oct:git-codec 32)
+      (text:git-codec name)
+      (oct:git-codec 0)
+      [20 (rev 3 20 oid)]
+  ==
+::
+++  build-tree
+  |=  [files=(list [segments=path data=octs]) objects=(map oid:git object:git)]
+  ^-  (unit [oid=oid:git objects=(map oid:git object:git)])
+  =/  collect
+    |=  $:  remaining=(list [segments=path data=octs])
+            leaves=(list [name=@t data=octs])
+            directories=(map @tas (list [segments=path data=octs]))
+        ==
+    ^-  (unit [(list [name=@t data=octs]) (map @tas (list [segments=path data=octs]))])
+    ?~  remaining  `[leaves directories]
+    =/  file=[segments=path data=octs]  i.remaining
+    ?.  ?=(^ segments.file)  ~
+    ?.  ?=(^ t.segments.file)  ~
+    ?:  ?=(~ t.t.segments.file)
+      =/  name=@t  (rap 3 ~[i.segments.file '.' i.t.segments.file])
+      $(remaining t.remaining, leaves [[name data.file] leaves])
+    =/  directory=@tas  i.segments.file
+    =/  maybe-prior=(unit (list [segments=path data=octs]))
+      (~(get by directories) directory)
+    =/  prior=(list [segments=path data=octs])
+      ?~(maybe-prior ~ u.maybe-prior)
+    =.  directories
+      (~(put by directories) directory [[t.segments.file data.file] prior])
+    $(remaining t.remaining, directories directories)
+  =/  partition=(unit [(list [name=@t data=octs]) (map @tas (list [segments=path data=octs]))])
+    (collect files ~ ~)
+  ?~  partition  ~
+  =/  entries=(list [sort-key=@t bytes=octs])  ~
+  =/  remaining-leaves=(list [name=@t data=octs])  -.u.partition
+  |-
+  ?^  remaining-leaves
+    =/  leaf=[name=@t data=octs]  i.remaining-leaves
+    =/  blob=object:git  [%blob data.leaf]
+    =/  blob-oid=oid:git  (object-oid:git-codec %blob data.leaf)
+    =.  objects  (~(put by objects) blob-oid blob)
+    =.  entries  [[name.leaf (tree-record '100644' name.leaf blob-oid)] entries]
+    $(remaining-leaves t.remaining-leaves)
+  =/  remaining-directories=(list [@tas (list [segments=path data=octs])])
+    ~(tap by +.u.partition)
+  |-
+  ?^  remaining-directories
+    =/  directory=@tas  -.i.remaining-directories
+    =/  child=(unit [oid=oid:git objects=(map oid:git object:git)])
+      (build-tree +.i.remaining-directories objects)
+    ?~  child  ~
+    =.  objects  objects.u.child
+    =/  name=@t  directory
+    =/  sort-key=@t  (rap 3 ~[name '/'])
+    =.  entries  [[sort-key (tree-record '40000' name oid.u.child)] entries]
+    $(remaining-directories t.remaining-directories)
+  =/  sorted=(list [sort-key=@t bytes=octs])
+    %+  sort  entries
+    |=  [a=[sort-key=@t bytes=octs] b=[sort-key=@t bytes=octs]]
+    (text-before sort-key.a sort-key.b)
+  =/  tree-data=octs
+    (join-all:git-codec (turn sorted |=(entry=[sort-key=@t bytes=octs] bytes.entry)))
+  =/  tree=object:git  [%tree tree-data]
+  =/  tree-oid=oid:git  (object-oid:git-codec %tree tree-data)
+  =.  objects  (~(put by objects) tree-oid tree)
+  `[tree-oid objects]
+::
+++  unix-seconds
+  |=  now=@da
+  ^-  @ud
+  (rsh [6 1] (sub now ~1970.1.1))
+::
+++  snapshot
+  |=  $:  files=(map path octs)
+          objects=(map oid:git object:git)
+          parent=(unit oid:git)
+          author=@p
+          now=@da
+          message=@t
+      ==
+  ^-  (unit [commit=oid:git objects=(map oid:git object:git)])
+  =/  built=(unit [oid=oid:git objects=(map oid:git object:git)])
+    (build-tree ~(tap by files) objects)
+  ?~  built  ~
+  =/  identity=@t
+    =/  who=@t  (scot %p author)
+    =/  when=@t  (crip ((d-co:co 1) (unix-seconds now)))
+    (rap 3 ~[who ' <' who '@urbit> ' when ' +0000'])
+  =/  parent-line=@t
+    ?~  parent  ''
+    (rap 3 ~['parent ' (oid-text:git-codec u.parent) '\0a'])
+  =/  commit-data=octs
+    %-  text:git-codec
+    %-  rap
+    :-  3
+    :~  'tree '
+        (oid-text:git-codec oid.u.built)
+        '\0a'
+        parent-line
+        'author '
+        identity
+        '\0a'
+        'committer '
+        identity
+        '\0a\0a'
+        message
+        '\0a'
+    ==
+  =/  commit-object=object:git  [%commit commit-data]
+  =/  commit-oid=oid:git  (object-oid:git-codec %commit commit-data)
+  =/  all=(map oid:git object:git)
+    (~(put by objects.u.built) commit-oid commit-object)
+  `[commit-oid all]
+::
 ++  find-byte
   |=  [bytes=octs offset=@ud needle=@ud]
   ^-  (unit @ud)
