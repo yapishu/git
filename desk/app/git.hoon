@@ -1,6 +1,6 @@
 ::  Native Git object database and Smart HTTP endpoint.
 ::
-/-  git
+/-  git, git-peer
 /+  dbug, default-agent, git-clay, git-codec, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, server
 |%
 +$  card  card:agent:gall
@@ -28,6 +28,31 @@
       paths=(list path)
       files=(map path octs)
   ==
++$  peer-serve
+  $:  target=ship
+      transfer=@uv
+      objects=(list [oid:git object:git])
+      offset=@ud
+  ==
++$  peer-part
+  $:  oid=oid:git
+      kind=object-kind:git
+      size=@ud
+      data=octs
+  ==
++$  peer-receive
+  $:  source=ship
+      source-repository=@t
+      local-repository=@t
+      public-read=?
+      head=@t
+      refs=(map @t oid:git)
+      expected=@ud
+      received=@ud
+      objects=(map oid:git object:git)
+      current=(unit peer-part)
+  ==
++$  peer-result  [status=? message=@t repository=@t]
 ::
 ++  update-binding-success
   |=  [repo=repository:git new-oid=oid:git riot=riot:clay]
@@ -166,6 +191,8 @@
       ['lfsObjectCount' n+(decimal (lent ~(tap by lfs-objects.repo)))]
       ['writeTokenSet' b+?=(^ write-token-hash.repo)]
       ['binding' (binding-json binding.repo)]
+      ['peerOrigin' ?~(peer-origin.repo ~ (pairs:enjs:format ~[['ship' s+(scot %p ship.u.peer-origin.repo)] ['repository' s+repository.u.peer-origin.repo]]))]
+      ['githubOrigin' ?~(github-origin.repo ~ (pairs:enjs:format ~[['owner' s+owner.u.github-origin.repo] ['repository' s+repository.u.github-origin.repo]]))]
   ==
 ::
 ++  repositories-json
@@ -284,6 +311,9 @@
 =/  request-count=@ud  0
 =/  pending-clay  *(unit clay-push)
 =/  pending-publish  *(unit publish-job)
+=/  peer-serving  *(map @uv peer-serve)
+=/  peer-receiving  *(map @uv peer-receive)
+=/  peer-results  *(map @uv peer-result)
 ^-  agent:gall
 |_  =bowl:gall
 +*  this  .
@@ -303,7 +333,7 @@
   |=  old=vase
   ^-  (quip card _this)
   =/  loaded=state-0:git  !<(state-0:git old)
-  :_  this(state loaded, in-flight ~, request-count 0, pending-clay ~, pending-publish ~)
+  :_  this(state loaded, in-flight ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %git]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/git/api] %git]
   ==
@@ -320,6 +350,177 @@
       %handle-http-request
     =+  !<([eyre-id=@ta req=inbound-request:eyre] vase)
     (handle-http eyre-id req)
+  ::
+      %git-peer
+    (handle-peer !<(packet:git-peer vase))
+  ==
+::
+++  peer-card
+  |=  [target=ship wire=wire packet=packet:git-peer]
+  ^-  card
+  [%pass wire %agent [target %git] %poke %git-peer !>(packet)]
+::
+++  peer-fail
+  |=  [target=ship transfer=@uv message=@t]
+  ^-  (quip card _this)
+  :_  this
+  :~  (peer-card target /peer/error/(scot %uv transfer) [%error transfer message])
+  ==
+::
+++  peer-send-next
+  |=  transfer=@uv
+  ^-  (quip card _this)
+  =/  found=(unit peer-serve)  (~(get by peer-serving) transfer)
+  ?~  found  `this
+  =/  flight=peer-serve  u.found
+  ?~  objects.flight
+    =.  peer-serving  (~(del by peer-serving) transfer)
+    :_  this
+    :~  (peer-card target.flight /peer/done/(scot %uv transfer) [%done transfer])
+    ==
+  =/  entry=[oid:git object:git]  i.objects.flight
+  =/  oid=oid:git  -.entry
+  =/  object=object:git  +.entry
+  =/  remaining=@ud  (sub p.data.object offset.flight)
+  =/  width=@ud  (min 60.000 remaining)
+  =/  final=?  =(width remaining)
+  =/  piece=octs  (slice:git-codec data.object offset.flight width)
+  =/  packet=packet:git-peer
+    [%chunk transfer oid kind.object p.data.object offset.flight piece final]
+  =/  next=peer-serve
+    ?:  final
+      flight(objects t.objects.flight, offset 0)
+    flight(offset (add offset.flight width))
+  =.  peer-serving  (~(put by peer-serving) transfer next)
+  :_  this
+  :~  (peer-card target.flight /peer/chunk/(scot %uv transfer) packet)
+  ==
+::
+++  peer-valid-refs
+  |=  [refs=(map @t oid:git) objects=(map oid:git object:git)]
+  ^-  ?
+  %+  levy  ~(tap by refs)
+  |=  entry=[@t oid:git]
+  (~(has by objects) +.entry)
+::
+++  handle-peer
+  |=  packet=packet:git-peer
+  ^-  (quip card _this)
+  ?-  -.packet
+      %request
+    =/  req=request:git-peer  request.packet
+    =/  found=(unit repository:git)  (~(get by repositories) repository.req)
+    ?~  found  (peer-fail src.bowl transfer.req 'repository not found')
+    ?.  public-read.u.found  (peer-fail src.bowl transfer.req 'repository is not public')
+    ?:  (~(has by peer-serving) transfer.req)
+      (peer-fail src.bowl transfer.req 'transfer identifier is already active')
+    =/  objects=(list [oid:git object:git])
+      %+  murn  ~(tap by objects.u.found)
+      |=  entry=[oid:git object:git]
+      ?:  (~(has in haves.req) -.entry)  ~
+      `entry
+    =/  flight=peer-serve  [src.bowl transfer.req objects 0]
+    =.  peer-serving  (~(put by peer-serving) transfer.req flight)
+    :_  this
+    :~  %+  peer-card  src.bowl  /peer/begin/(scot %uv transfer.req)
+        [%begin transfer.req repository.req head.u.found refs.u.found (lent objects)]
+    ==
+  ::
+      %begin
+    =/  msg=begin:git-peer  begin.packet
+    =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
+    ?~  found  `this
+    ?.  ?&  =(src.bowl source.u.found)
+            =(repository.msg source-repository.u.found)
+        ==
+      `this
+    =/  next=peer-receive
+      u.found(head head.msg, refs refs.msg, expected objects.msg)
+    =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
+    :_  this
+    :~  (peer-card src.bowl /peer/ack/(scot %uv transfer.msg) [%ack transfer.msg])
+    ==
+  ::
+      %chunk
+    =/  msg=chunk:git-peer  chunk.packet
+    =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
+    ?~  found  `this
+    ?.  =(src.bowl source.u.found)  `this
+    =/  flight=peer-receive  u.found
+    =/  part=peer-part
+      ?~  current.flight
+        ?:  !=(0 offset.msg)
+          [oid.msg kind.msg size.msg [0 0]]
+        [oid.msg kind.msg size.msg [0 0]]
+      u.current.flight
+    ?.  ?&  =(oid.part oid.msg)
+            =(kind.part kind.msg)
+            =(size.part size.msg)
+            =(p.data.part offset.msg)
+            (lte (add p.data.part p.data.msg) size.msg)
+        ==
+      (peer-fail src.bowl transfer.msg 'invalid object chunk')
+    =/  joined=octs  (join:git-codec data.part data.msg)
+    ?:  final.msg
+      ?.  ?&  =(p.joined size.msg)
+              =((object-oid:git-codec kind.msg joined) oid.msg)
+          ==
+        (peer-fail src.bowl transfer.msg 'object failed content-address validation')
+      =.  flight
+        flight(objects (~(put by objects.flight) oid.msg [kind.msg joined]), received +(received.flight), current ~)
+    =.  flight  flight(current `[oid.msg kind.msg size.msg joined])
+    =.  peer-receiving  (~(put by peer-receiving) transfer.msg flight)
+    :_  this
+    :~  (peer-card src.bowl /peer/ack/(scot %uv transfer.msg) [%ack transfer.msg])
+    ==
+  ::
+      %ack
+    (peer-send-next transfer.packet)
+  ::
+      %done
+    =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.packet)
+    ?~  found  `this
+    =/  flight=peer-receive  u.found
+    ?.  =(src.bowl source.flight)  `this
+    ?.  ?&  =(expected.flight received.flight)
+            ?=(~ current.flight)
+            (peer-valid-refs refs.flight objects.flight)
+            (~(has by refs.flight) head.flight)
+        ==
+      =.  peer-receiving  (~(del by peer-receiving) transfer.packet)
+      =.  peer-results  (~(put by peer-results) transfer.packet [%.n 'received repository graph is incomplete' local-repository.flight])
+      `this
+    =/  existing=(unit repository:git)  (~(get by repositories) local-repository.flight)
+    =/  repo=repository:git
+      ?~  existing
+        :*  our.bowl
+            public-read.flight
+            head.flight
+            refs.flight
+            objects.flight
+            (silt ~[our.bowl])
+            ~
+            ~
+            ~
+            ~
+            `[[source.flight source-repository.flight]]
+            ~
+            ~
+            ~
+        ==
+      u.existing(head head.flight, refs refs.flight, objects objects.flight, peer-origin `[[source.flight source-repository.flight]])
+    =.  repositories  (~(put by repositories) local-repository.flight repo)
+    =.  peer-receiving  (~(del by peer-receiving) transfer.packet)
+    =.  peer-results  (~(put by peer-results) transfer.packet [%.y 'complete' local-repository.flight])
+    `this
+  ::
+      %error
+    =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.packet)
+    ?~  found  `this
+    ?.  =(src.bowl source.u.found)  `this
+    =.  peer-receiving  (~(del by peer-receiving) transfer.packet)
+    =.  peer-results  (~(put by peer-results) transfer.packet [%.n message.packet local-repository.u.found])
+    `this
   ==
 ::
 ++  handle-action
@@ -336,6 +537,10 @@
           ~
           ~
           (silt ~[our.bowl])
+          ~
+          ~
+          ~
+          ~
           ~
           ~
           ~

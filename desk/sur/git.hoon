@@ -43,6 +43,25 @@
       last-git=(unit oid)
   ==
 ::
++$  peer-origin
+  $:  ship=ship
+      repository=@t
+  ==
+::
++$  github-origin
+  $:  owner=@t
+      repository=@t
+  ==
+::
++$  forge-item
+  $:  number=@ud
+      title=@t
+      state=@t
+      url=@t
+      author=@t
+      draft=?
+  ==
+::
 +$  clay-apply
   $:  desk-name=desk
       delta=nori:clay
@@ -59,11 +78,16 @@
       lfs-objects=(map @t lfs-object)
       lfs-uploads=(map @t lfs-upload)
       binding=(unit desk-binding)
+      peer-origin=(unit peer-origin)
+      github-origin=(unit github-origin)
+      github-issues=(list forge-item)
+      github-pulls=(list forge-item)
   ==
 ::
 +$  state-0
   $:  %0
       repositories=(map @t repository)
+      github-token=(unit @t)
   ==
 ::
 +$  action
