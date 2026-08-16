@@ -22,6 +22,10 @@
 - direct signed PUT and GET actions against the endpoint, bucket, and region configured in `%storage`
 - post-upload HEAD verification before LFS metadata becomes authoritative
 - Basic write tokens stored only as hashes, with authenticated ship sessions accepted for administration
+- optional branch-to-Clay-desk bindings with canonical Git-tree-to-desk path conversion
+- two-phase linked pushes that advance the Git ref only after Clay accepts the complete delta
+- Git-compatible rejection messages containing the Clay/Ford trace when a linked desk does not validate
+- non-reentrant timer error handling that cannot retry a failed Clay mutation or jam Behn
 - conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, and object-store request signing
 
 ## Next
@@ -31,7 +35,8 @@
 3. Add protected-branch and fast-forward policy controls on top of compare-and-swap ref updates.
 4. Add peeled tag advertisements, shallow fetches, filters, and protocol v2.
 5. Add Ames discovery, ACL exchange, notifications, and repository replication.
-6. Add explicit Clay import/export as a projection layer rather than conflating Clay revisions with Git commits.
+6. Add Clay-to-Git publishing, explicit resync controls, commit metadata, and conflict visibility for bound desks.
+7. Add the personal forge UI: repository list, files, commits, branches, diffs, access policy, clone URLs, and bound-desk controls.
 
 ## Storage direction
 

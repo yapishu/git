@@ -10,6 +10,8 @@
 - native zlib/DEFLATE plus `REF_DELTA` and `OFS_DELTA` pack ingestion
 - reachability-limited packs that do not expose unreferenced objects
 - atomic ref transactions protected by per-repository write credentials
+- optional branch-to-desk bindings that apply pushed commits directly to Clay
+- Clay-gated pushes: invalid desks are rejected by Git with the complete Ford stack trace
 - Git LFS batch uploads and downloads backed by the ship's configured object storage
 - direct, short-lived Signature V4 transfer actions so large LFS payloads bypass the loom
 - stable Smart HTTP remotes at:
@@ -18,7 +20,7 @@
 https://ship.example/git/<repository>
 ```
 
-Ames replication, LFS lifecycle policy, richer negotiation, and Clay projection are tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
+Ames replication, LFS lifecycle policy, richer negotiation, Clay-to-Git publishing, and the repository UI are tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
 
 ## Development
 
@@ -43,3 +45,5 @@ Then commit the `%git` desk and run the protocol vectors:
 The codec vector's blob OID must be `3b18e512dba79e4c8300dd08aeb37f8e728b8dad`, matching `git hash-object` for `hello world\n`. The pack vectors cover local round trips and stock Git packs containing binary tree data, `REF_DELTA`, and `OFS_DELTA` entries. The storage vector checks that object-store transfers contain authorization, date, and payload-hash headers.
 
 Each repository can be assigned a write token with the `%set-write-token` action. Git and Git LFS clients use any Basic-auth username and that token as the password. Public repositories permit unauthenticated fetches and LFS downloads; uploads require the write token or an authenticated ship session.
+
+A repository branch can be linked to a Clay desk with `%bind-desk`. A push to that branch is accepted only after Clay applies and validates the projected desk. Ford failures are returned as ordinary Git `ng` report-status messages, so command-line clients, CI, and coding agents receive the compiler trace while the Git ref remains unchanged.
