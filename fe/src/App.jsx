@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import CreateRepository from './components/CreateRepository'
+import ForkPeer from './components/ForkPeer'
+import GitHubImport from './components/GitHubImport'
+import GitHubSettings from './components/GitHubSettings'
 import { RefreshIcon } from './components/Icons'
 import PublishDesk from './components/PublishDesk'
 import RepositoryView from './components/RepositoryView'
@@ -13,6 +16,9 @@ export default function App() {
   const [selected, setSelected] = useState(repoFromHash())
   const [creating, setCreating] = useState(false)
   const [publishingDesk, setPublishingDesk] = useState(false)
+  const [forkingPeer, setForkingPeer] = useState(false)
+  const [importingGitHub, setImportingGitHub] = useState(false)
+  const [githubSettings, setGithubSettings] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [theme, setTheme] = useState(() => localStorage.getItem('git-theme') || 'system')
@@ -45,7 +51,7 @@ export default function App() {
 
   useEffect(() => { refresh() }, [])
   useEffect(() => {
-    const pop = () => { setSelected(repoFromHash()); setCreating(false); setPublishingDesk(false) }
+    const pop = () => { setSelected(repoFromHash()); setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false) }
     addEventListener('popstate', pop)
     return () => removeEventListener('popstate', pop)
   }, [])
@@ -53,6 +59,9 @@ export default function App() {
   function choose(name) {
     setCreating(false)
     setPublishingDesk(false)
+    setForkingPeer(false)
+    setImportingGitHub(false)
+    setGithubSettings(false)
     setSelected(name)
     history.pushState({}, '', `#/${encodeURIComponent(name)}`)
   }
@@ -78,17 +87,23 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar repositories={repositories} selected={selected} onSelect={choose} onCreate={() => { setPublishingDesk(false); setCreating(true) }} onPublishDesk={() => { setCreating(false); setPublishingDesk(true) }} />
+      <Sidebar repositories={repositories} selected={selected} onSelect={choose} onCreate={() => { setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false); setCreating(true) }} onPublishDesk={() => { setCreating(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false); setPublishingDesk(true) }} onForkPeer={() => { setCreating(false); setPublishingDesk(false); setImportingGitHub(false); setGithubSettings(false); setForkingPeer(true) }} onImportGitHub={() => { setCreating(false); setPublishingDesk(false); setForkingPeer(false); setGithubSettings(false); setImportingGitHub(true) }} onGitHubSettings={() => { setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(true) }} />
       <div className="workspace">
         <div className="topbar">
-          <span className="topbar-label">{repo ? repo.owner : 'your personal forge'}</span>
+          <span className="topbar-label">{repo ? repo.owner : 'Repositories'}</span>
           <div className="topbar-actions">
             <button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button>
             <button className="icon-button" onClick={() => refresh(selected)} title="Refresh"><RefreshIcon /></button>
           </div>
         </div>
         {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError('')}>×</button></div>}
-        {publishingDesk ? (
+        {githubSettings ? (
+          <GitHubSettings onImport={() => { setGithubSettings(false); setImportingGitHub(true) }} onBack={() => setGithubSettings(false)} />
+        ) : importingGitHub ? (
+          <GitHubImport onComplete={published} onCancel={() => setImportingGitHub(false)} />
+        ) : forkingPeer ? (
+          <ForkPeer repositories={repositories} onComplete={published} onCancel={() => setForkingPeer(false)} />
+        ) : publishingDesk ? (
           <PublishDesk repositories={repositories} onComplete={published} onCancel={() => setPublishingDesk(false)} />
         ) : creating ? (
           <CreateRepository onCreate={create} onCancel={() => setCreating(false)} />
@@ -96,9 +111,8 @@ export default function App() {
           <RepositoryView repo={repo} onRefresh={refresh} />
         ) : (
           <main className="content welcome">
-            <div className="welcome-mark">git</div>
-            <h1>{loading ? 'Opening your forge…' : 'Your code, on your ship.'}</h1>
-            {!loading && <><p>Create a repository, push with stock Git, or bind it to a Clay desk.</p><button className="button primary" onClick={() => setCreating(true)}>New repository</button></>}
+            <h1>{loading ? 'Loading repositories…' : 'Repositories'}</h1>
+            {!loading && <><p>No repositories.</p><button className="button primary" onClick={() => setCreating(true)}>New repository</button></>}
           </main>
         )}
       </div>

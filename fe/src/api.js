@@ -5,6 +5,8 @@ const fileRoute = (name, path) => {
   return `/repository/${encodeURIComponent(name)}/file/${parts.join('/')}`
 }
 
+const atRef = (path, ref) => ref ? `${path}?ref=${encodeURIComponent(ref)}` : path
+
 async function request(path, options = {}) {
   const response = await fetch(`${BASE}${path}`, {
     credentials: 'same-origin',
@@ -25,9 +27,26 @@ async function request(path, options = {}) {
 export const api = {
   repositories: () => request('/repositories'),
   desks: () => request('/desks'),
+  peerTransfers: () => request('/peer/transfers'),
+  peerFork: (ship, repository, name, publicRead) =>
+    request('/peer/fork', { method: 'POST', body: JSON.stringify({ ship, repository, name, publicRead }) }),
+  peerPush: (name) => request('/peer/push', { method: 'POST', body: JSON.stringify({ name }) }),
+  peerPullRequest: (name, title) => request('/peer/pull-request', { method: 'POST', body: JSON.stringify({ name, title }) }),
+  githubStatus: () => request('/github/status'),
+  setGithubToken: (token) => request('/github/token', { method: 'POST', body: JSON.stringify({ token }) }),
+  clearGithubToken: () => request('/github/token', { method: 'DELETE' }),
+  githubImport: (owner, repository, name, publicRead) =>
+    request('/github/import', { method: 'POST', body: JSON.stringify({ owner, repository, name, publicRead }) }),
+  githubMetadata: (name, kind) => request(`/repository/${encodeURIComponent(name)}/github/metadata`, { method: 'POST', body: JSON.stringify({ kind }) }),
+  githubFork: (name) => request(`/repository/${encodeURIComponent(name)}/github/fork`, { method: 'POST', body: '{}' }),
+  githubPull: (name, title, head, base, body) =>
+    request(`/repository/${encodeURIComponent(name)}/github/pull`, {
+      method: 'POST', body: JSON.stringify({ title, head, base, body }),
+    }),
   repository: (name) => request(`/repository/${encodeURIComponent(name)}`),
-  files: (name) => request(`/repository/${encodeURIComponent(name)}/files`),
-  file: (name, path) => request(fileRoute(name, path)),
+  files: (name, ref) => request(atRef(`/repository/${encodeURIComponent(name)}/files`, ref)),
+  file: (name, path, ref) => request(atRef(fileRoute(name, path), ref)),
+  fileHistory: (name, path, ref) => request(atRef(fileRoute(name, path).replace('/file/', '/file-history/'), ref)),
   saveFile: (name, path, content, message) =>
     request(fileRoute(name, path), {
       method: 'POST',
@@ -42,6 +61,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ publicRead }),
     }),
+  setWriter: (name, ship, allowed) =>
+    request(`/repository/${encodeURIComponent(name)}/writers`, {
+      method: 'POST',
+      body: JSON.stringify({ ship, allowed }),
+    }),
+  mergePull: (name, number) => request(`/repository/${encodeURIComponent(name)}/pulls/${number}/merge`, { method: 'POST', body: '{}' }),
   setToken: (name, token) =>
     request(`/repository/${encodeURIComponent(name)}/token`, {
       method: 'POST',

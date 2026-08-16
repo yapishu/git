@@ -23,12 +23,21 @@
       data=octs
       final=?
   ==
++$  offer
+  $:  transfer=@uv
+      repository=@t
+      source-repository=@t
+      pull-request=?
+      title=@t
+  ==
 +$  packet
   $%  [%request request=request]
       [%begin begin=begin]
       [%chunk chunk=chunk]
+      [%offer offer=offer]
       [%ack transfer=@uv]
       [%done transfer=@uv]
+      [%result transfer=@uv ok=? message=@t]
       [%error transfer=@uv message=@t]
   ==
 --

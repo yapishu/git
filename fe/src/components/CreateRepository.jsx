@@ -18,8 +18,7 @@ export default function CreateRepository({ onCreate, onCancel }) {
   return (
     <main className="content centered">
       <form className="panel create-panel" onSubmit={submit}>
-        <div className="eyebrow">New repository</div>
-        <h1>Create a place for your code.</h1>
+        <h1>New repository</h1>
         <label>
           <span>Name</span>
           <input autoFocus required pattern="[A-Za-z0-9._-]+" maxLength="100" value={name} onChange={(e) => setName(e.target.value)} placeholder="my-project" />

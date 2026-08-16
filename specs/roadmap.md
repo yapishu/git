@@ -30,9 +30,20 @@
 - typeless Clay page reads for publishing minimal desks without requiring every mark core to build first
 - binding and publication guards that reject nonexistent desks
 - JSON read models for repository metadata, refs, first-parent history, and head-tree file listings
-- authenticated forge API for repository lifecycle, access policy, write tokens, Clay bindings, and publication
-- componentized React forge with repository navigation, clone URLs, file trees, commit history, and settings
+- authenticated web API for repository lifecycle, access policy, write tokens, Clay bindings, and publication
+- componentized React interface with repository navigation, clone URLs, file trees, commit history, and settings
+- branch-aware file browsing, text and image blob views, authenticated text editing, and per-file history
+- mounted-desk discovery and first-class desk-to-repository publication
+- bounded Ames object replication with per-object OID verification and incremental have negotiation
+- public native forks, explicit refresh, and origin metadata
+- ship writer ACLs with fast-forward-only push-back from native forks
+- native pull requests whose object graphs are stored at the origin without advancing a branch
+- pull-request merges and authorized native updates gated by Clay when the destination branch is desk-bound
 - reload-safe, cache-invalidating static fileserver at `/apps/git` and a separately rebound API at `/apps/git/api`
+- direct GitHub Smart HTTP import and update with authentic refs, canonical OIDs, delta-pack decoding, reachable-graph validation, and 64 MiB/25,000-object bounds
+- optional server-side GitHub token for private repositories and authenticated REST operations
+- bounded GitHub issue and pull-request synchronization plus GitHub fork and pull-request creation
+- repository navigation and filtering: repository search, code, issues, pull requests, branches, commits, file editing/history, and settings
 - conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, Clay snapshots, and object-store request signing
 
 ## Next
@@ -41,10 +52,10 @@
 2. Subtract the client's known reachable closure during upload-pack negotiation and add ACK negotiation.
 3. Add protected-branch and fast-forward policy controls on top of compare-and-swap ref updates.
 4. Add peeled tag advertisements, shallow fetches, filters, and protocol v2.
-5. Add Ames discovery, ACL exchange, notifications, and repository replication.
-6. Add explicit resync controls, richer commit metadata, and conflict visibility for bound desks.
-7. Expand the forge with branch/tag browsing, blob views, commit detail, and textual diffs.
-8. Add activity notifications and explicit Clay resync/conflict controls.
+5. Move native repository graph transfer from the application chunk wire to Fine for ordered, resumable streaming and backpressure.
+6. Add native fork discovery and activity notifications.
+7. Add tags, commit detail, textual diffs, review comments, and non-fast-forward pull-request merging.
+8. Add richer commit metadata, explicit Clay resync/conflict controls, and paginated GitHub metadata.
 
 ## Storage direction
 

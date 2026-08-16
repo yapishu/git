@@ -1,7 +1,7 @@
 ::  Native Git object database and Smart HTTP endpoint.
 ::
 /-  git, git-peer
-/+  dbug, default-agent, git-clay, git-codec, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, server
+/+  dbug, default-agent, git-clay, git-codec, git-github, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, server
 |%
 +$  card  card:agent:gall
 +$  lfs-spec  [oid=@t size=@ud]
@@ -9,6 +9,7 @@
 +$  clay-push
   $:  eyre-id=@ta
       api-response=?
+      peer-response=(unit [ship=ship transfer=@uv])
       repository=@t
       commands=(list receive-command:git)
       applied=repository:git
@@ -41,9 +42,11 @@
       data=octs
   ==
 +$  peer-receive
-  $:  source=ship
+  $:  purpose=?(%fork %push %pull)
+      source=ship
       source-repository=@t
       local-repository=@t
+      title=@t
       public-read=?
       head=@t
       refs=(map @t oid:git)
@@ -53,6 +56,24 @@
       current=(unit peer-part)
   ==
 +$  peer-result  [status=? message=@t repository=@t]
++$  github-kind  ?(%import %update %issues %pulls %fork %open-pull)
++$  github-request
+  $:  job=@uv
+      kind=github-kind
+      repository=@t
+      owner=@t
+      remote=@t
+      public-read=?
+      head=@t
+      refs=(map @t oid:git)
+  ==
++$  github-result
+  $:  active=?
+      ok=?
+      kind=github-kind
+      repository=@t
+      message=@t
+  ==
 ::
 ++  update-binding-success
   |=  [repo=repository:git new-oid=oid:git riot=riot:clay]
@@ -181,6 +202,31 @@
     |=  [ref=@t oid=oid:git]
     %-  pairs:enjs:format
     ~[['name' s+ref] ['oid' s+(oid-text:git-codec oid)]]
+  =/  writers-json=(list json)
+    (turn ~(tap in writers.repo) |=(writer=@p s+(scot %p writer)))
+  =/  pulls-json=(list json)
+    %+  turn  native-pulls.repo
+    |=  pull=native-pull:git
+    %-  pairs:enjs:format
+    :~  ['number' n+(decimal number.pull)]
+        ['sourceShip' s+(scot %p source-ship.pull)]
+        ['sourceRepository' s+source-repository.pull]
+        ['title' s+title.pull]
+        ['state' s+state.pull]
+        ['head' s+(oid-text:git-codec head.pull)]
+        ['base' s+(oid-text:git-codec base.pull)]
+    ==
+  =/  github-item-json
+    |=  item=forge-item:git
+    ^-  json
+    %-  pairs:enjs:format
+    :~  ['number' n+(decimal number.item)]
+        ['title' s+title.item]
+        ['state' s+state.item]
+        ['url' s+url.item]
+        ['author' s+author.item]
+        ['draft' b+draft.item]
+    ==
   %-  pairs:enjs:format
   :~  ['name' s+name]
       ['owner' s+(scot %p owner.repo)]
@@ -190,6 +236,10 @@
       ['objectCount' n+(decimal (lent ~(tap by objects.repo)))]
       ['lfsObjectCount' n+(decimal (lent ~(tap by lfs-objects.repo)))]
       ['writeTokenSet' b+?=(^ write-token-hash.repo)]
+      ['writers' [%a writers-json]]
+      ['pullRequests' [%a pulls-json]]
+      ['githubIssues' [%a (turn github-issues.repo github-item-json)]]
+      ['githubPulls' [%a (turn github-pulls.repo github-item-json)]]
       ['binding' (binding-json binding.repo)]
       ['peerOrigin' ?~(peer-origin.repo ~ (pairs:enjs:format ~[['ship' s+(scot %p ship.u.peer-origin.repo)] ['repository' s+repository.u.peer-origin.repo]]))]
       ['githubOrigin' ?~(github-origin.repo ~ (pairs:enjs:format ~[['owner' s+owner.u.github-origin.repo] ['repository' s+repository.u.github-origin.repo]]))]
@@ -206,10 +256,10 @@
       (repository-json name repo)
   ==
 ::
-++  repository-files-json
-  |=  [name=@t repo=repository:git]
+++  repository-files-at-json
+  |=  [name=@t repo=repository:git ref=@t]
   ^-  json
-  =/  commit=(unit oid:git)  (~(get by refs.repo) head.repo)
+  =/  commit=(unit oid:git)  (~(get by refs.repo) ref)
   =/  files=(unit (map path octs))
     ?~  commit  `*(map path octs)
     (flatten-commit:git-clay objects.repo u.commit)
@@ -221,32 +271,77 @@
     ~[['path' s+(spat file-path)] ['size' n+(decimal p.data)]]
   %-  pairs:enjs:format
   :~  ['repository' s+name]
-      ['head' s+head.repo]
+      ['head' s+ref]
       ['commit' s+?~(commit '' (oid-text:git-codec u.commit))]
       ['files' [%a file-json]]
   ==
 ::
-++  repository-file
-  |=  [repo=repository:git file-path=path]
+++  repository-files-json
+  |=  [name=@t repo=repository:git]
+  (repository-files-at-json name repo head.repo)
+::
+++  file-at-commit
+  |=  [repo=repository:git commit=oid:git file-path=path]
   ^-  (unit octs)
-  =/  commit=(unit oid:git)  (~(get by refs.repo) head.repo)
-  ?~  commit  ~
   =/  files=(unit (map path octs))
-    (flatten-commit:git-clay objects.repo u.commit)
+    (flatten-commit:git-clay objects.repo commit)
   ?~  files  ~
   (~(get by u.files) file-path)
 ::
+++  repository-file-at
+  |=  [repo=repository:git ref=@t file-path=path]
+  ^-  (unit octs)
+  =/  commit=(unit oid:git)  (~(get by refs.repo) ref)
+  ?~  commit  ~
+  (file-at-commit repo u.commit file-path)
+::
+++  repository-file
+  |=  [repo=repository:git file-path=path]
+  (repository-file-at repo head.repo file-path)
+::
 ++  repository-file-json
-  |=  [name=@t repo=repository:git file-path=path data=octs]
+  |=  [name=@t repo=repository:git ref=@t file-path=path data=octs]
   ^-  json
   %-  pairs:enjs:format
   :~  ['repository' s+name]
-      ['head' s+head.repo]
+      ['head' s+ref]
       ['path' s+(spat file-path)]
       ['size' n+(decimal p.data)]
       ['encoding' s+'base64']
       ['content' s+(en:base64:mimes:html data)]
   ==
+::
+++  repository-file-history-json
+  |=  [name=@t repo=repository:git ref=@t file-path=path]
+  ^-  json
+  =/  current=(unit oid:git)  (~(get by refs.repo) ref)
+  =/  entries=(list json)  ~
+  =/  count=@ud  0
+  |-
+  ?:  |(?=(~ current) (gte count 100))
+    %-  pairs:enjs:format
+    ~[['repository' s+name] ['head' s+ref] ['path' s+(spat file-path)] ['commits' [%a (flop entries)]]]
+  =/  found=(unit object:git)  (~(get by objects.repo) u.current)
+  ?.  ?&(?=(^ found) =(%commit kind.u.found))
+    %-  pairs:enjs:format
+    ~[['repository' s+name] ['head' s+ref] ['path' s+(spat file-path)] ['commits' [%a (flop entries)]]]
+  =/  parent=(unit oid:git)  (commit-parent data.u.found)
+  =/  here=(unit octs)  (file-at-commit repo u.current file-path)
+  =/  before=(unit octs)
+    ?~  parent  ~
+    (file-at-commit repo u.parent file-path)
+  =/  next-entries=(list json)
+    ?:  =(here before)  entries
+    =/  entry=json
+      %-  pairs:enjs:format
+      :~  ['oid' s+(oid-text:git-codec u.current)]
+          ['parent' s+?~(parent '' (oid-text:git-codec u.parent))]
+          ['subject' s+(commit-subject data.u.found)]
+          ['present' b+?=(^ here)]
+          ['size' n+(decimal ?~(here 0 p.u.here))]
+      ==
+    [entry entries]
+  $(current parent, entries next-entries, count +(count))
 ::
 ++  double-newline
   |=  [data=octs offset=@ud]
@@ -314,6 +409,8 @@
 =/  peer-serving  *(map @uv peer-serve)
 =/  peer-receiving  *(map @uv peer-receive)
 =/  peer-results  *(map @uv peer-result)
+=/  github-in-flight  *(map @uv github-request)
+=/  github-results  *(map @uv github-result)
 ^-  agent:gall
 |_  =bowl:gall
 +*  this  .
@@ -333,7 +430,7 @@
   |=  old=vase
   ^-  (quip card _this)
   =/  loaded=state-0:git  !<(state-0:git old)
-  :_  this(state loaded, in-flight ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~)
+  :_  this(state loaded, in-flight ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, github-in-flight ~, github-results ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %git]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/git/api] %git]
   ==
@@ -403,124 +500,283 @@
   |=  entry=[@t oid:git]
   (~(has by objects) +.entry)
 ::
+++  peer-finish
+  |=  transfer=@uv
+  ^-  (quip card _this)
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer)
+  ?~  found  `this
+  =/  flight=peer-receive  u.found
+  ?.  =(src.bowl source.flight)  `this
+  ?.  ?&  =(expected.flight received.flight)
+          ?=(~ current.flight)
+          (peer-valid-refs refs.flight objects.flight)
+          (~(has by refs.flight) head.flight)
+      ==
+    =.  peer-receiving  (~(del by peer-receiving) transfer)
+    =.  peer-results  (~(put by peer-results) transfer [%.n 'received repository graph is incomplete' local-repository.flight])
+    `this
+  =/  existing=(unit repository:git)  (~(get by repositories) local-repository.flight)
+  ?:  =(%pull purpose.flight)
+    ?~  existing
+      (peer-push-finish flight transfer %.n 'destination repository disappeared')
+    =/  incoming=(unit oid:git)  (~(get by refs.flight) head.flight)
+    =/  base=(unit oid:git)  (~(get by refs.u.existing) head.u.existing)
+    ?~  incoming
+      (peer-push-finish flight transfer %.n 'pull request requires source and destination branch heads')
+    ?~  base
+      (peer-push-finish flight transfer %.n 'pull request requires source and destination branch heads')
+    ?>  ?=(^ incoming)
+    ?>  ?=(^ base)
+    =/  incoming-oid=oid:git  u.incoming
+    =/  base-oid=oid:git  u.base
+    =/  number=@ud  (add 1 (lent native-pulls.u.existing))
+    =/  pull=native-pull:git
+      [number source.flight source-repository.flight title.flight %open incoming-oid base-oid]
+    =/  updated=repository:git
+      u.existing(objects objects.flight, native-pulls [pull native-pulls.u.existing])
+    =.  repositories  (~(put by repositories) local-repository.flight updated)
+    (peer-push-finish flight transfer %.y (rap 3 ~['pull request #' (decimal number) ' opened']))
+  ?:  =(%push purpose.flight)
+    ?~  existing
+      (peer-push-finish flight transfer %.n 'destination repository disappeared')
+    ?.  =(head.flight head.u.existing)
+      (peer-push-finish flight transfer %.n 'default branch does not match destination')
+    =/  incoming=(unit oid:git)  (~(get by refs.flight) head.flight)
+    ?~  incoming
+      (peer-push-finish flight transfer %.n 'source default branch is missing')
+    =/  previous=(unit oid:git)  (~(get by refs.u.existing) head.u.existing)
+    =/  reachable=(unit (set oid:git))
+      (reachable:git-graph objects.flight (silt ~[u.incoming]))
+    =/  fast-forward=?
+      ?~  previous  %.y
+      ?~  reachable  %.n
+      (~(has in u.reachable) u.previous)
+    ?.  fast-forward
+      (peer-push-finish flight transfer %.n 'update is not a fast-forward')
+    =/  updated=repository:git
+      u.existing(objects objects.flight, refs (~(put by refs.u.existing) head.u.existing u.incoming))
+    ?^  binding.updated
+      ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+        (peer-push-finish flight transfer %.n 'another Clay operation is in progress')
+      =/  files=(unit (map path octs))
+        (flatten-commit:git-clay objects.updated u.incoming)
+      ?~  files
+        (peer-push-finish flight transfer %.n 'linked branch must resolve to a valid desk-shaped Git commit')
+      =/  delta=(unit nori:clay)
+        (clay-delta desk-name.u.binding.updated u.files)
+      ?~  delta
+        (peer-push-finish flight transfer %.n 'unable to read linked Clay desk')
+      ?>  ?=(%& -.u.delta)
+      ?:  =(~ p.u.delta)
+        =.  repositories  (~(put by repositories) local-repository.flight updated)
+        (peer-push-finish flight transfer %.y 'fast-forward update accepted')
+      =/  start-at=@da  (add now.bowl ~s1)
+      =/  timeout-at=@da  (add now.bowl ~s15)
+      =/  pending=clay-push
+        :*  'peer'
+            %.n
+            `[[source.flight transfer]]
+            local-repository.flight
+            ~
+            updated
+            desk-name.u.binding.updated
+            branch.u.binding.updated
+            u.incoming
+            u.delta
+            ~
+            start-at
+            timeout-at
+        ==
+      =.  peer-receiving  (~(del by peer-receiving) transfer)
+      =.  pending-clay  `pending
+      :_  this
+      :~  [%pass /clay-start %arvo %b %wait start-at]
+          [%pass /clay-timeout %arvo %b %wait timeout-at]
+      ==
+    =.  repositories  (~(put by repositories) local-repository.flight updated)
+    (peer-push-finish flight transfer %.y 'fast-forward update accepted')
+  =/  repo=repository:git
+    ?~  existing
+      :*  our.bowl
+          public-read.flight
+          head.flight
+          refs.flight
+          objects.flight
+          (silt ~[our.bowl])
+          ~
+          ~
+          ~
+          ~
+          `[[source.flight source-repository.flight]]
+          ~
+          ~
+          ~
+          ~
+      ==
+    u.existing(head head.flight, refs refs.flight, objects objects.flight, peer-origin `[[source.flight source-repository.flight]])
+  =.  repositories  (~(put by repositories) local-repository.flight repo)
+  =.  peer-receiving  (~(del by peer-receiving) transfer)
+  =.  peer-results  (~(put by peer-results) transfer [%.y 'complete' local-repository.flight])
+  `this
+::
+++  peer-push-finish
+  |=  [flight=peer-receive transfer=@uv ok=? message=@t]
+  ^-  (quip card _this)
+  =.  peer-receiving  (~(del by peer-receiving) transfer)
+  :_  this
+  :~  (peer-card source.flight /peer/result/(scot %uv transfer) [%result transfer ok message])
+  ==
+::
+++  peer-error
+  |=  [transfer=@uv message=@t]
+  ^-  (quip card _this)
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer)
+  ?~  found  `this
+  ?.  =(src.bowl source.u.found)  `this
+  =.  peer-receiving  (~(del by peer-receiving) transfer)
+  =.  peer-results  (~(put by peer-results) transfer [%.n message local-repository.u.found])
+  `this
+::
 ++  handle-peer
   |=  packet=packet:git-peer
   ^-  (quip card _this)
   ?-  -.packet
       %request
-    =/  req=request:git-peer  request.packet
-    =/  found=(unit repository:git)  (~(get by repositories) repository.req)
-    ?~  found  (peer-fail src.bowl transfer.req 'repository not found')
-    ?.  public-read.u.found  (peer-fail src.bowl transfer.req 'repository is not public')
-    ?:  (~(has by peer-serving) transfer.req)
-      (peer-fail src.bowl transfer.req 'transfer identifier is already active')
-    =/  objects=(list [oid:git object:git])
-      %+  murn  ~(tap by objects.u.found)
-      |=  entry=[oid:git object:git]
-      ?:  (~(has in haves.req) -.entry)  ~
-      `entry
-    =/  flight=peer-serve  [src.bowl transfer.req objects 0]
-    =.  peer-serving  (~(put by peer-serving) transfer.req flight)
-    :_  this
-    :~  %+  peer-card  src.bowl  /peer/begin/(scot %uv transfer.req)
-        [%begin transfer.req repository.req head.u.found refs.u.found (lent objects)]
-    ==
+    (peer-request request.packet)
   ::
       %begin
-    =/  msg=begin:git-peer  begin.packet
-    =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
-    ?~  found  `this
-    ?.  ?&  =(src.bowl source.u.found)
-            =(repository.msg source-repository.u.found)
-        ==
-      `this
-    =/  next=peer-receive
-      u.found(head head.msg, refs refs.msg, expected objects.msg)
-    =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
-    :_  this
-    :~  (peer-card src.bowl /peer/ack/(scot %uv transfer.msg) [%ack transfer.msg])
-    ==
+    (peer-begin begin.packet)
   ::
       %chunk
-    =/  msg=chunk:git-peer  chunk.packet
-    =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
-    ?~  found  `this
-    ?.  =(src.bowl source.u.found)  `this
-    =/  flight=peer-receive  u.found
-    =/  part=peer-part
-      ?~  current.flight
-        ?:  !=(0 offset.msg)
-          [oid.msg kind.msg size.msg [0 0]]
-        [oid.msg kind.msg size.msg [0 0]]
-      u.current.flight
-    ?.  ?&  =(oid.part oid.msg)
-            =(kind.part kind.msg)
-            =(size.part size.msg)
-            =(p.data.part offset.msg)
-            (lte (add p.data.part p.data.msg) size.msg)
-        ==
-      (peer-fail src.bowl transfer.msg 'invalid object chunk')
-    =/  joined=octs  (join:git-codec data.part data.msg)
-    ?:  final.msg
-      ?.  ?&  =(p.joined size.msg)
-              =((object-oid:git-codec kind.msg joined) oid.msg)
-          ==
-        (peer-fail src.bowl transfer.msg 'object failed content-address validation')
-      =.  flight
-        flight(objects (~(put by objects.flight) oid.msg [kind.msg joined]), received +(received.flight), current ~)
-    =.  flight  flight(current `[oid.msg kind.msg size.msg joined])
-    =.  peer-receiving  (~(put by peer-receiving) transfer.msg flight)
-    :_  this
-    :~  (peer-card src.bowl /peer/ack/(scot %uv transfer.msg) [%ack transfer.msg])
-    ==
+    (peer-chunk chunk.packet)
+  ::
+      %offer
+    (peer-offer offer.packet)
   ::
       %ack
     (peer-send-next transfer.packet)
   ::
       %done
-    =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.packet)
-    ?~  found  `this
-    =/  flight=peer-receive  u.found
-    ?.  =(src.bowl source.flight)  `this
-    ?.  ?&  =(expected.flight received.flight)
-            ?=(~ current.flight)
-            (peer-valid-refs refs.flight objects.flight)
-            (~(has by refs.flight) head.flight)
-        ==
-      =.  peer-receiving  (~(del by peer-receiving) transfer.packet)
-      =.  peer-results  (~(put by peer-results) transfer.packet [%.n 'received repository graph is incomplete' local-repository.flight])
-      `this
-    =/  existing=(unit repository:git)  (~(get by repositories) local-repository.flight)
-    =/  repo=repository:git
-      ?~  existing
-        :*  our.bowl
-            public-read.flight
-            head.flight
-            refs.flight
-            objects.flight
-            (silt ~[our.bowl])
-            ~
-            ~
-            ~
-            ~
-            `[[source.flight source-repository.flight]]
-            ~
-            ~
-            ~
-        ==
-      u.existing(head head.flight, refs refs.flight, objects objects.flight, peer-origin `[[source.flight source-repository.flight]])
-    =.  repositories  (~(put by repositories) local-repository.flight repo)
-    =.  peer-receiving  (~(del by peer-receiving) transfer.packet)
-    =.  peer-results  (~(put by peer-results) transfer.packet [%.y 'complete' local-repository.flight])
-    `this
+    (peer-finish transfer.packet)
+  ::
+      %result
+    (peer-result-received transfer.packet ok.packet message.packet)
   ::
       %error
-    =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.packet)
-    ?~  found  `this
-    ?.  =(src.bowl source.u.found)  `this
-    =.  peer-receiving  (~(del by peer-receiving) transfer.packet)
-    =.  peer-results  (~(put by peer-results) transfer.packet [%.n message.packet local-repository.u.found])
+    (peer-error transfer.packet message.packet)
+  ==
+::
+++  peer-offer
+  |=  offer=offer:git-peer
+  ^-  (quip card _this)
+  =/  found=(unit repository:git)  (~(get by repositories) repository.offer)
+  ?~  found  (peer-fail src.bowl transfer.offer 'destination repository not found')
+  ?.  |(pull-request.offer (~(has in writers.u.found) src.bowl))
+    (peer-fail src.bowl transfer.offer 'ship is not authorized to update this repository')
+  ?:  (~(has by peer-receiving) transfer.offer)
+    (peer-fail src.bowl transfer.offer 'transfer identifier is already active')
+  =/  haves=(set oid:git)
+    (silt (turn ~(tap by objects.u.found) |=(entry=[oid:git object:git] -.entry)))
+  =/  flight=peer-receive
+    :*  ?:(pull-request.offer %pull %push)
+        src.bowl
+        source-repository.offer
+        repository.offer
+        title.offer
+        public-read.u.found
+        ''
+        ~
+        0
+        0
+        objects.u.found
+        ~
+    ==
+  =.  peer-receiving  (~(put by peer-receiving) transfer.offer flight)
+  :_  this
+  :~  (peer-card src.bowl /peer/request/(scot %uv transfer.offer) [%request transfer.offer source-repository.offer haves])
+  ==
+::
+++  peer-result-received
+  |=  [transfer=@uv ok=? message=@t]
+  ^-  (quip card _this)
+  =/  found=(unit peer-result)  (~(get by peer-results) transfer)
+  ?~  found  `this
+  =.  peer-results  (~(put by peer-results) transfer [ok message repository.u.found])
+  `this
+::
+++  peer-request
+  |=  req=request:git-peer
+  ^-  (quip card _this)
+  =/  found=(unit repository:git)  (~(get by repositories) repository.req)
+  ?~  found  (peer-fail src.bowl transfer.req 'repository not found')
+  =/  origin-request=?
+    ?~  peer-origin.u.found  %.n
+    =(src.bowl ship.u.peer-origin.u.found)
+  ?.  |(public-read.u.found origin-request)
+    (peer-fail src.bowl transfer.req 'repository is not public')
+  ?:  (~(has by peer-serving) transfer.req)
+    (peer-fail src.bowl transfer.req 'transfer identifier is already active')
+  =/  objects=(list [oid:git object:git])
+    %+  murn  ~(tap by objects.u.found)
+    |=  entry=[oid:git object:git]
+    ?:  (~(has in haves.req) -.entry)  ~
+    `entry
+  =/  flight=peer-serve  [src.bowl transfer.req objects 0]
+  =.  peer-serving  (~(put by peer-serving) transfer.req flight)
+  :_  this
+  :~  (peer-card src.bowl /peer/begin/(scot %uv transfer.req) [%begin transfer.req repository.req head.u.found refs.u.found (lent objects)])
+  ==
+::
+++  peer-begin
+  |=  msg=begin:git-peer
+  ^-  (quip card _this)
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
+  ?~  found  `this
+  ?.  ?&  =(src.bowl source.u.found)
+          =(repository.msg source-repository.u.found)
+      ==
     `this
+  =/  next=peer-receive
+    u.found(head head.msg, refs refs.msg, expected objects.msg)
+  =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
+  :_  this
+  :~  (peer-card src.bowl /peer/ack/(scot %uv transfer.msg) [%ack transfer.msg])
+  ==
+::
+++  peer-chunk
+  |=  msg=chunk:git-peer
+  ^-  (quip card _this)
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
+  ?~  found  `this
+  ?.  =(src.bowl source.u.found)  `this
+  =/  flight=peer-receive  u.found
+  ?.  |(?=(^ current.flight) =(0 offset.msg))
+    (peer-fail src.bowl transfer.msg 'object stream did not begin at offset zero')
+  =/  part=peer-part
+    ?~  current.flight
+      [oid.msg kind.msg size.msg [0 0]]
+    u.current.flight
+  ?.  ?&  =(oid.part oid.msg)
+          =(kind.part kind.msg)
+          =(size.part size.msg)
+          =(p.data.part offset.msg)
+          (lte (add p.data.part p.data.msg) size.msg)
+      ==
+    (peer-fail src.bowl transfer.msg 'invalid object chunk')
+  =/  joined=octs  (join:git-codec data.part data.msg)
+  ?:  ?&  final.msg
+          ?|  !=(p.joined size.msg)
+              !=((object-oid:git-codec kind.msg joined) oid.msg)
+          ==
+      ==
+    (peer-fail src.bowl transfer.msg 'object failed content-address validation')
+  =.  flight
+    ?:  final.msg
+      flight(objects (~(put by objects.flight) oid.msg [kind.msg joined]), received +(received.flight), current ~)
+    flight(current `[oid.msg kind.msg size.msg joined])
+  =.  peer-receiving  (~(put by peer-receiving) transfer.msg flight)
+  :_  this
+  :~  (peer-card src.bowl /peer/ack/(scot %uv transfer.msg) [%ack transfer.msg])
   ==
 ::
 ++  handle-action
@@ -537,6 +793,7 @@
           ~
           ~
           (silt ~[our.bowl])
+          ~
           ~
           ~
           ~
@@ -830,6 +1087,56 @@
   =/  [cards=(list card) next=_this]  (handle-action act)
   [(weld cards (api-ok eyre-id status)) next]
 ::
+++  peer-results-json
+  ^-  json
+  =/  entries=(list json)
+    %+  turn  ~(tap by peer-results)
+    |=  entry=[@uv peer-result]
+    =/  transfer=@uv  -.entry
+    =/  result=peer-result  +.entry
+    %-  pairs:enjs:format
+    :~  ['transfer' s+(scot %uv transfer)]
+        ['active' b+(~(has by peer-receiving) transfer)]
+        ['ok' b+status.result]
+        ['message' s+message.result]
+        ['repository' s+repository.result]
+    ==
+  (pairs:enjs:format ~[['transfers' [%a entries]]])
+::
+++  github-results-json
+  ^-  json
+  =/  entries=(list json)
+    %+  turn  ~(tap by github-results)
+    |=  entry=[@uv github-result]
+    =/  job=@uv  -.entry
+    =/  result=github-result  +.entry
+    %-  pairs:enjs:format
+    :~  ['job' s+(scot %uv job)]
+        ['active' b+active.result]
+        ['ok' b+ok.result]
+        ['kind' s+kind.result]
+        ['repository' s+repository.result]
+        ['message' s+message.result]
+    ==
+  %-  pairs:enjs:format
+  :~  ['tokenSet' b+?=(^ github-token)]
+      ['jobs' [%a entries]]
+  ==
+::
+++  github-start
+  |=  [ctx=github-request request=request:http]
+  ^-  (quip card _this)
+  =/  request-id=@uv
+    `@uv`(shas %git-github-request (cat 3 eny.bowl request-count))
+  =.  request-count  +(request-count)
+  =.  ctx  ctx(job request-id)
+  =.  github-in-flight  (~(put by github-in-flight) request-id ctx)
+  =.  github-results
+    (~(put by github-results) request-id [%.y %.n kind.ctx repository.ctx 'contacting GitHub'])
+  :_  this
+  :~  [%pass /github/(scot %uv request-id) %arvo %i %request request *outbound-config:iris]
+  ==
+::
 ++  handle-api
   |=  [eyre-id=@ta req=inbound-request:eyre line=request-line:server]
   ^-  (quip card _this)
@@ -838,6 +1145,306 @@
     (api-error eyre-id 401 'Urbit login required')
   =/  site=(list @t)  site.line
   =/  method=@tas  method.request.req
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %github %status ~] site)
+      ==
+    :_  this
+    (api-json eyre-id 200 github-results-json)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %github %token ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  token=(unit @t)  (string-at 'token' u.jon)
+    ?.  ?&(?=(^ token) !=('' u.token))
+      :_  this
+      (api-error eyre-id 422 'non-empty token is required')
+    =.  github-token  `u.token
+    :_  this
+    (api-ok eyre-id 200)
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %git %api %github %token ~] site)
+      ==
+    =.  github-token  ~
+    :_  this
+    (api-ok eyre-id 200)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %github %import ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  owner=(unit @t)  (string-at 'owner' u.jon)
+    =/  remote=(unit @t)  (string-at 'repository' u.jon)
+    =/  local=(unit @t)  (string-at 'name' u.jon)
+    =/  public=(unit ?)  (bool-at 'publicRead' u.jon)
+    ?.  ?&  ?=(^ owner)  ?=(^ remote)  ?=(^ local)  ?=(^ public)
+            (valid-repository-name u.owner)
+            (valid-repository-name u.remote)
+            (valid-repository-name u.local)
+        ==
+      :_  this
+      (api-error eyre-id 422 'owner, repository, name, and publicRead are required')
+    =/  existing=(unit repository:git)  (~(get by repositories) u.local)
+    =/  conflict=(unit @t)
+      ?~  existing  ~
+      ?~  github-origin.u.existing
+        `'local repository already exists and is not linked to GitHub'
+      ?.  ?&  =(u.owner owner.u.github-origin.u.existing)
+              =(u.remote repository.u.github-origin.u.existing)
+              ?=(~ binding.u.existing)
+          ==
+        `'GitHub origin does not match or repository is bound to Clay'
+      ~
+    ?^  conflict
+      :_  this
+      (api-error eyre-id 409 u.conflict)
+    =/  kind=github-kind  ?^(existing %update %import)
+    =/  ctx=github-request  [0v0 kind u.local u.owner u.remote u.public '' ~]
+    =/  request=request:http
+      :*  %'GET'
+          (git-url:git-github u.owner u.remote '/info/refs?service=git-upload-pack')
+          (git-headers:git-github github-token ~)
+          ~
+      ==
+    =/  [cards=(list card) next=_this]  (github-start ctx request)
+    :_  next
+    (weld cards (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['message' s+'GitHub import started']])))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %github %metadata ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  github-origin.u.found
+      :_  this
+      (api-error eyre-id 409 'repository has no GitHub origin')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  requested=(unit @t)  (string-at 'kind' u.jon)
+    ?.  ?&  ?=(^ requested)
+            ?|  =('issues' u.requested)
+                =('pulls' u.requested)
+            ==
+        ==
+      :_  this
+      (api-error eyre-id 422 'kind must be issues or pulls')
+    =/  owner=@t  owner.u.github-origin.u.found
+    =/  remote=@t  repository.u.github-origin.u.found
+    =/  kind=github-kind  ?:(=('issues' u.requested) %issues %pulls)
+    =/  ctx=github-request  [0v0 kind name owner remote public-read.u.found '' ~]
+    =/  suffix=@t
+      ?:(=(%issues kind) '/issues?state=all&per_page=100' '/pulls?state=all&per_page=100')
+    =/  request=request:http
+      [%'GET' (api-url:git-github owner remote suffix) (api-headers:git-github github-token) ~]
+    =/  result  (github-start ctx request)
+    :_  +.result
+    (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %github %fork ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  github-origin.u.found
+      :_  this
+      (api-error eyre-id 409 'repository has no GitHub origin')
+    ?~  github-token
+      :_  this
+      (api-error eyre-id 409 'connect a GitHub token first')
+    =/  owner=@t  owner.u.github-origin.u.found
+    =/  remote=@t  repository.u.github-origin.u.found
+    =/  ctx=github-request  [0v0 %fork name owner remote public-read.u.found '' ~]
+    =/  headers=(list [@t @t])
+      [['content-type' 'application/json'] (api-headers:git-github github-token)]
+    =/  request=request:http
+      [%'POST' (api-url:git-github owner remote '/forks') headers `(as-octs:mimes:html '{}')]
+    =/  result  (github-start ctx request)
+    :_  +.result
+    (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %github %pull ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  github-origin.u.found
+      :_  this
+      (api-error eyre-id 409 'repository has no GitHub origin')
+    ?~  github-token
+      :_  this
+      (api-error eyre-id 409 'connect a GitHub token first')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  title=(unit @t)  (string-at 'title' u.jon)
+    =/  head=(unit @t)  (string-at 'head' u.jon)
+    =/  base=(unit @t)  (string-at 'base' u.jon)
+    =/  description=(unit @t)  (string-at 'body' u.jon)
+    ?.  ?&  ?=(^ title)  ?=(^ head)  ?=(^ base)
+            !=('' u.title)  !=('' u.head)  !=('' u.base)
+        ==
+      :_  this
+      (api-error eyre-id 422 'title, head, and base are required')
+    =/  payload=json
+      %-  pairs:enjs:format
+      :~  ['title' s+u.title]
+          ['head' s+u.head]
+          ['base' s+u.base]
+          ['body' s+?~(description '' u.description)]
+      ==
+    =/  owner=@t  owner.u.github-origin.u.found
+    =/  remote=@t  repository.u.github-origin.u.found
+    =/  ctx=github-request  [0v0 %open-pull name owner remote public-read.u.found '' ~]
+    =/  headers=(list [@t @t])
+      [['content-type' 'application/json'] (api-headers:git-github github-token)]
+    =/  request=request:http
+      :*  %'POST'
+          (api-url:git-github owner remote '/pulls')
+          headers
+          `(as-octs:mimes:html (en:json:html payload))
+      ==
+    =/  result  (github-start ctx request)
+    :_  +.result
+    (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %peer %transfers ~] site)
+      ==
+    :_  this
+    (api-json eyre-id 200 peer-results-json)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %peer %fork ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    =/  source-repository=(unit @t)  (string-at 'repository' u.jon)
+    =/  local-repository=(unit @t)  (string-at 'name' u.jon)
+    =/  public=(unit ?)  (bool-at 'publicRead' u.jon)
+    ?.  ?&  ?=(^ ship-text)
+            ?=(^ source-repository)
+            ?=(^ local-repository)
+            ?=(^ public)
+            (valid-repository-name u.source-repository)
+            (valid-repository-name u.local-repository)
+        ==
+      :_  this
+      (api-error eyre-id 422 'ship, repository, name, and publicRead are required')
+    =/  source=(unit @p)  (slaw %p u.ship-text)
+    ?~  source
+      :_  this
+      (api-error eyre-id 422 'ship must be a valid Urbit ID')
+    =/  existing=(unit repository:git)  (~(get by repositories) u.local-repository)
+    =/  conflict=(unit @t)
+      ?~  existing  ~
+      ?~  peer-origin.u.existing
+        `'repository already exists and is not a peer fork'
+      ?.  ?&  =(u.source ship.u.peer-origin.u.existing)
+              =(u.source-repository repository.u.peer-origin.u.existing)
+              ?=(~ binding.u.existing)
+          ==
+        `'peer origin does not match or repository is bound to Clay'
+      ~
+    ?^  conflict
+      :_  this
+      (api-error eyre-id 409 u.conflict)
+    =/  transfer=@uv
+      `@uv`(shas %git-peer-transfer (cat 3 eny.bowl request-count))
+    =.  request-count  +(request-count)
+    =/  base-objects=(map oid:git object:git)
+      ?~(existing ~ objects.u.existing)
+    =/  haves=(set oid:git)
+      (silt (turn ~(tap by base-objects) |=(entry=[oid:git object:git] -.entry)))
+    =/  flight=peer-receive
+      :*  %fork
+          u.source
+          u.source-repository
+          u.local-repository
+          ''
+          ?^(existing public-read.u.existing u.public)
+          ''
+          ~
+          0
+          0
+          base-objects
+          ~
+      ==
+    =.  peer-receiving  (~(put by peer-receiving) transfer flight)
+    =.  peer-results  (~(put by peer-results) transfer [%.n 'transferring' u.local-repository])
+    :_  this
+    %+  weld
+      :~  (peer-card u.source /peer/request/(scot %uv transfer) [%request transfer u.source-repository haves])
+      ==
+    (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['transfer' s+(scot %uv transfer)]]))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %peer %push ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  name=(unit @t)  (string-at 'name' u.jon)
+    ?~  name
+      :_  this
+      (api-error eyre-id 422 'name is required')
+    =/  found=(unit repository:git)  (~(get by repositories) u.name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  peer-origin.u.found
+      :_  this
+      (api-error eyre-id 409 'repository is not a native fork')
+    =/  transfer=@uv
+      `@uv`(shas %git-peer-push (cat 3 eny.bowl request-count))
+    =.  request-count  +(request-count)
+    =.  peer-results  (~(put by peer-results) transfer [%.n 'offering update' u.name])
+    :_  this
+    %+  weld
+      :~  (peer-card ship.u.peer-origin.u.found /peer/offer/(scot %uv transfer) [%offer transfer repository.u.peer-origin.u.found u.name %.n ''])
+      ==
+    (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['transfer' s+(scot %uv transfer)]]))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %peer %pull-request ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  name=(unit @t)  (string-at 'name' u.jon)
+    =/  title=(unit @t)  (string-at 'title' u.jon)
+    ?.  ?&(?=(^ name) ?=(^ title) !=('' u.title))
+      :_  this
+      (api-error eyre-id 422 'name and title are required')
+    =/  found=(unit repository:git)  (~(get by repositories) u.name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  peer-origin.u.found
+      :_  this
+      (api-error eyre-id 409 'repository is not a native fork')
+    =/  transfer=@uv
+      `@uv`(shas %git-peer-pull (cat 3 eny.bowl request-count))
+    =.  request-count  +(request-count)
+    =.  peer-results  (~(put by peer-results) transfer [%.n 'opening pull request' u.name])
+    :_  this
+    %+  weld
+      :~  (peer-card ship.u.peer-origin.u.found /peer/offer/(scot %uv transfer) [%offer transfer repository.u.peer-origin.u.found u.name %.y u.title])
+      ==
+    (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['transfer' s+(scot %uv transfer)]]))
   ?:  ?&  =(%'GET' method)
           ?=([%apps %git %api %repositories ~] site)
       ==
@@ -875,8 +1482,13 @@
     ?~  found
       :_  this
       (api-error eyre-id 404 'repository not found')
+    =/  requested=(unit @t)  (query-value 'ref' args.line)
+    =/  ref=@t  ?~(requested head.u.found u.requested)
+    ?.  (~(has by refs.u.found) ref)
+      :_  this
+      (api-error eyre-id 404 'ref not found')
     :_  this
-    (api-json eyre-id 200 (repository-files-json name u.found))
+    (api-json eyre-id 200 (repository-files-at-json name u.found ref))
   ?:  ?&  =(%'GET' method)
           ?=([%apps %git %api %repository @ %commits ~] site)
       ==
@@ -887,6 +1499,25 @@
       (api-error eyre-id 404 'repository not found')
     :_  this
     (api-json eyre-id 200 (repository-commits-json name u.found))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repository @ %file-history *] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.site)
+    ?~  file-path
+      :_  this
+      (api-error eyre-id 422 'valid file path required')
+    =/  requested=(unit @t)  (query-value 'ref' args.line)
+    =/  ref=@t  ?~(requested head.u.found u.requested)
+    ?.  (~(has by refs.u.found) ref)
+      :_  this
+      (api-error eyre-id 404 'ref not found')
+    :_  this
+    (api-json eyre-id 200 (repository-file-history-json name u.found ref u.file-path))
   ?:  ?&  =(%'GET' method)
           ?=([%apps %git %api %repository @ %file *] site)
       ==
@@ -899,12 +1530,17 @@
     ?~  file-path
       :_  this
       (api-error eyre-id 422 'valid file path required')
-    =/  data=(unit octs)  (repository-file u.found u.file-path)
+    =/  requested=(unit @t)  (query-value 'ref' args.line)
+    =/  ref=@t  ?~(requested head.u.found u.requested)
+    ?.  (~(has by refs.u.found) ref)
+      :_  this
+      (api-error eyre-id 404 'ref not found')
+    =/  data=(unit octs)  (repository-file-at u.found ref u.file-path)
     ?~  data
       :_  this
       (api-error eyre-id 404 'file not found')
     :_  this
-    (api-json eyre-id 200 (repository-file-json name u.found u.file-path u.data))
+    (api-json eyre-id 200 (repository-file-json name u.found ref u.file-path u.data))
   ?:  ?&  =(%'POST' method)
           ?=([%apps %git %api %repository @ %file *] site)
       ==
@@ -980,6 +1616,7 @@
     =/  pending=clay-push
       :*  eyre-id
           %.y
+          ~
           name
           ~
           applied
@@ -1036,6 +1673,115 @@
       :_  this
       (api-error eyre-id 422 'publicRead is required')
     (api-with-action eyre-id 200 [%set-public name u.public])
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %pulls @ %merge ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
+    ?~  number
+      :_  this
+      (api-error eyre-id 422 'pull request number is invalid')
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  matches=(list native-pull:git)
+      (skim native-pulls.u.found |=(pull=native-pull:git =(number.pull u.number)))
+    ?~  matches
+      :_  this
+      (api-error eyre-id 404 'pull request not found')
+    =/  pull=native-pull:git  i.matches
+    ?.  =(%open state.pull)
+      :_  this
+      (api-error eyre-id 409 'pull request is not open')
+    =/  current=(unit oid:git)  (~(get by refs.u.found) head.u.found)
+    ?~  current
+      :_  this
+      (api-error eyre-id 409 'destination branch has no head')
+    =/  reachable=(unit (set oid:git))
+      (reachable:git-graph objects.u.found (silt ~[head.pull]))
+    ?.  ?&(?=(^ reachable) (~(has in u.reachable) u.current))
+      :_  this
+      (api-error eyre-id 409 'pull request cannot be fast-forwarded; update the fork and open a new request')
+    =/  pulls=(list native-pull:git)
+      %+  turn  native-pulls.u.found
+      |=  candidate=native-pull:git
+      ?:  =(number.candidate number.pull)
+        candidate(state %merged)
+      candidate
+    =/  applied=repository:git
+      u.found(refs (~(put by refs.u.found) head.u.found head.pull), native-pulls pulls)
+    =/  clay-linked=?
+      ?~  binding.applied  %.n
+      =(head.applied branch.u.binding.applied)
+    ?.  clay-linked
+      =.  repositories  (~(put by repositories) name applied)
+      :_  this
+      (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec head.pull)]]))
+    ?>  ?=(^ binding.applied)
+    ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+      :_  this
+      (api-error eyre-id 409 'another Clay operation is in progress')
+    =/  files=(unit (map path octs))
+      (flatten-commit:git-clay objects.applied head.pull)
+    ?~  files
+      :_  this
+      (api-error eyre-id 409 'pull request head is not a desk-shaped Git commit')
+    =/  delta=(unit nori:clay)
+      (clay-delta desk-name.u.binding.applied u.files)
+    ?~  delta
+      :_  this
+      (api-error eyre-id 409 'unable to read linked Clay desk')
+    ?>  ?=(%& -.u.delta)
+    ?:  =(~ p.u.delta)
+      =.  repositories  (~(put by repositories) name applied)
+      :_  this
+      (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec head.pull)]]))
+    =/  start-at=@da  (add now.bowl ~s1)
+    =/  timeout-at=@da  (add now.bowl ~s15)
+    =/  pending=clay-push
+      :*  eyre-id
+          %.y
+          ~
+          name
+          ~
+          applied
+          desk-name.u.binding.applied
+          branch.u.binding.applied
+          head.pull
+          u.delta
+          ~
+          start-at
+          timeout-at
+      ==
+    =.  pending-clay  `pending
+    :_  this
+    :~  [%pass /clay-start %arvo %b %wait start-at]
+        [%pass /clay-timeout %arvo %b %wait timeout-at]
+    ==
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %writers ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    =/  allowed=(unit ?)  (bool-at 'allowed' u.jon)
+    ?.  ?&(?=(^ ship-text) ?=(^ allowed))
+      :_  this
+      (api-error eyre-id 422 'ship and allowed are required')
+    =/  writer=(unit @p)  (slaw %p u.ship-text)
+    ?~  writer
+      :_  this
+      (api-error eyre-id 422 'ship must be a valid Urbit ID')
+    ?:  u.allowed
+      (api-with-action eyre-id 200 [%grant-writer name u.writer])
+    (api-with-action eyre-id 200 [%revoke-writer name u.writer])
   ?:  ?&  =(%'POST' method)
           ?=([%apps %git %api %repository @ %token ~] site)
       ==
@@ -1525,6 +2271,7 @@
       =/  timeout-at=@da  (add now.bowl ~s15)
       :*  eyre-id
           %.n
+          ~
           repo-name
           commands.u.parsed
           u.applied
@@ -1887,6 +2634,11 @@
     =/  result=[ok=? message=@t]  u.maybe-result
     =.  pending-clay  ~
     :_  this
+    ?^  peer-response.pending
+      =/  packet=packet:git-peer
+        [%result transfer.u.peer-response.pending ok.result message.result]
+      :~  [%pass /peer/result/(scot %uv transfer.u.peer-response.pending) %agent [ship.u.peer-response.pending %git] %poke %git-peer !>(packet)]
+      ==
     ?:  api-response.pending
       =/  jon=json
         ?:  ok.result
@@ -1896,6 +2648,141 @@
       [[?:(ok.result 200 422) ~[['content-type' 'application/json; charset=utf-8'] ['cache-control' 'no-store']]] `(json-to-octs:server jon)]
     %+  give-simple-payload:app:server  eyre-id.pending
     (receive-payload 'ok' (receive-results commands.pending ok.result message.result))
+  ::
+      [%github @ ~]
+    =/  request-id=(unit @uv)  (slaw %uv i.t.wire)
+    ?~  request-id  `this
+    =/  context=(unit github-request)  (~(get by github-in-flight) u.request-id)
+    ?~  context  `this
+    =.  github-in-flight  (~(del by github-in-flight) u.request-id)
+    =/  fail
+      |=  message=@t
+      ^-  (quip card _this)
+      =.  github-results
+        (~(put by github-results) job.u.context [%.n %.n kind.u.context repository.u.context message])
+      `this
+    ?.  ?=([%iris %http-response *] sign-arvo)
+      (fail 'GitHub request failed')
+    =/  response=client-response:iris  client-response.sign-arvo
+    ?.  ?=(%finished -.response)
+      (fail 'GitHub response was incomplete')
+    =/  status=@ud  status-code.response-header.response
+    ?.  &((gte status 200) (lth status 300))
+      =/  detail=@t
+        ?~  full-file.response  ''
+        (crip (scag 500 (trip `@t`q.data.u.full-file.response)))
+      (fail ?:(=('' detail) (rap 3 ~['GitHub returned HTTP ' (decimal status)]) detail))
+    =/  body=octs  ?~(full-file.response [0 0] data.u.full-file.response)
+    ?:  ?|  =(%import kind.u.context)
+            =(%update kind.u.context)
+        ==
+      ?:  =('' head.u.context)
+        =/  advertised=(unit github-refs:git-github)
+          (advertised-refs:git-github body)
+        ?~  advertised
+          (fail 'GitHub did not advertise a usable branch')
+        =/  request-body=octs  (upload-request:git-github refs.u.advertised)
+        =/  next-id=@uv
+          `@uv`(shas %git-github-pack (cat 3 eny.bowl request-count))
+        =.  request-count  +(request-count)
+        =/  next=github-request
+          u.context(head head.u.advertised, refs refs.u.advertised)
+        =.  github-in-flight  (~(put by github-in-flight) next-id next)
+        =.  github-results
+          (~(put by github-results) job.u.context [%.y %.n kind.u.context repository.u.context 'downloading Git object pack'])
+        =/  request=request:http
+          :*  %'POST'
+              (git-url:git-github owner.u.context remote.u.context '/git-upload-pack')
+              (git-headers:git-github github-token `'application/x-git-upload-pack-request')
+              `request-body
+          ==
+        :_  this
+        :~  [%pass /github/(scot %uv next-id) %arvo %i %request request *outbound-config:iris]
+        ==
+      ?:  (gth p.body 67.108.864)
+        (fail 'GitHub pack exceeds the 64 MiB import limit')
+      =/  pack=(unit octs)  (upload-pack:git-github body)
+      ?~  pack
+        (fail 'GitHub upload-pack response did not contain a pack')
+      =/  object-count=(unit @)  (uint-be-at:git-pack-decode u.pack 8 4)
+      ?~  object-count
+        (fail 'GitHub pack header is incomplete')
+      ?:  (gth u.object-count 25.000)
+        (fail 'GitHub pack exceeds the 25,000 object import limit')
+      =/  existing=(unit repository:git)  (~(get by repositories) repository.u.context)
+      =/  bases=(map oid:git object:git)  ?~(existing ~ objects.u.existing)
+      =/  decoded=(unit decoded-pack:git-pack-decode)
+        (decode-pack-with:git-pack-decode u.pack bases)
+      ?~  decoded
+        (fail 'GitHub pack failed checksum, compression, delta, or object validation')
+      =/  combined=(map oid:git object:git)  bases
+      =/  staged=(list [oid:git object:git])  ~(tap by objects.u.decoded)
+      =.  combined
+        |-
+        ?~  staged  combined
+        =.  combined  (~(put by combined) -.i.staged +.i.staged)
+        $(staged t.staged)
+      =/  refs-valid=?
+        %+  levy  ~(tap by refs.u.context)
+        |=  entry=[@t oid:git]
+        =/  closure=(unit (set oid:git))
+          (reachable:git-graph combined (silt ~[+.entry]))
+        ?=(^ closure)
+      ?.  refs-valid
+        (fail 'GitHub pack did not contain a complete reachable object graph')
+      =/  origin=github-origin:git  [owner.u.context remote.u.context]
+      =/  repo=repository:git
+        ?~  existing
+          :*  our.bowl
+              public-read.u.context
+              head.u.context
+              refs.u.context
+              combined
+              (silt ~[our.bowl])
+              ~
+              ~
+              ~
+              ~
+              ~
+              `origin
+              ~
+              ~
+              ~
+          ==
+        u.existing(head head.u.context, refs refs.u.context, objects combined, github-origin `origin)
+      =.  repositories  (~(put by repositories) repository.u.context repo)
+      =.  github-results
+        (~(put by github-results) job.u.context [%.n %.y kind.u.context repository.u.context 'GitHub repository synchronized'])
+      `this
+    ?:  ?|  =(%issues kind.u.context)
+            =(%pulls kind.u.context)
+        ==
+      =/  jon=(unit json)  (de:json:html q.body)
+      ?~  jon
+        (fail 'GitHub returned invalid JSON')
+      =/  items=(unit (list forge-item:git))
+        (forge-items:git-github u.jon =(%pulls kind.u.context))
+      ?~  items
+        (fail 'GitHub returned an invalid issue or pull-request list')
+      =/  found=(unit repository:git)  (~(get by repositories) repository.u.context)
+      ?~  found
+        (fail 'local repository disappeared during GitHub sync')
+      =/  repo=repository:git
+        ?:  =(%issues kind.u.context)
+          u.found(github-issues u.items)
+        u.found(github-pulls u.items)
+      =.  repositories  (~(put by repositories) repository.u.context repo)
+      =/  label=@t  ?:(=(%issues kind.u.context) 'GitHub issues synchronized' 'GitHub pull requests synchronized')
+      =.  github-results
+        (~(put by github-results) job.u.context [%.n %.y kind.u.context repository.u.context label])
+      `this
+    =/  message=@t
+      ?:  =(%fork kind.u.context)
+        'GitHub fork requested'
+      'GitHub pull request opened'
+    =.  github-results
+      (~(put by github-results) job.u.context [%.n %.y kind.u.context repository.u.context message])
+    `this
   ::
       [%iris @ ~]
     =/  request-id=(unit @uv)  (slaw %uv i.t.wire)

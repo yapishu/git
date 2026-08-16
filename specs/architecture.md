@@ -26,6 +26,24 @@ Git LFS client
   | signed basic-transfer action
   v
 ship-configured object storage
+
+peer %git
+  |
+  | bounded Ames pokes
+  v
+%git collaboration protocol
+  |- public fork and incremental refresh
+  |- ship-authorized fast-forward push
+  `- pull-request object transfer
+
+GitHub
+  |
+  | Git Smart HTTP + REST over Iris
+  v
+%git GitHub integration
+  |- canonical pack ingestion and ref validation
+  |- issue and pull-request metadata cache
+  `- authenticated fork and pull-request actions
 ```
 
 Git HTTP is stateless. Discovery and service requests carry everything needed for each exchange, which maps cleanly to Eyre request pokes and Gall responses.
@@ -58,13 +76,27 @@ The inverse path is an explicit `%publish-desk` action. `%git` verifies that the
 
 The resulting path-to-byte map is assembled into canonical blobs and recursively sorted Git trees. A new commit names the ship as author and committer, uses the supplied message, and parents the current linked branch tip. The new objects and ref are installed together only after every Clay page has been read and rendered. A concurrent push to the linked branch is rejected while publication is in progress.
 
-Repository metadata is projected into JSON scries for the forge frontend. Separate paths expose the repository list, one repository with its refs and binding, a bounded first-parent history, and the current head tree's file names and sizes. Write credentials and object bytes are not included in this read model.
+Repository metadata is projected into JSON scries for the web frontend. Separate paths expose the repository list, one repository with its refs and binding, a bounded first-parent history, and the current head tree's file names and sizes. Write credentials and object bytes are not included in this read model.
 
-## Personal forge
+## Native collaboration
+
+Public repositories can be forked directly from another ship. The receiver sends the OIDs it already has; the source sends only missing objects as chunks no larger than 60,000 bytes. One chunk is in flight at a time. The receiver enforces offsets and declared sizes, reconstructs each canonical object, recomputes its Git OID, and verifies the complete ref graph before installing the repository. Repository graphs never travel as one large noun.
+
+A fork records its source ship and repository. Refresh repeats the same incremental exchange. The origin can grant a ship write access in its repository ACL; an authorized fork may then offer its branch back to the origin. The origin requests missing objects from the fork and accepts only a fast-forward of its default branch. A desk-bound destination runs the proposed tree through the same delayed Clay transaction as Smart HTTP and reports the real success or Ford failure back over Ames.
+
+Forks without write access can open native pull requests. The origin verifies and stores the proposed object graph but does not move a branch. A merge rechecks that the current destination is an ancestor of the proposed head, then advances atomically. Desk-bound merges are committed only after Clay accepts the projected desk.
+
+## Web interface
 
 `%git-fileserver` serves the built React application from `/web` at `/apps/git`. It watches Clay for frontend changes, clears Eyre's static-response cache when the tree changes, and unconditionally replaces its binding on load. Extensionless routes fall back to the application shell.
 
-The main `%git` agent owns `/apps/git/api`. Every API request requires an authenticated Urbit web session; Git Basic credentials are deliberately limited to Git and LFS operations. Read routes return the same projections as the public Gall scries. Mutation routes create and delete repositories, change public access, rotate the hashed write token, manage a desk binding, and begin publication. Mutations reuse the same state transitions as native `%git-action` pokes.
+The main `%git` agent owns `/apps/git/api`. Every API request requires an authenticated Urbit web session; Git Basic credentials are deliberately limited to Git and LFS operations. Read routes return the same projections as the public Gall scries. Mutation routes create and delete repositories, change public access, rotate the hashed write token, manage ship writers and desk bindings, publish desks, edit files, browse branches and history, start Ames forks or updates, and manage pull requests. Mutations reuse the same state transitions as native `%git-action` pokes.
+
+## GitHub integration
+
+GitHub repositories enter through the same Git protocol boundary as any other remote. `%git` requests the upload-pack advertisement through Iris, retains valid refs and the advertised symbolic `HEAD`, asks for the advertised object graph, and decodes the returned pack with the native pack implementation. Every object ID and complete reachable ref graph is verified before the repository is installed. An update is accepted only for a repository linked to the same GitHub origin and not currently bound to Clay. Pack responses are capped at 64 MiB and 25,000 objects.
+
+The optional personal access token remains server-side in Gall state and is never included in the web read model. Git Smart HTTP uses it for private repository access; GitHub REST uses it for private metadata and write operations. Issue and pull-request lists are cached as bounded metadata, excluding issue bodies and comments. Fork creation and pull-request creation are direct REST actions. These operations run asynchronously through Iris and expose transient status to the authenticated web UI.
 
 ## Git LFS
 

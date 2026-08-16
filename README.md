@@ -15,8 +15,16 @@
 - optional branch-to-desk bindings that apply pushed commits directly to Clay
 - Clay-gated pushes: invalid desks are rejected by Git with the complete Ford stack trace
 - Clay-to-Git publishing that snapshots a bound desk as canonical blobs, trees, and commits
-- authenticated personal-forge interface for repositories, files, commits, access, tokens, and Clay publication
-- JSON scries and HTTP APIs for repository summaries, refs, first-parent history, and head-tree files
+- authenticated web interface for repositories, files, commits, access, tokens, and Clay publication
+- branch browsing, file contents and editing, per-file history, native pull requests, and repository settings
+- one-click publication of any mounted Clay desk as a Git repository
+- verified, incremental repository forks and updates over Ames in bounded object chunks
+- ship write ACLs with fast-forward-only native push-back from authorized forks
+- Clay-gated native updates and pull-request merges, with validation failures returned to the sender
+- direct GitHub import and update through Git Smart HTTP, preserving branches, tags, commits, trees, blobs, and object IDs
+- optional GitHub token support for private imports, GitHub forks, and opening pull requests
+- cached GitHub issues and pull-request status, synchronized through the GitHub REST API
+- JSON scries and HTTP APIs for repository summaries, refs, first-parent history, and file trees
 - Git LFS batch uploads and downloads backed by the ship's configured object storage
 - direct, short-lived Signature V4 transfer actions so large LFS payloads bypass the loom
 - stable Smart HTTP remotes at:
@@ -25,7 +33,7 @@
 https://ship.example/git/<repository>
 ```
 
-Ames replication, LFS lifecycle policy, richer negotiation, and expanded repository browsing are tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
+LFS lifecycle policy and richer wire negotiation are tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
 
 ## Development
 
@@ -56,6 +64,6 @@ A repository branch can be linked to a Clay desk with `%bind-desk`. A push to th
 
 `%publish-desk` snapshots the current bound desk into the linked branch. Clay pages are rendered to their canonical source representation, assembled into ordinary Git blobs and recursively sorted trees, and committed with the ship as author and committer. The existing branch tip becomes the parent.
 
-The forge-facing read model is available through `%git` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`.
+The web read model is available through `%git` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`.
 
-The authenticated forge is served at `/apps/git`. Its API creates and deletes repositories, changes public-read policy and hashed write tokens, binds and unbinds Clay desks, and starts Clay-to-Git publication. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.
+The authenticated web app is served at `/apps/git`. Its API creates and deletes repositories, publishes mounted desks, changes public-read policy and hashed write tokens, manages ship writers, binds and unbinds Clay desks, browses branches and file history, edits text files, forks public repositories over Ames, opens or merges native pull requests, and imports or updates GitHub repositories. GitHub imports are limited to a 64 MiB pack response and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.

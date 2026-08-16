@@ -52,9 +52,8 @@ export default function PublishDesk({ repositories, onComplete, onCancel }) {
   return (
     <main className="content centered">
       <form className="panel create-panel" onSubmit={submit}>
-        <div className="eyebrow">Clay → Git</div>
         <h1>Publish a desk</h1>
-        <p>Create a repository from a mounted Clay desk. Later Git pushes to its main branch are validated and committed by Clay.</p>
+        <p>Create or update a repository from a mounted Clay desk.</p>
         {error && <div className="inline-error">{error}</div>}
         <label><span>Clay desk</span>
           <select value={desk} onChange={(event) => chooseDesk(event.target.value)} disabled={busy && !desks.length}>

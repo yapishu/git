@@ -62,6 +62,16 @@
       draft=?
   ==
 ::
++$  native-pull
+  $:  number=@ud
+      source-ship=ship
+      source-repository=@t
+      title=@t
+      state=?(%open %merged %closed)
+      head=oid
+      base=oid
+  ==
+::
 +$  clay-apply
   $:  desk-name=desk
       delta=nori:clay
@@ -82,6 +92,7 @@
       github-origin=(unit github-origin)
       github-issues=(list forge-item)
       github-pulls=(list forge-item)
+      native-pulls=(list native-pull)
   ==
 ::
 +$  state-0
