@@ -916,7 +916,7 @@
     ?:  =('' detail)
       'Clay rejected the linked desk update'
     (rap 3 ~['Clay rejected the linked desk update: ' detail])
-  =.  pending  pending(result `[%n message])
+  =.  pending  pending(result `[%.n message])
   =.  pending-clay  `pending
   :_  this
   :~  [%pass /clay-timeout %arvo %b %rest timeout-at.pending]
@@ -946,7 +946,7 @@
           'Clay rejected the linked desk update'
         (rap 3 ~['Clay rejected the linked desk update: ' detail])
       =/  report-at=@da  (add now.bowl ~s1)
-      =.  pending  pending(result `[%n message])
+      =.  pending  pending(result `[%.n message])
       =.  pending-clay  `pending
       :_  this
       :~  [%pass /clay-timeout %arvo %b %rest timeout-at.pending]
@@ -965,7 +965,7 @@
     ?^  error.sign-arvo
       `this(pending-clay ~)
     =/  report-at=@da  (add now.bowl ~s1)
-    =.  pending  pending(result `[%n 'Clay update timed out without a result'])
+    =.  pending  pending(result `[%.n 'Clay update timed out without a result'])
     =.  pending-clay  `pending
     :_  this
     :~  [%pass /clay-report %arvo %b %wait report-at]
