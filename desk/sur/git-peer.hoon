@@ -1,4 +1,4 @@
-::  Chunked Git object replication over Ames.
+::  Git repository coordination over Ames with object graphs read over Fine.
 ::
 /-  git
 |%
@@ -14,15 +14,6 @@
       refs=(map @t oid:git)
       objects=@ud
   ==
-+$  chunk
-  $:  transfer=@uv
-      oid=oid:git
-      kind=object-kind:git
-      size=@ud
-      offset=@ud
-      data=octs
-      final=?
-  ==
 +$  offer
   $:  transfer=@uv
       repository=@t
@@ -33,10 +24,10 @@
 +$  packet
   $%  [%request request=request]
       [%begin begin=begin]
-      [%chunk chunk=chunk]
       [%offer offer=offer]
-      [%ack transfer=@uv]
-      [%done transfer=@uv]
+      [%release transfer=@uv]
+      [%snapshot transfer=@uv objects=(map oid:git object:git)]
+      [%snapshot-error transfer=@uv message=@t]
       [%result transfer=@uv ok=? message=@t]
       [%error transfer=@uv message=@t]
   ==

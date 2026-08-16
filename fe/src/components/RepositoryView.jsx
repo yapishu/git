@@ -244,6 +244,7 @@ function Settings({ repo, onMutate }) {
         const status = await api.peerTransfers()
         const transfer = status.transfers?.find((item) => item.transfer === started.transfer)
         if (transfer && !transfer.active && transfer.message !== 'offering update') {
+          await api.peerDeleteTransfer(started.transfer).catch(() => {})
           if (!transfer.ok) throw new Error(transfer.message)
           setSyncResult(transfer.message)
           await onMutate()
@@ -270,6 +271,7 @@ function Settings({ repo, onMutate }) {
         const status = await api.peerTransfers()
         const transfer = status.transfers?.find((item) => item.transfer === started.transfer)
         if (transfer && transfer.message !== 'opening pull request') {
+          await api.peerDeleteTransfer(started.transfer).catch(() => {})
           if (!transfer.ok) throw new Error(transfer.message)
           setSyncResult(transfer.message)
           setPullTitle('')
@@ -306,7 +308,7 @@ function Settings({ repo, onMutate }) {
     <div className="settings-grid">
       {error && <div className="inline-error">{error}</div>}
       {repo.peerOrigin && <section className="panel">
-        <div className="section-title"><div><h2>Native origin</h2><p>Forked from <code>{repo.peerOrigin.ship}/{repo.peerOrigin.repository}</code>. Updates are transferred as verified Git objects over Ames.</p></div></div>
+        <div className="section-title"><div><h2>Native origin</h2><p>Forked from <code>{repo.peerOrigin.ship}/{repo.peerOrigin.repository}</code>. Ames coordinates updates and Fine carries the verified object snapshot.</p></div></div>
         <div className="form-actions split"><small className="quiet">{syncResult || 'The origin must grant this ship write access.'}</small><button className="button primary" disabled={busy} onClick={pushToOrigin}>{busy === 'peer-push' ? 'Syncing…' : 'Push to origin'}</button></div>
         <div className="subsection"><label><span>Pull request title</span><div className="inline-field"><input value={pullTitle} onChange={(e) => setPullTitle(e.target.value)} placeholder="Describe the change" /><button className="button" disabled={busy || !pullTitle.trim()} onClick={openPullRequest}>{busy === 'peer-pull' ? 'Opening…' : 'Open PR'}</button></div></label></div>
       </section>}

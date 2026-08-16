@@ -10,8 +10,12 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const poll = useRef(null)
+  const activeTransfer = useRef('')
 
-  useEffect(() => () => clearInterval(poll.current), [])
+  useEffect(() => () => {
+    clearInterval(poll.current)
+    if (activeTransfer.current) api.peerDeleteTransfer(activeTransfer.current).catch(() => {})
+  }, [])
 
   async function submit(event) {
     event.preventDefault()
@@ -20,6 +24,7 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
     setStatus('Contacting peer…')
     try {
       const started = await api.peerFork(ship.trim(), repository.trim(), name.trim(), publicRead)
+      activeTransfer.current = started.transfer
       poll.current = setInterval(async () => {
         try {
           const data = await api.peerTransfers()
@@ -29,6 +34,8 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
             return
           }
           clearInterval(poll.current)
+          activeTransfer.current = ''
+          await api.peerDeleteTransfer(started.transfer).catch(() => {})
           if (!transfer.ok) throw new Error(transfer.message || 'Peer transfer failed')
           setStatus('Fork complete.')
           await onComplete(name.trim())
@@ -45,13 +52,22 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
     }
   }
 
+  async function cancel() {
+    clearInterval(poll.current)
+    const transfer = activeTransfer.current
+    activeTransfer.current = ''
+    if (transfer) await api.peerDeleteTransfer(transfer).catch(() => {})
+    setBusy(false)
+    onCancel()
+  }
+
   const collision = repositories.some((repo) => repo.name === name.trim())
 
   return (
     <main className="content centered">
       <form className="panel create-panel" onSubmit={submit}>
         <h1>Fork from a ship</h1>
-        <p>Copy a public repository over Ames.</p>
+        <p>Copy a public repository through Ames and Fine.</p>
         {error && <div className="inline-error">{error}</div>}
         {status && !error && <div className="transfer-status">{status}</div>}
         <label><span>Source ship</span><input value={ship} onChange={(event) => setShip(event.target.value)} placeholder="~sampel-palnet" autoFocus /></label>
@@ -59,7 +75,7 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
         <label><span>Local repository name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="project" /></label>
         {collision && <small className="field-note">An existing peer fork with the same origin will be updated.</small>}
         <label className="check-row"><input type="checkbox" checked={publicRead} onChange={(event) => setPublicRead(event.target.checked)} /><span><strong>Public local fork</strong><small>Allow other ships and Git clients to fetch this copy.</small></span></label>
-        <div className="form-actions split"><button type="button" className="button ghost" onClick={onCancel}>Cancel</button><button className="button primary" disabled={busy || !ship.trim() || !repository.trim() || !name.trim()}>{busy ? 'Transferring…' : collision ? 'Update fork' : 'Fork repository'}</button></div>
+        <div className="form-actions split"><button type="button" className="button ghost" onClick={cancel}>Cancel</button><button className="button primary" disabled={busy || !ship.trim() || !repository.trim() || !name.trim()}>{busy ? 'Transferring…' : collision ? 'Update fork' : 'Fork repository'}</button></div>
       </form>
     </main>
   )

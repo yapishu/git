@@ -18,7 +18,7 @@
 - authenticated web interface for repositories, files, commits, access, tokens, and Clay publication
 - branch browsing, file contents and editing, per-file history, native pull requests, and repository settings
 - one-click publication of any mounted Clay desk as a Git repository
-- verified, incremental repository forks and updates over Ames in bounded object chunks
+- verified, incremental native forks: Ames coordinates access and refs while Fine carries only the missing immutable object snapshot
 - ship write ACLs with fast-forward-only native push-back from authorized forks
 - Clay-gated native updates and pull-request merges, with validation failures returned to the sender
 - direct GitHub import and update through Git Smart HTTP, preserving branches, tags, commits, trees, blobs, and object IDs
@@ -66,4 +66,4 @@ A repository branch can be linked to a Clay desk with `%bind-desk`. A push to th
 
 The web read model is available through `%git` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`.
 
-The authenticated web app is served at `/apps/git`. Its API creates and deletes repositories, publishes mounted desks, changes public-read policy and hashed write tokens, manages ship writers, binds and unbinds Clay desks, browses branches and file history, edits text files, forks public repositories over Ames, opens or merges native pull requests, and imports or updates GitHub repositories. GitHub imports are limited to a 64 MiB pack response and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.
+The authenticated web app is served at `/apps/git`. Its API creates and deletes repositories, publishes mounted desks, changes public-read policy and hashed write tokens, manages ship writers, binds and unbinds Clay desks, browses branches and file history, edits text files, forks public repositories through Ames and Fine, opens or merges native pull requests, and imports or updates GitHub repositories. GitHub imports are limited to a 64 MiB pack response and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.

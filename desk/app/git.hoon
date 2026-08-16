@@ -33,13 +33,6 @@
   $:  target=ship
       transfer=@uv
       objects=(list [oid:git object:git])
-      offset=@ud
-  ==
-+$  peer-part
-  $:  oid=oid:git
-      kind=object-kind:git
-      size=@ud
-      data=octs
   ==
 +$  peer-receive
   $:  purpose=?(%fork %push %pull)
@@ -53,7 +46,6 @@
       expected=@ud
       received=@ud
       objects=(map oid:git object:git)
-      current=(unit peer-part)
   ==
 +$  peer-result  [status=? message=@t repository=@t]
 +$  github-kind  ?(%import %update %issues %pulls %fork %open-pull)
@@ -464,35 +456,6 @@
   :~  (peer-card target /peer/error/(scot %uv transfer) [%error transfer message])
   ==
 ::
-++  peer-send-next
-  |=  transfer=@uv
-  ^-  (quip card _this)
-  =/  found=(unit peer-serve)  (~(get by peer-serving) transfer)
-  ?~  found  `this
-  =/  flight=peer-serve  u.found
-  ?~  objects.flight
-    =.  peer-serving  (~(del by peer-serving) transfer)
-    :_  this
-    :~  (peer-card target.flight /peer/done/(scot %uv transfer) [%done transfer])
-    ==
-  =/  entry=[oid:git object:git]  i.objects.flight
-  =/  oid=oid:git  -.entry
-  =/  object=object:git  +.entry
-  =/  remaining=@ud  (sub p.data.object offset.flight)
-  =/  width=@ud  (min 60.000 remaining)
-  =/  final=?  =(width remaining)
-  =/  piece=octs  (slice:git-codec data.object offset.flight width)
-  =/  packet=packet:git-peer
-    [%chunk transfer oid kind.object p.data.object offset.flight piece final]
-  =/  next=peer-serve
-    ?:  final
-      flight(objects t.objects.flight, offset 0)
-    flight(offset (add offset.flight width))
-  =.  peer-serving  (~(put by peer-serving) transfer next)
-  :_  this
-  :~  (peer-card target.flight /peer/chunk/(scot %uv transfer) packet)
-  ==
-::
 ++  peer-valid-refs
   |=  [refs=(map @t oid:git) objects=(map oid:git object:git)]
   ^-  ?
@@ -506,9 +469,7 @@
   =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer)
   ?~  found  `this
   =/  flight=peer-receive  u.found
-  ?.  =(src.bowl source.flight)  `this
   ?.  ?&  =(expected.flight received.flight)
-          ?=(~ current.flight)
           (peer-valid-refs refs.flight objects.flight)
           (~(has by refs.flight) head.flight)
       ==
@@ -647,17 +608,17 @@
       %begin
     (peer-begin begin.packet)
   ::
-      %chunk
-    (peer-chunk chunk.packet)
-  ::
       %offer
     (peer-offer offer.packet)
   ::
-      %ack
-    (peer-send-next transfer.packet)
+      %release
+    (peer-release transfer.packet)
   ::
-      %done
-    (peer-finish transfer.packet)
+      %snapshot
+    (peer-snapshot transfer.packet objects.packet)
+  ::
+      %snapshot-error
+    (peer-snapshot-fail transfer.packet message.packet)
   ::
       %result
     (peer-result-received transfer.packet ok.packet message.packet)
@@ -689,7 +650,6 @@
         0
         0
         objects.u.found
-        ~
     ==
   =.  peer-receiving  (~(put by peer-receiving) transfer.offer flight)
   :_  this
@@ -721,10 +681,11 @@
     |=  entry=[oid:git object:git]
     ?:  (~(has in haves.req) -.entry)  ~
     `entry
-  =/  flight=peer-serve  [src.bowl transfer.req objects 0]
+  =/  flight=peer-serve  [src.bowl transfer.req objects]
   =.  peer-serving  (~(put by peer-serving) transfer.req flight)
   :_  this
   :~  (peer-card src.bowl /peer/begin/(scot %uv transfer.req) [%begin transfer.req repository.req head.u.found refs.u.found (lent objects)])
+      [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl ~m2)]
   ==
 ::
 ++  peer-begin
@@ -739,45 +700,69 @@
   =/  next=peer-receive
     u.found(head head.msg, refs refs.msg, expected objects.msg)
   =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
+  ?:  =(src.bowl our.bowl)
+    =/  serving=(unit peer-serve)  (~(get by peer-serving) transfer.msg)
+    ?~  serving
+      (peer-snapshot-fail transfer.msg 'local repository snapshot is unavailable')
+    (peer-snapshot transfer.msg (silt objects.u.serving))
   :_  this
-  :~  (peer-card src.bowl /peer/ack/(scot %uv transfer.msg) [%ack transfer.msg])
+  =/  scry-path=path
+    /g/x/1/git//fine/(scot %uv transfer.msg)/noun
+  :~  [%pass /peer/fine/(scot %uv transfer.msg) %keen %.n src.bowl scry-path]
+      [%pass /peer/timeout/(scot %uv transfer.msg) %arvo %b %wait (add now.bowl ~s30)]
   ==
 ::
-++  peer-chunk
-  |=  msg=chunk:git-peer
+++  peer-release
+  |=  transfer=@uv
   ^-  (quip card _this)
-  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
+  =/  found=(unit peer-serve)  (~(get by peer-serving) transfer)
   ?~  found  `this
-  ?.  =(src.bowl source.u.found)  `this
+  ?.  =(src.bowl target.u.found)  `this
+  `this(peer-serving (~(del by peer-serving) transfer))
+::
+++  peer-snapshot-fail
+  |=  [transfer=@uv message=@t]
+  ^-  (quip card _this)
+  ?.  =(src.bowl our.bowl)  `this
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer)
+  ?~  found  `this
   =/  flight=peer-receive  u.found
-  ?.  |(?=(^ current.flight) =(0 offset.msg))
-    (peer-fail src.bowl transfer.msg 'object stream did not begin at offset zero')
-  =/  part=peer-part
-    ?~  current.flight
-      [oid.msg kind.msg size.msg [0 0]]
-    u.current.flight
-  ?.  ?&  =(oid.part oid.msg)
-          =(kind.part kind.msg)
-          =(size.part size.msg)
-          =(p.data.part offset.msg)
-          (lte (add p.data.part p.data.msg) size.msg)
-      ==
-    (peer-fail src.bowl transfer.msg 'invalid object chunk')
-  =/  joined=octs  (join:git-codec data.part data.msg)
-  ?:  ?&  final.msg
-          ?|  !=(p.joined size.msg)
-              !=((object-oid:git-codec kind.msg joined) oid.msg)
-          ==
-      ==
-    (peer-fail src.bowl transfer.msg 'object failed content-address validation')
-  =.  flight
-    ?:  final.msg
-      flight(objects (~(put by objects.flight) oid.msg [kind.msg joined]), received +(received.flight), current ~)
-    flight(current `[oid.msg kind.msg size.msg joined])
-  =.  peer-receiving  (~(put by peer-receiving) transfer.msg flight)
+  =.  peer-receiving  (~(del by peer-receiving) transfer)
+  =/  release=card
+    (peer-card source.flight /peer/release/(scot %uv transfer) [%release transfer])
+  ?:  =(%fork purpose.flight)
+    =.  peer-results
+      (~(put by peer-results) transfer [%.n message local-repository.flight])
+    [[release ~] this]
   :_  this
-  :~  (peer-card src.bowl /peer/ack/(scot %uv transfer.msg) [%ack transfer.msg])
+  :~  release
+      (peer-card source.flight /peer/result/(scot %uv transfer) [%result transfer %.n message])
   ==
+::
+++  peer-snapshot
+  |=  [transfer=@uv incoming=(map oid:git object:git)]
+  ^-  (quip card _this)
+  ?.  =(src.bowl our.bowl)  `this
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer)
+  ?~  found  `this
+  =/  flight=peer-receive  u.found
+  =/  count=@ud  (lent ~(tap by incoming))
+  ?.  =(count expected.flight)
+    (peer-snapshot-fail transfer 'Fine repository snapshot has the wrong object count')
+  =/  valid=?
+    %+  levy  ~(tap by incoming)
+    |=  entry=[oid:git object:git]
+    =/  object=object:git  +.entry
+    =(-.entry (object-oid:git-codec kind.object data.object))
+  ?.  valid
+    (peer-snapshot-fail transfer 'Fine repository object failed content-address validation')
+  =/  next=peer-receive
+    flight(objects (merge-objects objects.flight incoming), received count)
+  =.  peer-receiving  (~(put by peer-receiving) transfer next)
+  =/  finished=(quip card _this)  (peer-finish transfer)
+  =/  release=card
+    (peer-card source.flight /peer/release/(scot %uv transfer) [%release transfer])
+  [(weld [release ~] -.finished) +.finished]
 ::
 ++  handle-action
   |=  act=action:git
@@ -1324,6 +1309,29 @@
       ==
     :_  this
     (api-json eyre-id 200 peer-results-json)
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %git %api %peer %transfers @ ~] site)
+      ==
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.t.t.t.site)
+    ?~  transfer
+      :_  this
+      (api-error eyre-id 422 'invalid transfer identifier')
+    =/  active=?  (~(has by peer-receiving) u.transfer)
+    =/  recorded=?  (~(has by peer-results) u.transfer)
+    ?.  |(active recorded)
+      :_  this
+      (api-error eyre-id 404 'transfer not found')
+    ?:  active
+      =/  canceled=(quip card _this)
+        (peer-snapshot-fail u.transfer 'transfer cancelled')
+      =/  next=_this  +.canceled
+      =/  cleaned=_this
+        next(peer-results (~(del by peer-results.next) u.transfer))
+      :_  cleaned
+      (weld -.canceled (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]])))
+    =.  peer-results  (~(del by peer-results) u.transfer)
+    :_  this
+    (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
   ?:  ?&  =(%'POST' method)
           ?=([%apps %git %api %peer %fork ~] site)
       ==
@@ -1381,7 +1389,6 @@
           0
           0
           base-objects
-          ~
       ==
     =.  peer-receiving  (~(put by peer-receiving) transfer flight)
     =.  peer-results  (~(put by peer-results) transfer [%.n 'transferring' u.local-repository])
@@ -2494,6 +2501,14 @@
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?~  found  [~ ~]
     ``json+!>((repository-commits-json name u.found))
+  ::
+      [%x %fine @ ~]
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.path)
+    ?~  transfer  [~ ~]
+    =/  found=(unit peer-serve)  (~(get by peer-serving) u.transfer)
+    ?~  found  [~ ~]
+    =/  objects=(map oid:git object:git)  (silt objects.u.found)
+    ``noun+!>(objects)
   ==
 ++  on-watch
   |=  =path
@@ -2545,6 +2560,57 @@
     [[status ~[['content-type' 'application/vnd.git-lfs+json'] ['cache-control' 'no-store']]] `(json-to-octs:server jon)]
   ?+  wire  (on-arvo:def wire sign-arvo)
       [%eyre *]  `this
+      [%peer %fine @ ~]
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  transfer  `this
+    =/  fail
+      |=  message=@t
+      ^-  packet:git-peer
+      [%snapshot-error u.transfer message]
+    =/  packet=packet:git-peer
+      ?.  ?=([%ames %sage *] sign-arvo)
+        (fail 'Fine repository read failed')
+      =/  found=(unit peer-receive)
+        (~(get by peer-receiving) u.transfer)
+      ?~  found
+        (fail 'Fine repository transfer is no longer active')
+      =/  =sage:mess:ames  sage.sign-arvo
+      ?.  =(ship.p.sage source.u.found)
+        (fail 'Fine response came from the wrong ship')
+      ?~  q.sage
+        (fail 'Fine repository snapshot is unavailable')
+      ?.  =(%noun p.q.sage)
+        (fail 'Fine repository snapshot has the wrong mark')
+      =/  decoded=(unit (map oid:git object:git))
+        %-  mole
+        |.(;;((map oid:git object:git) q.q.sage))
+      ?~  decoded
+        (fail 'Fine repository snapshot is malformed')
+      [%snapshot u.transfer u.decoded]
+    :_  this
+    :~  [%pass /peer/snapshot/(scot %uv u.transfer) %agent [our.bowl %git] %poke %git-peer !>(packet)]
+    ==
+  ::
+      [%peer %timeout @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  transfer  `this
+    =/  packet=packet:git-peer
+      [%snapshot-error u.transfer 'Fine repository read timed out']
+    :_  this
+    :~  [%pass /peer/timeout-result/(scot %uv u.transfer) %agent [our.bowl %git] %poke %git-peer !>(packet)]
+    ==
+  ::
+      [%peer %serve-timeout @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  transfer  `this
+    `this(peer-serving (~(del by peer-serving) u.transfer))
+  ::
       [%clay-publish ~]
     =/  maybe-job=(unit publish-job)  pending-publish
     ?~  maybe-job  `this

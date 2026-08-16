@@ -29,7 +29,7 @@ ship-configured object storage
 
 peer %git
   |
-  | bounded Ames pokes
+  | Ames coordination + Fine repository reads
   v
 %git collaboration protocol
   |- public fork and incremental refresh
@@ -80,7 +80,7 @@ Repository metadata is projected into JSON scries for the web frontend. Separate
 
 ## Native collaboration
 
-Public repositories can be forked directly from another ship. The receiver sends the OIDs it already has; the source sends only missing objects as chunks no larger than 60,000 bytes. One chunk is in flight at a time. The receiver enforces offsets and declared sizes, reconstructs each canonical object, recomputes its Git OID, and verifies the complete ref graph before installing the repository. Repository graphs never travel as one large noun.
+Public repositories can be forked directly from another ship. The receiver sends the OIDs it already has over an Ames coordination poke. The source records a transfer-scoped immutable snapshot containing only the missing objects and announces its symbolic head, refs, and object count. The receiver reads that snapshot through Fine; Vere handles network fragmentation and reassembly instead of Gall sending an application-level chunk sequence. Gall recomputes every Git OID, checks the announced count and complete ref graph, installs the repository atomically, and sends a release poke so the source can discard the transient snapshot. Receiver reads expire after 30 seconds and unreleased source snapshots expire after two minutes. Timer error notifications are consumed without retry. A self-fork takes the same validation path but bypasses the network read.
 
 A fork records its source ship and repository. Refresh repeats the same incremental exchange. The origin can grant a ship write access in its repository ACL; an authorized fork may then offer its branch back to the origin. The origin requests missing objects from the fork and accepts only a fast-forward of its default branch. A desk-bound destination runs the proposed tree through the same delayed Clay transaction as Smart HTTP and reports the real success or Ford failure back over Ames.
 
@@ -90,7 +90,7 @@ Forks without write access can open native pull requests. The origin verifies an
 
 `%git-fileserver` serves the built React application from `/web` at `/apps/git`. It watches Clay for frontend changes, clears Eyre's static-response cache when the tree changes, and unconditionally replaces its binding on load. Extensionless routes fall back to the application shell.
 
-The main `%git` agent owns `/apps/git/api`. Every API request requires an authenticated Urbit web session; Git Basic credentials are deliberately limited to Git and LFS operations. Read routes return the same projections as the public Gall scries. Mutation routes create and delete repositories, change public access, rotate the hashed write token, manage ship writers and desk bindings, publish desks, edit files, browse branches and history, start Ames forks or updates, and manage pull requests. Mutations reuse the same state transitions as native `%git-action` pokes.
+The main `%git` agent owns `/apps/git/api`. Every API request requires an authenticated Urbit web session; Git Basic credentials are deliberately limited to Git and LFS operations. Read routes return the same projections as the public Gall scries. Mutation routes create and delete repositories, change public access, rotate the hashed write token, manage ship writers and desk bindings, publish desks, edit files, browse branches and history, start native forks or updates, and manage pull requests. Mutations reuse the same state transitions as native `%git-action` pokes.
 
 ## GitHub integration
 
