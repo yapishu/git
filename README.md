@@ -1,5 +1,7 @@
 # %git
 
+<img width="1053" height="668" alt="image" src="https://github.com/user-attachments/assets/5e7494f4-e5ed-41b9-ba5d-243f9b8fa1e2" />
+
 `%git` makes an Urbit ship a native Git remote. Standard Git clients use Smart HTTP through Eyre while Gall owns the object database, refs, and repository policy. No Git executable or server-side sidecar is involved.
 
 ## Features
