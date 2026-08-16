@@ -1310,9 +1310,17 @@
     :_  this
     (api-json eyre-id 200 peer-results-json)
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %peer %transfers @ ~] site)
+          ?=([%apps %git %api %peer %transfers ~] site)
       ==
-    =/  transfer=(unit @uv)  (slaw %uv i.t.t.t.t.t.site)
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  transfer-text=(unit @t)  (string-at 'transfer' u.jon)
+    ?~  transfer-text
+      :_  this
+      (api-error eyre-id 422 'transfer is required')
+    =/  transfer=(unit @uv)  (slaw %uv u.transfer-text)
     ?~  transfer
       :_  this
       (api-error eyre-id 422 'invalid transfer identifier')

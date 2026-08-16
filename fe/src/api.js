@@ -28,7 +28,7 @@ export const api = {
   repositories: () => request('/repositories'),
   desks: () => request('/desks'),
   peerTransfers: () => request('/peer/transfers'),
-  peerDeleteTransfer: (transfer) => request(`/peer/transfers/${encodeURIComponent(transfer)}`, { method: 'DELETE' }),
+  peerDeleteTransfer: (transfer) => request('/peer/transfers', { method: 'DELETE', body: JSON.stringify({ transfer }) }),
   peerFork: (ship, repository, name, publicRead) =>
     request('/peer/fork', { method: 'POST', body: JSON.stringify({ ship, repository, name, publicRead }) }),
   peerPush: (name) => request('/peer/push', { method: 'POST', body: JSON.stringify({ name }) }),
