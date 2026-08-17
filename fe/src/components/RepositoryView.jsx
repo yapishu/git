@@ -24,6 +24,7 @@ function routeForRepository(repo) {
     tab,
     branch: name === repo.name && params.get('branch') ? params.get('branch') : repo.head,
     filePath: name === repo.name && tab === 'code' ? params.get('file') || '' : '',
+    line: name === repo.name && tab === 'code' && params.get('file') && /^\d+$/.test(params.get('line') || '') ? Number(params.get('line')) : null,
     commitOid: name === repo.name && tab === 'commits' ? params.get('commit') || '' : '',
   }
 }
@@ -33,6 +34,7 @@ function repositoryHash(repo, route) {
   if (route.tab !== 'code') params.set('tab', route.tab)
   if (route.branch && route.branch !== repo.head) params.set('branch', route.branch)
   if (route.filePath) params.set('file', route.filePath)
+  if (route.filePath && route.line) params.set('line', String(route.line))
   if (route.commitOid) params.set('commit', route.commitOid)
   const query = params.toString()
   return `#/${encodeURIComponent(repo.name)}${query ? `?${query}` : ''}`
@@ -68,7 +70,7 @@ function Files({ data, commit, loading, onOpen }) {
   return <FileTree files={data.files} header={header} onOpen={onOpen} />
 }
 
-function FileView({ repository, path, branch, editable, onBack, onSaved, client = api }) {
+function FileView({ repository, path, branch, line, onSelectLine, editable, onBack, onSaved, client = api }) {
   const [file, setFile] = useState(null)
   const [history, setHistory] = useState(null)
   const [view, setView] = useState('file')
@@ -126,6 +128,7 @@ function FileView({ repository, path, branch, editable, onBack, onSaved, client 
         <button className="text-button file-back" onClick={onBack}>← Files</button>
         <code>{path} · {revision === branch ? branch.replace('refs/heads/', '') : shortOid(revision)}</code>
         <div className="file-actions">
+          {file?.text !== null && view === 'file' && <button className="button" onClick={() => navigator.clipboard.writeText(location.href)}>{line ? `Copy line ${line} link` : 'Copy file link'}</button>}
           {downloadUrl && <a className="button link-button" href={downloadUrl} download={path.split('/').pop()}>Download</a>}
           <button className={view === 'history' ? 'button active' : 'button'} onClick={() => setView(view === 'history' ? 'file' : 'history')}>{view === 'history' ? 'View file' : 'History'}</button>
           {revision !== branch && <button className="button" onClick={() => { setRevision(branch); setView('file') }}>Latest</button>}
@@ -147,7 +150,7 @@ function FileView({ repository, path, branch, editable, onBack, onSaved, client 
       ) : objectUrl ? (
         <div className="image-view"><img src={objectUrl} alt={path} /></div>
       ) : file?.text !== null ? (
-        <HighlightedCode code={file?.text} path={path} />
+        <HighlightedCode code={file?.text} path={path} selectedLine={line} onSelectLine={onSelectLine} />
       ) : file ? (
         <div className="empty" title={exactBytes(file.size)}>Binary file · {formatBytes(file.size)}</div>
       ) : null}
@@ -484,6 +487,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   const initialRoute = routeForRepository(repo)
   const [tab, setTab] = useState(initialRoute.tab)
   const [filePath, setFilePath] = useState(initialRoute.filePath)
+  const [line, setLine] = useState(initialRoute.line)
   const [branch, setBranch] = useState(initialRoute.branch)
   const [commitOid, setCommitOid] = useState(initialRoute.commitOid)
   const [detail, setDetail] = useState(null)
@@ -496,12 +500,15 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
     setTab(route.tab)
     setBranch(route.branch)
     setFilePath(route.filePath)
+    setLine(route.line)
     setCommitOid(route.commitOid)
   }
 
   function navigate(changes, replace = false) {
-    const route = { tab, branch, filePath, commitOid, ...changes }
-    if (route.tab !== 'code') route.filePath = ''
+    const route = { tab, branch, filePath, line, commitOid, ...changes }
+    if (Object.hasOwn(changes, 'filePath') && changes.filePath !== filePath && !Object.hasOwn(changes, 'line')) route.line = null
+    if (route.tab !== 'code') { route.filePath = ''; route.line = null }
+    if (!route.filePath) route.line = null
     if (route.tab !== 'commits') route.commitOid = ''
     history[replace ? 'replaceState' : 'pushState']({}, '', repositoryHash(repo, route))
     applyRoute(route)
@@ -571,7 +578,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
       <section className="repo-body">
         {tab === 'code' && <div className="branch-context"><select value={branch} onChange={(event) => browseBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option key={ref.name} value={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select><span>{detail?.files?.files?.length || 0} files</span>{branch !== repo.head && <button className="text-button" onClick={() => browseBranch(repo.head)}>Default branch</button>}</div>}
         {tab === 'code' && (filePath
-          ? <FileView repository={repo.name} path={filePath} branch={branch} editable={!publicMode && branch === repo.head} onBack={() => navigate({ filePath: '' })} onSaved={mutate} client={client} />
+          ? <FileView repository={repo.name} path={filePath} branch={branch} line={line} onSelectLine={(selected) => navigate({ line: selected })} editable={!publicMode && branch === repo.head} onBack={() => navigate({ filePath: '' })} onSaved={mutate} client={client} />
           : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} />)}
         {tab === 'issues' && <Issues repo={repo} />}
         {tab === 'branches' && <Branches repo={repo} selected={branch} onBrowse={browseBranch} />}

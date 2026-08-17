@@ -251,9 +251,14 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .file-actions { display: flex; gap: 8px; }
 .link-button { display: inline-flex; align-items: center; text-decoration: none; }
 .code-view, .editor-panel, .image-view { margin: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); overflow: auto; }
-.code-view { min-height: 180px; max-height: 68vh; padding: 20px; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; tab-size: 2; }
+.code-view { min-height: 180px; padding: 0; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; tab-size: 2; }
 .highlighted-code { padding: 0; }
-.highlighted-code .shiki { min-width: max-content; min-height: 180px; margin: 0; padding: 20px; font: inherit; line-height: inherit; }
+.highlighted-code .shiki, .plain-code { min-width: max-content; min-height: 180px; margin: 0; padding: 20px 0; font: inherit; line-height: inherit; }
+.highlighted-code .shiki code, .plain-code code { display: block; min-width: max-content; }
+.highlighted-code .line, .plain-code .line { position: relative; display: block; min-height: 1.6em; padding: 0 24px 0 66px; }
+.line-number { position: absolute; left: 0; width: 52px; padding-right: 14px; color: var(--muted) !important; text-align: right; text-decoration: none; user-select: none; opacity: .65; }
+.line-number:hover { color: var(--accent) !important; opacity: 1; }
+.plain-code .selected-line { background: color-mix(in srgb, var(--accent) 15%, transparent) !important; box-shadow: inset 3px 0 var(--accent); }
 .highlighted-code code, .editor-highlight code { font: inherit; }
 .image-view { min-height: 180px; padding: 28px; display: grid; place-items: center; background-image: linear-gradient(45deg, var(--soft) 25%, transparent 25%), linear-gradient(-45deg, var(--soft) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--soft) 75%), linear-gradient(-45deg, transparent 75%, var(--soft) 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
 .image-view img { display: block; max-width: 100%; max-height: 62vh; }
@@ -270,6 +275,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
   :root:not([data-theme="light"]) .shiki,
   :root:not([data-theme="light"]) .shiki span { color: var(--shiki-dark) !important; background-color: var(--shiki-dark-bg) !important; }
 }
+:root .highlighted-code .shiki .selected-line { background: color-mix(in srgb, var(--accent) 15%, transparent) !important; box-shadow: inset 3px 0 var(--accent); }
 .editor-footer { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; gap: 8px; padding: 12px; background: var(--soft); }
 .branch-context { display: flex; align-items: center; gap: 12px; min-height: 48px; margin-bottom: 12px; padding: 0; color: var(--muted); font-size: 12px; }
 .branch-context select { width: auto; min-width: 160px; height: 34px; background: var(--panel); color: var(--text); font-weight: 600; }
