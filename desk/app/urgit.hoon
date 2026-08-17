@@ -1824,6 +1824,12 @@
       %browse-response
     (peer-browse-response request.packet repository.packet result.packet)
   ::
+      %browse-begin
+    (peer-browse-begin request.packet repository.packet)
+  ::
+      %browse-release
+    (peer-browse-release request.packet)
+  ::
       %browse-error
     (peer-browse-error request.packet message.packet)
   ::
@@ -1916,6 +1922,29 @@
     `this
   =.  peer-browses
     (~(put by peer-browses) request u.found(active %.n, ok %.y, message 'complete', result `result))
+  `this
+::
+++  peer-browse-begin
+  |=  [request=@uv repository=@t]
+  ^-  (quip card _this)
+  =/  found=(unit peer-browse)  (~(get by peer-browses) request)
+  ?~  found  `this
+  ?.  ?&  active.u.found
+          =(src.bowl peer.u.found)
+          =(repository repository.u.found)
+      ==
+    `this
+  =.  peer-browses
+    (~(put by peer-browses) request u.found(message 'reading peer overview over Fine'))
+  =/  scry-path=path
+    /g/x/1/urgit//1/browse/(scot %uv request)
+  :_  this
+  :~  [%pass /peer/browse/(scot %uv request) %keen %.n src.bowl scry-path]
+  ==
+::
+++  peer-browse-release
+  |=  request=@uv
+  ^-  (quip card _this)
   `this
 ::
 ++  peer-browse-error
@@ -2714,6 +2743,7 @@
   :_  this
   %+  weld
     :~  (peer-card peer /peer/browse-request/(scot %uv request) [%browse-request request repository])
+        [%pass /peer/browse-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~m2)]
     ==
   (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
 ::
@@ -6590,6 +6620,62 @@
     :_  this
     :~  [%pass /peer/snapshot/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ==
+  ::
+      [%peer %browse @ ~]
+    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  request  `this
+    =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
+    ?~  found  `this
+    ?.  active.u.found  `this
+    =/  release-card=card
+      [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
+    =/  result=(unit json)
+      ?.  ?=([%ames %sage *] sign-arvo)  ~
+      =/  =sage:mess:ames  sage.sign-arvo
+      ?.  =(ship.p.sage peer.u.found)  ~
+      ?~  q.sage  ~
+      ?.  =(%json p.q.sage)  ~
+      %-  mole
+      |.(;;(json +.q.q.sage))
+    ?~  result
+      =.  peer-browses
+        (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer overview Fine response was unavailable or malformed'))
+      :_  this
+      :~  release-card
+      ==
+    =/  expected-repository=@t  repository.u.found
+    =/  valid=?
+      ?.  ?=(%o -.u.result)  %.n
+      =/  repository-json=(unit json)  (~(get by p.u.result) 'repository')
+      ?~  repository-json  %.n
+      ?.  ?=(%o -.u.repository-json)  %.n
+      =/  name-json=(unit json)  (~(get by p.u.repository-json) 'name')
+      ?~  name-json  %.n
+      ?&(?=(%s -.u.name-json) =(p.u.name-json expected-repository))
+    ?.  valid
+      =.  peer-browses
+        (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer browse result has the wrong repository identity'))
+      :_  this
+      :~  release-card
+      ==
+    =.  peer-browses
+      (~(put by peer-browses) u.request u.found(active %.n, ok %.y, message 'complete', result `u.result))
+    :_  this
+    :~  release-card
+    ==
+  ::
+      [%peer %browse-timeout @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  request  `this
+    =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
+    ?~  found  `this
+    ?.  active.u.found  `this
+    =.  peer-browses
+      (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer did not answer the repository browse request'))
+    `this
   ::
       [%peer %timeout @ ~]
     ?.  ?=([%behn %wake *] sign-arvo)

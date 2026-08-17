@@ -54,6 +54,8 @@
       [%catalog-error request=@uv message=@t]
       [%browse-request request=@uv repository=@t]
       [%browse-response request=@uv repository=@t result=json]
+      [%browse-begin request=@uv repository=@t]
+      [%browse-release request=@uv]
       [%browse-error request=@uv message=@t]
       [%offer offer=offer]
       [%release transfer=@uv]

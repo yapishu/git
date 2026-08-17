@@ -47,7 +47,7 @@
 - two-ship Fine conformance: bidirectional native forks reconstructed complete repositories and passed stock Git clone and `git fsck --full`
 - on-demand Ames peer discovery with bounded public-repository catalogs, writer hints, expiry, cancellation, and status pruning
 - persistent peer bookmarks with expandable public repositories in the sidebar
-- request-scoped Fine browsing of remote repository metadata, branches, current files, and bounded commit history
+- bounded remote repository overviews over Ames, with request-scoped Fine overview reads accepted and every unanswered browse terminated explicitly
 - bounded peer activity notifications for incoming and outgoing forks, snapshot reads, native updates, and pull requests
 - public native forks, explicit refresh, and origin metadata
 - ship writer ACLs with fast-forward-only push-back from native forks

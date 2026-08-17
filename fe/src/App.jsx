@@ -226,7 +226,7 @@ function PrivateApp() {
         ) : publishingDesk ? (
           <PublishDesk repositories={repositories} onComplete={published} onCancel={() => setPublishingDesk(false)} />
         ) : remoteSelected ? (
-          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} data={remoteData} onFork={forkRemote} /> : <main className="content"><div className="empty"><span className="spinner" />Remotely scrying {remoteSelected.ship}/{remoteSelected.name}…</div></main>
+          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} data={remoteData} onFork={forkRemote} /> : <main className="content"><div className="empty"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…</div></main>
         ) : repo ? (
           <RepositoryView repo={repo} onRefresh={refresh} onOpenOrigin={chooseRemote} />
         ) : (
