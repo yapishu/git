@@ -35,6 +35,7 @@
 - branch-aware file browsing, text and image blob views, authenticated text editing, and per-file history
 - mounted-desk discovery and first-class desk-to-repository publication
 - Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, transfer expiry and cancellation, status pruning, object-count checks, and per-object OID verification
+- two-ship Fine conformance: bidirectional native forks reconstructed complete repositories and passed stock Git clone and `git fsck --full`
 - public native forks, explicit refresh, and origin metadata
 - ship writer ACLs with fast-forward-only push-back from native forks
 - native pull requests whose object graphs are stored at the origin without advancing a branch
@@ -52,10 +53,9 @@
 2. Subtract the client's known reachable closure during upload-pack negotiation and add ACK negotiation.
 3. Add protected-branch and fast-forward policy controls on top of compare-and-swap ref updates.
 4. Add peeled tag advertisements, shallow fetches, filters, and protocol v2.
-5. Add two-ship conformance coverage for Fine-backed repository reads.
-6. Add native fork discovery and activity notifications.
-7. Add tags, commit detail, textual diffs, review comments, and non-fast-forward pull-request merging.
-8. Add richer commit metadata, explicit Clay resync/conflict controls, and paginated GitHub metadata.
+5. Add native fork discovery and activity notifications.
+6. Add tags, commit detail, textual diffs, review comments, and non-fast-forward pull-request merging.
+7. Add richer commit metadata, explicit Clay resync/conflict controls, and paginated GitHub metadata.
 
 ## Storage direction
 

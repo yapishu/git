@@ -10,6 +10,14 @@
 +$  begin
   $:  transfer=@uv
       repository=@t
+      revision=@ud
+      head=@t
+      refs=(map @t oid:git)
+      objects=@ud
+  ==
++$  ready
+  $:  transfer=@uv
+      repository=@t
       head=@t
       refs=(map @t oid:git)
       objects=@ud
@@ -23,6 +31,7 @@
   ==
 +$  packet
   $%  [%request request=request]
+      [%ready ready=ready]
       [%begin begin=begin]
       [%offer offer=offer]
       [%release transfer=@uv]
