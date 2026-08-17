@@ -12,6 +12,7 @@
 - native zlib/DEFLATE plus `REF_DELTA` and `OFS_DELTA` pack ingestion
 - reachability-limited packs that do not expose unreferenced objects
 - atomic ref transactions protected by per-repository write credentials
+- per-branch protection with Git-native force-push and deletion rejections
 - optional branch-to-desk bindings that apply pushed commits directly to Clay
 - Clay-gated pushes: invalid desks are rejected by Git with the complete Ford stack trace
 - Clay-to-Git publishing that snapshots a bound desk as canonical blobs, trees, and commits
@@ -19,6 +20,7 @@
 - branch browsing, file contents and editing, per-file history, native pull requests, and repository settings
 - one-click publication of any mounted Clay desk as a Git repository
 - verified, incremental native forks: Ames coordinates access and refs while Fine carries only the missing immutable object snapshot
+- on-demand discovery of a ship's public repositories and a live peer-operation activity panel
 - ship write ACLs with fast-forward-only native push-back from authorized forks
 - Clay-gated native updates and pull-request merges, with validation failures returned to the sender
 - direct GitHub import and update through Git Smart HTTP, preserving branches, tags, commits, trees, blobs, and object IDs

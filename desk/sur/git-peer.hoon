@@ -22,6 +22,20 @@
       refs=(map @t oid:git)
       objects=@ud
   ==
++$  catalog-request
+  $:  request=@uv
+  ==
++$  catalog-repository
+  $:  name=@t
+      head=@t
+      refs=@ud
+      objects=@ud
+      writable=?
+  ==
++$  catalog
+  $:  request=@uv
+      repositories=(list catalog-repository)
+  ==
 +$  offer
   $:  transfer=@uv
       repository=@t
@@ -33,6 +47,9 @@
   $%  [%request request=request]
       [%ready ready=ready]
       [%begin begin=begin]
+      [%catalog-request catalog-request=catalog-request]
+      [%catalog catalog=catalog]
+      [%catalog-error request=@uv message=@t]
       [%offer offer=offer]
       [%release transfer=@uv]
       [%snapshot transfer=@uv objects=(map oid:git object:git)]

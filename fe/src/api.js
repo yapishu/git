@@ -27,6 +27,11 @@ async function request(path, options = {}) {
 export const api = {
   repositories: () => request('/repositories'),
   desks: () => request('/desks'),
+  peerActivity: () => request('/peer/activity'),
+  clearPeerActivity: () => request('/peer/activity', { method: 'DELETE' }),
+  peerDiscover: (ship) => request('/peer/discover', { method: 'POST', body: JSON.stringify({ ship }) }),
+  peerDiscoveries: () => request('/peer/discoveries'),
+  peerDeleteDiscovery: (requestId) => request('/peer/discoveries', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
   peerTransfers: () => request('/peer/transfers'),
   peerDeleteTransfer: (transfer) => request('/peer/transfers', { method: 'DELETE', body: JSON.stringify({ transfer }) }),
   peerFork: (ship, repository, name, publicRead) =>
@@ -66,6 +71,11 @@ export const api = {
     request(`/repository/${encodeURIComponent(name)}/writers`, {
       method: 'POST',
       body: JSON.stringify({ ship, allowed }),
+    }),
+  setProtected: (name, ref, protectedBranch) =>
+    request(`/repository/${encodeURIComponent(name)}/protected`, {
+      method: 'POST',
+      body: JSON.stringify({ ref, protected: protectedBranch }),
     }),
   mergePull: (name, number) => request(`/repository/${encodeURIComponent(name)}/pulls/${number}/merge`, { method: 'POST', body: '{}' }),
   setToken: (name, token) =>

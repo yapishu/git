@@ -82,6 +82,7 @@
       public-read=?
       head=@t
       refs=(map @t oid)
+      protected-refs=(set @t)
       objects=(map oid object)
       writers=(set @p)
       write-token-hash=(unit @)
@@ -107,6 +108,7 @@
       [%put-object repository=@t kind=object-kind data=octs]
       [%set-ref repository=@t ref=@t oid=oid]
       [%delete-ref repository=@t ref=@t]
+      [%set-protected repository=@t ref=@t protected=?]
       [%set-head repository=@t ref=@t]
       [%set-public repository=@t public-read=?]
       [%grant-writer repository=@t writer=@p]

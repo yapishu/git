@@ -16,6 +16,7 @@
 - native zlib/DEFLATE decoding for stored, fixed-Huffman, and dynamic-Huffman streams
 - verified full-object, `REF_DELTA`, and `OFS_DELTA` pack ingestion, including chained deltas
 - staged pack validation and atomic create, update, force-update, and delete ref transactions
+- per-branch protection that permits creation and fast-forward updates while rejecting force-pushes and deletion with Git report-status errors
 - canonical object hashing for arbitrary binary payloads and undecorated decimal sizes
 - unconditional `/git` Eyre rebinding on agent load
 - Git LFS Batch and Basic Transfer APIs for SHA-256 objects
@@ -36,6 +37,8 @@
 - mounted-desk discovery and first-class desk-to-repository publication
 - Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, transfer expiry and cancellation, status pruning, object-count checks, and per-object OID verification
 - two-ship Fine conformance: bidirectional native forks reconstructed complete repositories and passed stock Git clone and `git fsck --full`
+- on-demand Ames peer discovery with bounded public-repository catalogs, writer hints, expiry, cancellation, and status pruning
+- bounded peer activity notifications for incoming and outgoing forks, snapshot reads, native updates, and pull requests
 - public native forks, explicit refresh, and origin metadata
 - ship writer ACLs with fast-forward-only push-back from native forks
 - native pull requests whose object graphs are stored at the origin without advancing a branch
@@ -51,11 +54,9 @@
 
 1. Add LFS locking and garbage collection for unreferenced, verified objects.
 2. Subtract the client's known reachable closure during upload-pack negotiation and add ACK negotiation.
-3. Add protected-branch and fast-forward policy controls on top of compare-and-swap ref updates.
-4. Add peeled tag advertisements, shallow fetches, filters, and protocol v2.
-5. Add native fork discovery and activity notifications.
-6. Add tags, commit detail, textual diffs, review comments, and non-fast-forward pull-request merging.
-7. Add richer commit metadata, explicit Clay resync/conflict controls, and paginated GitHub metadata.
+3. Add peeled tag advertisements, shallow fetches, filters, and protocol v2.
+4. Add tags, commit detail, textual diffs, review comments, and non-fast-forward pull-request merging.
+5. Add richer commit metadata, explicit Clay resync/conflict controls, and paginated GitHub metadata.
 
 ## Storage direction
 

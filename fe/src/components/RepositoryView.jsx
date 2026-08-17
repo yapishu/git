@@ -362,6 +362,16 @@ function Settings({ repo, onMutate }) {
             {!repo.writers?.length && <small className="quiet">No remote writers.</small>}
           </div>
         </div>
+        <div className="subsection">
+          <div className="section-title"><div><h3>Protected branches</h3><p>Protected branches accept fast-forward updates, but reject force-pushes and deletion.</p></div></div>
+          <div className="branch-policy-list">
+            {(repo.refs || []).filter((entry) => entry.name.startsWith('refs/heads/')).map((entry) => {
+              const protectedBranch = (repo.protectedRefs || []).includes(entry.name)
+              return <label className="check-row compact" key={entry.name}><input type="checkbox" checked={protectedBranch} onChange={(event) => act(`protected-${entry.name}`, () => api.setProtected(repo.name, entry.name, event.target.checked))} /><span><strong>{entry.name.replace('refs/heads/', '')}</strong><small>{protectedBranch ? 'Fast-forward updates only.' : 'Force-push and deletion allowed.'}</small></span></label>
+            })}
+            {!(repo.refs || []).some((entry) => entry.name.startsWith('refs/heads/')) && <small className="quiet">No branches yet.</small>}
+          </div>
+        </div>
       </section>
       <section className="panel danger-zone">
         <div><h2>Delete repository</h2><p>Remove refs, Git objects, binding metadata, and LFS pointers held by this repository.</p></div>

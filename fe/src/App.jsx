@@ -4,7 +4,8 @@ import CreateRepository from './components/CreateRepository'
 import ForkPeer from './components/ForkPeer'
 import GitHubImport from './components/GitHubImport'
 import GitHubSettings from './components/GitHubSettings'
-import { RefreshIcon } from './components/Icons'
+import { ActivityIcon, RefreshIcon } from './components/Icons'
+import PeerActivity from './components/PeerActivity'
 import PublishDesk from './components/PublishDesk'
 import RepositoryView from './components/RepositoryView'
 import Sidebar from './components/Sidebar'
@@ -21,6 +22,8 @@ export default function App() {
   const [githubSettings, setGithubSettings] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [peerActivity, setPeerActivity] = useState([])
+  const [activityOpen, setActivityOpen] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('git-theme') || 'system')
 
   useEffect(() => {
@@ -50,6 +53,19 @@ export default function App() {
   }, [selected])
 
   useEffect(() => { refresh() }, [])
+  const refreshActivity = useCallback(async () => {
+    try {
+      const data = await api.peerActivity()
+      setPeerActivity(data.activity || [])
+    } catch {
+      // Repository use remains available if the activity endpoint is reloading.
+    }
+  }, [])
+  useEffect(() => {
+    refreshActivity()
+    const timer = setInterval(refreshActivity, 4000)
+    return () => clearInterval(timer)
+  }, [refreshActivity])
   useEffect(() => {
     const pop = () => { setSelected(repoFromHash()); setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false) }
     addEventListener('popstate', pop)
@@ -84,6 +100,16 @@ export default function App() {
 
   const repo = useMemo(() => repositories.find((item) => item.name === selected), [repositories, selected])
   const nextTheme = { system: 'light', light: 'dark', dark: 'system' }[theme]
+  const activePeers = peerActivity.filter((item) => item.status === 'active').length
+
+  async function clearActivity() {
+    try {
+      await api.clearPeerActivity()
+      setPeerActivity([])
+    } catch (cause) {
+      setError(cause.message)
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -92,6 +118,10 @@ export default function App() {
         <div className="topbar">
           <span className="topbar-label">{repo ? repo.owner : 'Repositories'}</span>
           <div className="topbar-actions">
+            <div className="activity-anchor">
+              <button className="icon-button activity-button" onClick={() => { setActivityOpen((open) => !open); refreshActivity() }} title="Peer activity"><ActivityIcon />{activePeers > 0 && <span className="activity-badge">{activePeers}</span>}</button>
+              {activityOpen && <PeerActivity activity={peerActivity} onClear={clearActivity} />}
+            </div>
             <button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button>
             <button className="icon-button" onClick={() => refresh(selected)} title="Refresh"><RefreshIcon /></button>
           </div>

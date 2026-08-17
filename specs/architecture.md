@@ -32,6 +32,7 @@ peer %git
   | Ames coordination + Fine repository reads
   v
 %git collaboration protocol
+  |- on-demand public repository catalogs
   |- public fork and incremental refresh
   |- ship-authorized fast-forward push
   `- pull-request object transfer
@@ -64,6 +65,8 @@ Pack output is pack version 2. Each object is encoded in a standards-compliant z
 
 Incoming pushes are staged: parse commands, verify the pack checksum, decode zlib/DEFLATE streams, resolve full objects and chained `REF_DELTA`/`OFS_DELTA` representations, reconstruct canonical object IDs, validate authorization and compare-and-swap old ref values, validate that every new ref resolves, and update objects plus refs in one Gall transition. A malformed pack or invalid command leaves repository state unchanged.
 
+Each branch can be protected independently. Creation of a protected branch is allowed, while later updates must contain the current tip in the new reachable graph; deletion is rejected. Policy runs against the staged and existing object maps before the atomic ref transaction, and failures are returned as ordinary receive-pack report-status messages. Unprotected branches retain Git's normal force-update and deletion behavior.
+
 ## Clay projection
 
 A repository may bind one branch to one Clay desk. The Git tree is flattened into desk paths, with the final filename suffix interpreted as its Clay mark (`app/foo.hoon` becomes `/app/foo/hoon`). Symlinks, submodules, unsafe path segments, and path collisions are rejected before Clay is touched.
@@ -80,11 +83,15 @@ Repository metadata is projected into JSON scries for the web frontend. Separate
 
 ## Native collaboration
 
+The authenticated frontend discovers a peer explicitly rather than maintaining a background network index. An Ames catalog request returns at most 200 public repositories with their symbolic head, ref and object counts, and whether the requesting ship is in that repository's writer ACL. Discovery results are transient, expire after thirty seconds, and can be cancelled or pruned through the authenticated API. Private repositories are never advertised.
+
 Public repositories can be forked directly from another ship. The receiver sends the OIDs it already has over an Ames coordination poke. The source publishes each missing immutable object as one revision of a transfer-scoped Fine spur, then announces its symbolic head, refs, and object count. The receiver reads those revisions concurrently through Fine; Vere handles network fragmentation and reassembly instead of Gall sending an application-level chunk sequence. Gall recomputes every Git OID, rejects duplicate or excess pages, checks the announced count and complete ref graph, installs the repository atomically, and sends a release poke so the source can cull the transient revisions. Receiver reads and unreleased source snapshots expire after ten minutes. Timer error notifications are consumed without retry. The authenticated API can cancel active transfers and prune consumed results. A self-fork takes the same validation path but bypasses the network read.
 
 A fork records its source ship and repository. Refresh repeats the same incremental exchange. The origin can grant a ship write access in its repository ACL; an authorized fork may then offer its branch back to the origin. The origin requests missing objects from the fork and accepts only a fast-forward of its default branch. A desk-bound destination runs the proposed tree through the same delayed Clay transaction as Smart HTTP and reports the real success or Ford failure back over Ames.
 
 Forks without write access can open native pull requests. The origin verifies and stores the proposed object graph but does not move a branch. A merge rechecks that the current destination is an ancestor of the proposed head, then advances atomically. Desk-bound merges are committed only after Clay accepts the projected desk.
+
+Peer operations also write a bounded, transient activity ledger. Incoming snapshot reads and outgoing forks, pushes, and pull requests move from active to success or failure without changing persisted state. The authenticated activity API and top-bar panel expose the peer, repository, direction, time, and terminal message; clearing the ledger has no effect on repositories or transfers.
 
 ## Web interface
 
