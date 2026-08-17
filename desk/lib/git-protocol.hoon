@@ -219,8 +219,8 @@
   |=  service=@t
   ^-  @t
   ?:  =('git-upload-pack' service)
-    'shallow deepen-relative filter allow-reachable-sha1-in-want agent=urbit-git/0.1'
-  'report-status delete-refs no-thin agent=urbit-git/0.1'
+    'shallow deepen-relative filter allow-reachable-sha1-in-want agent=urgit/0.1'
+  'report-status delete-refs no-thin agent=urgit/0.1'
 ::
 ++  v2-command
   |=  body=octs
@@ -255,7 +255,7 @@
   %+  weld
     %+  turn
       :~  'version 2\0a'
-          'agent=urbit-git/0.1\0a'
+          'agent=urgit/0.1\0a'
           'ls-refs\0a'
           'fetch=shallow filter\0a'
           'object-info=size\0a'

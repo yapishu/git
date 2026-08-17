@@ -2803,7 +2803,7 @@
     =/  signature=@t  (signature:git-webhook secret.hook body)
     =/  headers=(list [@t @t])
       :~  ['content-type' 'application/json']
-          ['user-agent' 'urbit-git-webhook/1']
+          ['user-agent' 'urgit-webhook/1']
           ['x-git-event' event]
           ['x-git-delivery' (scot %uv delivery-id)]
           ['x-hub-signature-256' signature]

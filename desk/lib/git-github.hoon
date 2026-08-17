@@ -156,7 +156,7 @@
   =/  headers=(list [@t @t])
     :~  ['accept' 'application/vnd.github+json']
         ['x-github-api-version' '2022-11-28']
-        ['user-agent' 'urbit-git']
+        ['user-agent' 'urgit']
     ==
   ?~  token  headers
   [['authorization' (rap 3 ~['Bearer ' u.token])] headers]
@@ -166,7 +166,7 @@
   ^-  (list [@t @t])
   =/  headers=(list [@t @t])
     :~  ['accept' ?~(content-type 'application/x-git-upload-pack-advertisement' 'application/x-git-upload-pack-result')]
-        ['user-agent' 'urbit-git']
+        ['user-agent' 'urgit']
     ==
   =?  headers  ?=(^ content-type)
     [['content-type' u.content-type] headers]
@@ -180,7 +180,7 @@
   ^-  (list [@t @t])
   =/  headers=(list [@t @t])
     :~  ['accept' ?~(content-type 'application/x-git-receive-pack-advertisement' 'application/x-git-receive-pack-result')]
-        ['user-agent' 'urbit-git']
+        ['user-agent' 'urgit']
     ==
   =?  headers  ?=(^ content-type)
     [['content-type' u.content-type] headers]
@@ -318,7 +318,7 @@
         (text:git-codec ' ')
         (text:git-codec ref)
         (oct:git-codec 0)
-        (text:git-codec 'report-status agent=urbit-git/0.1\0a')
+        (text:git-codec 'report-status agent=urgit/0.1\0a')
     ==
   %-  join-all:git-codec
   :~  (en-pkt:git-codec [%data line])
