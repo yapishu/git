@@ -3503,11 +3503,17 @@
     ?~  request
       :_  this
       (api-error eyre-id 422 'invalid browse request')
-    ?.  (~(has by peer-browses) u.request)
+    =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
+    ?~  found
       :_  this
       (api-error eyre-id 404 'browse request not found')
+    =/  cleanup=(list card)
+      ?.  active.u.found  ~
+      :~  [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
+      ==
     =.  peer-browses  (~(del by peer-browses) u.request)
     :_  this
+    %+  weld  cleanup
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %peer %browse @ @ ~] site)
@@ -6575,9 +6581,12 @@
     =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
     ?~  found  `this
     ?.  active.u.found  `this
+    =/  release=card
+      [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
     =.  peer-browses
       (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer browse timed out'))
-    `this
+    :_  this
+    [release ~]
   ::
       [%peer %fine @ @ ~]
     =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
