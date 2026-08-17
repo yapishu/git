@@ -153,13 +153,17 @@ function Branches({ repo, selected, onBrowse }) {
   )
 }
 
-function PullRequests({ repo, onMutate }) {
+function PullRequests({ repo, onMutate, onOpenOrigin }) {
   const [busy, setBusy] = useState(0)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('open')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(null)
   const [diff, setDiff] = useState(null)
+  const [creating, setCreating] = useState(false)
+  const [title, setTitle] = useState('')
+  const [submitBusy, setSubmitBusy] = useState(false)
+  const [submitStatus, setSubmitStatus] = useState('')
   const pulls = repo.pullRequests || []
   async function merge(number) {
     setBusy(number)
@@ -172,15 +176,55 @@ function PullRequests({ repo, onMutate }) {
     ...githubPulls.map((pull) => ({ ...pull, native: false })),
   ], [pulls, githubPulls])
   const visible = entries.filter((pull) => (filter === 'all' || pull.state === filter) && (!query.trim() || pull.title.toLowerCase().includes(query.trim().toLowerCase())))
-  if (!entries.length) return <div className="empty">No pull requests.</div>
+
+  async function openNativePull() {
+    setSubmitBusy(true); setError(''); setSubmitStatus('Offering changes to the origin…')
+    try {
+      const started = await api.peerPullRequest(repo.name, title.trim())
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        const status = await api.peerTransfers()
+        const transfer = status.transfers?.find((item) => item.transfer === started.transfer)
+        if (transfer?.active) {
+          if (transfer.message) setSubmitStatus(transfer.message)
+          continue
+        }
+        if (transfer) {
+          await api.peerDeleteTransfer(started.transfer).catch(() => {})
+          if (!transfer.ok) throw new Error(transfer.message)
+          setSubmitStatus(transfer.message || 'Pull request opened')
+          setTitle('')
+          return
+        }
+      }
+      throw new Error('origin did not finish the pull request in time')
+    } catch (cause) {
+      setError(cause.message); setSubmitStatus('')
+    } finally {
+      setSubmitBusy(false)
+    }
+  }
+
   async function inspect(pull) {
     setSelected(pull); setDiff(null); setError('')
     try { setDiff(await api.pull(repo.name, pull.number)) } catch (cause) { setError(cause.message) }
   }
   if (selected) return <div className="pull-detail"><button className="text-button file-back" onClick={() => { setSelected(null); setDiff(null) }}>← Pull requests</button><header className="pull-detail-header"><div><h2>#{selected.number} {selected.title}</h2><p><span className={`status ${selected.state === 'open' ? 'good' : ''}`}>{selected.state}</span> <code>{selected.sourceShip}/{selected.sourceRepository}</code> wants to merge {shortOid(selected.head)} into {shortOid(selected.base)}</p></div>{selected.state === 'open' && <button className="button primary" disabled={busy} onClick={() => merge(selected.number)}>{busy === selected.number ? 'Validating…' : 'Merge pull request'}</button>}</header>{error && <div className="inline-error">{error}</div>}{!diff ? <div className="empty">Loading diff…</div> : <DiffView diff={diff} />}</div>
   return <>
-    <div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter pull requests…" /></div>
-    {!visible.length ? <div className="empty compact">No pull requests match this filter.</div> : <div className="pull-list">
+    <div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><div className="forge-toolbar-actions"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter pull requests…" />{repo.peerOrigin && <button className="button primary" onClick={() => { setCreating(true); setSubmitStatus(''); setError('') }}>New pull request</button>}</div></div>
+    {creating && repo.peerOrigin && <section className="panel pr-composer">
+      <div className="section-title"><div><h2>Open a pull request</h2><p>Send this fork’s default branch to its native Urbit origin for review.</p></div><button className="text-button" disabled={submitBusy} onClick={() => { setCreating(false); setSubmitStatus(''); setError('') }}>Cancel</button></div>
+      <div className="pr-compare">
+        <div><span>Source</span><strong>{repo.owner}/{repo.name}</strong><code>{(repo.head || '').replace('refs/heads/', '')} · {shortOid((repo.refs || []).find((ref) => ref.name === repo.head)?.oid)}</code></div>
+        <b>→</b>
+        <div><span>Target</span><strong>{repo.peerOrigin.ship}/{repo.peerOrigin.repository}</strong><code>{(repo.head || '').replace('refs/heads/', '')}</code></div>
+      </div>
+      <label><span>Title</span><input autoFocus value={title} maxLength="200" onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && title.trim() && !submitBusy) openNativePull() }} placeholder="Summarize the changes" /></label>
+      {error && <div className="inline-error">{error}</div>}
+      {submitStatus && <div className={`transfer-status ${!submitBusy ? 'success' : ''}`}>{submitBusy && <span className="spinner" />}{submitStatus}</div>}
+      <div className="form-actions split"><small className="quiet">The origin validates every object and records a reviewable diff.</small><div className="pr-actions">{submitStatus && !submitBusy && <button className="button" onClick={() => onOpenOrigin?.(repo.peerOrigin.ship, repo.peerOrigin.repository)}>View origin</button>}<button className="button primary" disabled={submitBusy || !title.trim() || (!!submitStatus && !error)} onClick={openNativePull}>{submitBusy ? 'Opening…' : 'Create pull request'}</button></div></div>
+    </section>}
+    {!entries.length ? <div className="empty compact">{repo.peerOrigin ? 'No pull requests opened from this repository yet.' : 'No pull requests.'}</div> : !visible.length ? <div className="empty compact">No pull requests match this filter.</div> : <div className="pull-list">
     {error && <div className="inline-error">{error}</div>}
     {visible.map((pull) => pull.native ? <article className="pull-row clickable" key={`native-${pull.number}`} onClick={() => inspect(pull)}>
       <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.state}</span><h3>#{pull.number} {pull.title}</h3><p><code>{pull.sourceShip}/{pull.sourceRepository}</code> proposes <code>{shortOid(pull.head)}</code></p></div>
@@ -261,7 +305,6 @@ function Settings({ repo, onMutate }) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [syncResult, setSyncResult] = useState('')
-  const [pullTitle, setPullTitle] = useState('')
   const [githubTitle, setGithubTitle] = useState('')
   const [githubHead, setGithubHead] = useState('')
   const [githubBase, setGithubBase] = useState((repo.head || 'refs/heads/main').replace('refs/heads/', ''))
@@ -312,31 +355,6 @@ function Settings({ repo, onMutate }) {
     }
   }
 
-  async function openPullRequest() {
-    setBusy('peer-pull')
-    setError('')
-    setSyncResult('Transferring pull request objects…')
-    try {
-      const started = await api.peerPullRequest(repo.name, pullTitle.trim())
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        const status = await api.peerTransfers()
-        const transfer = status.transfers?.find((item) => item.transfer === started.transfer)
-        if (transfer && transfer.message !== 'opening pull request') {
-          await api.peerDeleteTransfer(started.transfer).catch(() => {})
-          if (!transfer.ok) throw new Error(transfer.message)
-          setSyncResult(transfer.message)
-          setPullTitle('')
-          return
-        }
-      }
-      throw new Error('origin did not finish the pull request in time')
-    } catch (cause) {
-      setError(cause.message)
-      setSyncResult('')
-    } finally { setBusy('') }
-  }
-
   async function githubAction(label, start, kinds) {
     setBusy(label); setError(''); setSyncResult('Starting GitHub request…')
     try {
@@ -366,7 +384,6 @@ function Settings({ repo, onMutate }) {
       {repo.peerOrigin && <section className="panel">
         <div className="section-title"><div><h2>Native origin</h2><p>Forked from <code>{repo.peerOrigin.ship}/{repo.peerOrigin.repository}</code>. Ames coordinates updates and Fine carries the verified object snapshot.</p></div></div>
         <div className="form-actions split"><small className="quiet">{syncResult || 'The origin must grant this ship write access.'}</small><button className="button primary" disabled={busy} onClick={pushToOrigin}>{busy === 'peer-push' ? 'Syncing…' : 'Push to origin'}</button></div>
-        <div className="subsection"><label><span>Pull request title</span><div className="inline-field"><input value={pullTitle} onChange={(e) => setPullTitle(e.target.value)} placeholder="Describe the change" /><button className="button" disabled={busy || !pullTitle.trim()} onClick={openPullRequest}>{busy === 'peer-pull' ? 'Opening…' : 'Open PR'}</button></div></label></div>
       </section>}
       {repo.githubOrigin && <section className="panel github-panel">
         <div className="section-title"><div><h2>GitHub origin</h2><p>Linked to <a href={`https://github.com/${repo.githubOrigin.owner}/${repo.githubOrigin.repository}`} target="_blank" rel="noreferrer">{repo.githubOrigin.owner}/{repo.githubOrigin.repository}</a>. Code is fetched with Git Smart HTTP; forge data uses GitHub’s API.</p></div><span className="status good">linked</span></div>
@@ -438,7 +455,7 @@ function Settings({ repo, onMutate }) {
   )
 }
 
-export default function RepositoryView({ repo, onRefresh }) {
+export default function RepositoryView({ repo, onRefresh, onOpenOrigin }) {
   const [tab, setTab] = useState('code')
   const [filePath, setFilePath] = useState('')
   const [branch, setBranch] = useState(repo.head)
@@ -504,7 +521,7 @@ export default function RepositoryView({ repo, onRefresh }) {
         {tab === 'issues' && <Issues repo={repo} />}
         {tab === 'branches' && <Branches repo={repo} selected={branch} onBrowse={browseBranch} />}
         {tab === 'commits' && (commitDetail ? <CommitDetail data={commitDetail} onBack={() => setCommitDetail(null)} /> : <Commits data={detail} loading={loading} onSelect={openCommit} />)}
-        {tab === 'pulls' && <PullRequests repo={repo} onMutate={mutate} />}
+        {tab === 'pulls' && <PullRequests repo={repo} onMutate={mutate} onOpenOrigin={onOpenOrigin} />}
         {tab === 'settings' && <Settings repo={repo} onMutate={mutate} />}
       </section>
     </main>

@@ -187,7 +187,7 @@ export default function App() {
         ) : remoteSelected ? (
           remoteData ? <RemoteRepositoryView ship={remoteSelected.ship} data={remoteData} onFork={forkRemote} /> : <main className="content"><div className="empty">Remotely scrying {remoteSelected.ship}/{remoteSelected.name}...</div></main>
         ) : repo ? (
-          <RepositoryView repo={repo} onRefresh={refresh} />
+          <RepositoryView repo={repo} onRefresh={refresh} onOpenOrigin={chooseRemote} />
         ) : (
           <main className="content welcome">
             <h1>{loading ? 'Loading repositories…' : 'Repositories'}</h1>

@@ -290,6 +290,20 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .diff-line.delete { background: color-mix(in srgb, #cf222e 12%, var(--panel)); }.diff-line.delete > b { color: #cf222e; }
 .forge-toolbar { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
 .forge-toolbar > input { width: min(360px, 48%); height: 34px; background: var(--panel); }
+.forge-toolbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 1; }
+.forge-toolbar-actions input { width: min(360px, 100%); height: 34px; background: var(--panel); }
+.pr-composer { display: grid; gap: 16px; margin-bottom: 14px; }
+.pr-composer .section-title p { margin: 5px 0 0; }
+.pr-composer .section-title > .text-button { align-self: flex-start; padding: 2px 0; color: var(--muted); }
+.pr-compare { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 14px; }
+.pr-compare > div { min-width: 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--soft); }
+.pr-compare span, .pr-compare strong, .pr-compare code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-compare span { margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.pr-compare strong { font-size: 12px; }
+.pr-compare code { margin-top: 5px; color: var(--muted); font-size: 10px; }
+.pr-compare > b { color: var(--muted); font-size: 16px; }
+.pr-actions { display: flex; gap: 8px; }
+.transfer-status.success { color: #178342; background: #e6f5ea; }
 .segmented { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
 .segmented button { min-height: 27px; border: 0; border-radius: 5px; padding: 0 10px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 600; cursor: pointer; }
 .segmented button.active { background: var(--soft); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
@@ -330,4 +344,10 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
   .page-header { flex-direction: column; }
   .forge-toolbar { align-items: stretch; flex-direction: column; }
   .forge-toolbar > input { width: 100%; }
+  .forge-toolbar-actions { align-items: stretch; }
+  .forge-toolbar-actions input { min-width: 0; }
+  .pr-compare { grid-template-columns: 1fr; }
+  .pr-compare > b { transform: rotate(90deg); text-align: center; }
+  .pr-composer .form-actions.split { align-items: stretch; flex-direction: column; }
+  .pr-actions { justify-content: flex-end; }
 }
