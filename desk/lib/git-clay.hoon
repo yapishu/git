@@ -186,10 +186,13 @@
 ++  safe-segment
   |=  value=@t
   ^-  ?
+  =/  chars=tape  (trip value)
   ?&  !=('' value)
       !=('.' value)
       !=('..' value)
-      ((sane %tas) value)
+      (lte (lent chars) 255)
+      %+  levy  chars
+      |=(char=@tD &(!=(char 0) !=(char '/')))
   ==
 ::
 ++  directory-path
@@ -237,14 +240,17 @@
   =/  entry=tree-entry  i.remaining
   ?:  =('40000' mode.entry)
     =/  child=(unit path)  (directory-path prefix name.entry)
-    ?~  child  ~
+    ?~  child  $(remaining t.remaining)
     =/  walked=(unit (map path octs))
       (walk-tree objects oid.entry u.child files visiting)
     ?~  walked  ~
     $(remaining t.remaining, files u.walked)
   ?.  ?|(=('100644' mode.entry) =('100755' mode.entry))  ~
   =/  file-path=(unit path)  (leaf-path prefix name.entry)
-  ?~  file-path  ~
+  ::  Git permits names that Clay cannot represent as a marked file (for
+  ::  example LICENSE or .gitignore).  Omit those from the Clay projection;
+  ::  one such entry must not erase every other file in the repository.
+  ?~  file-path  $(remaining t.remaining)
   ?:  (~(has by files) u.file-path)  ~
   =/  blob=(unit object:git)  (~(get by objects) oid.entry)
   ?~  blob  ~

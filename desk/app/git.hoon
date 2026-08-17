@@ -1,7 +1,7 @@
 ::  Native Git object database and Smart HTTP endpoint.
 ::
 /-  git, git-peer
-/+  dbug, default-agent, git-clay, git-codec, git-github, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, server
+/+  dbug, default-agent, git-clay, git-codec, git-github, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, server
 |%
 +$  card  card:agent:gall
 +$  lfs-spec  [oid=@t size=@ud]
@@ -253,7 +253,7 @@
   =/  head-oid=(unit oid:git)  (~(get by refs.repo) head.repo)
   =/  head-files=(unit (map path octs))
     ?~  head-oid  ~
-    (flatten-commit:git-clay objects.repo u.head-oid)
+    (flatten-commit:git-tree objects.repo u.head-oid)
   =/  file-count=@ud  ?~(head-files 0 (lent ~(tap by u.head-files)))
   =/  pulls-json=(list json)
     %+  turn  native-pulls.repo
@@ -331,7 +331,7 @@
   =/  commit=(unit oid:git)  (revision-oid repo ref)
   =/  files=(unit (map path octs))
     ?~  commit  `*(map path octs)
-    (flatten-commit:git-clay objects.repo u.commit)
+    (flatten-commit:git-tree objects.repo u.commit)
   =/  file-json=(list json)
     ?~  files  ~
     %+  turn  ~(tap by u.files)
@@ -353,7 +353,7 @@
   |=  [repo=repository:git commit=oid:git file-path=path]
   ^-  (unit octs)
   =/  files=(unit (map path octs))
-    (flatten-commit:git-clay objects.repo commit)
+    (flatten-commit:git-tree objects.repo commit)
   ?~  files  ~
   (~(get by u.files) file-path)
 ::
@@ -591,11 +591,11 @@
   =/  found=(unit object:git)  (~(get by objects.repo) oid)
   ?.  ?&(?=(^ found) =(%commit kind.u.found))  ~
   =/  parent=(unit oid:git)  (commit-parent data.u.found)
-  =/  current-files=(unit (map path octs))  (flatten-commit:git-clay objects.repo oid)
+  =/  current-files=(unit (map path octs))  (flatten-commit:git-tree objects.repo oid)
   ?~  current-files  ~
   =/  previous-files=(map path octs)
     ?~  parent  ~
-    =/  flattened=(unit (map path octs))  (flatten-commit:git-clay objects.repo u.parent)
+    =/  flattened=(unit (map path octs))  (flatten-commit:git-tree objects.repo u.parent)
     ?~(flattened ~ u.flattened)
   =/  changed=(list json)
     %+  murn  ~(tap by u.current-files)
@@ -648,8 +648,8 @@
 ++  repository-diff-json
   |=  [name=@t repo=repository:git base=oid:git head=oid:git]
   ^-  (unit json)
-  =/  base-files=(unit (map path octs))  (flatten-commit:git-clay objects.repo base)
-  =/  head-files=(unit (map path octs))  (flatten-commit:git-clay objects.repo head)
+  =/  base-files=(unit (map path octs))  (flatten-commit:git-tree objects.repo base)
+  =/  head-files=(unit (map path octs))  (flatten-commit:git-tree objects.repo head)
   ?.  ?&(?=(^ base-files) ?=(^ head-files))  ~
   =/  changed=(list json)
     %+  murn  ~(tap by u.head-files)
@@ -1645,16 +1645,29 @@
   ==
 ::
 ++  api-file-path
-  |=  segments=(list @t)
+  |=  [segments=(list @t) extension=(unit @ta)]
   ^-  (unit path)
   ?~  segments  ~
+  =/  segments=(list @t)
+    ?~  extension  segments
+    =/  reversed=(list @t)  (flop segments)
+    ?~  reversed  segments
+    =/  leaf=@t  (rap 3 ~[i.reversed '.' `@t`u.extension])
+    (flop [leaf t.reversed])
   =/  parse
     |=  [remaining=(list @t) out=path]
     ^-  (unit path)
     ?~  remaining  `(flop out)
-    =/  segment=(unit @tas)  (slaw %tas i.remaining)
-    ?~  segment  ~
-    $(remaining t.remaining, out [u.segment out])
+    =/  chars=tape  (trip i.remaining)
+    ?.  ?&  !=('' i.remaining)
+            !=('.' i.remaining)
+            !=('..' i.remaining)
+            (lte (lent chars) 255)
+            %+  levy  chars
+            |=(char=@tD &(!=(char 0) !=(char '/')))
+        ==
+      ~
+    $(remaining t.remaining, out [`knot`i.remaining out])
   (parse segments ~)
 ::
 ++  api-with-action
@@ -1864,7 +1877,7 @@
     ?.  ?&(?=(^ found) public-read.u.found)
       :_  this
       (api-error eyre-id 404 'public repository not found')
-    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.t.site)
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.t.site ext.line)
     ?~  file-path
       :_  this
       (api-error eyre-id 422 'valid file path required')
@@ -1881,7 +1894,7 @@
     ?.  ?&(?=(^ found) public-read.u.found)
       :_  this
       (api-error eyre-id 404 'public repository not found')
-    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.t.site)
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.t.site ext.line)
     ?~  file-path
       :_  this
       (api-error eyre-id 422 'valid file path required')
@@ -2509,7 +2522,7 @@
     ?~  found
       :_  this
       (api-error eyre-id 404 'repository not found')
-    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.site)
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.site ext.line)
     ?~  file-path
       :_  this
       (api-error eyre-id 422 'valid file path required')
@@ -2528,7 +2541,7 @@
     ?~  found
       :_  this
       (api-error eyre-id 404 'repository not found')
-    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.site)
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.site ext.line)
     ?~  file-path
       :_  this
       (api-error eyre-id 422 'valid file path required')
@@ -2551,7 +2564,7 @@
     ?~  found
       :_  this
       (api-error eyre-id 404 'repository not found')
-    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.site)
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.site ext.line)
     ?~  file-path
       :_  this
       (api-error eyre-id 422 'valid file path required')
@@ -2572,20 +2585,11 @@
     ?~  parent
       :_  this
       (api-error eyre-id 409 'repository has no branch head to edit')
-    =/  files=(unit (map path octs))
-      (flatten-commit:git-clay objects.u.found u.parent)
-    ?~  files
-      :_  this
-      (api-error eyre-id 409 'repository head is not a valid file tree')
-    ?.  (~(has by u.files) u.file-path)
-      :_  this
-      (api-error eyre-id 404 'file not found')
-    =/  updated-files=(map path octs)  (~(put by u.files) u.file-path u.data)
     =/  snapped=(unit [commit=oid:git objects=(map oid:git object:git)])
-      (snapshot:git-clay updated-files objects.u.found `u.parent our.bowl now.bowl u.message)
+      (edit-commit:git-tree objects.u.found u.parent u.file-path u.data our.bowl now.bowl u.message)
     ?~  snapped
       :_  this
-      (api-error eyre-id 422 'file tree cannot be represented as a Git commit')
+      (api-error eyre-id 404 'file not found or repository head is not a valid Git tree')
     =/  applied=repository:git
       u.found(objects objects.u.snapped, refs (~(put by refs.u.found) head.u.found commit.u.snapped))
     ?~  binding.applied
@@ -2599,8 +2603,13 @@
     ?:  ?|(=(^ pending-clay) =(^ pending-publish))
       :_  this
       (api-error eyre-id 409 'another Clay operation is in progress')
+    =/  clay-files=(unit (map path octs))
+      (flatten-commit:git-clay objects.applied commit.u.snapped)
+    ?~  clay-files
+      :_  this
+      (api-error eyre-id 422 'commit cannot be projected onto the linked Clay desk')
     =/  delta=(unit nori:clay)
-      (clay-delta desk-name.u.binding.applied updated-files)
+      (clay-delta desk-name.u.binding.applied u.clay-files)
     ?~  delta
       :_  this
       (api-error eyre-id 409 'unable to read linked Clay desk')
