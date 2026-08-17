@@ -264,9 +264,11 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .code-editor { position: relative; z-index: 1; display: block; width: 100%; min-height: 52vh; resize: vertical; border: 0; padding: 18px; outline: 0; background: transparent; color: var(--text); caret-color: var(--text); font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; tab-size: 2; }
 .highlight-editor.ready .code-editor { color: transparent; -webkit-text-fill-color: transparent; }
 .highlight-editor.ready .code-editor::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
-:root[data-theme="dark"] .shiki { color: var(--shiki-dark) !important; background-color: var(--shiki-dark-bg) !important; }
+:root[data-theme="dark"] .shiki,
+:root[data-theme="dark"] .shiki span { color: var(--shiki-dark) !important; background-color: var(--shiki-dark-bg) !important; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .shiki { color: var(--shiki-dark) !important; background-color: var(--shiki-dark-bg) !important; }
+  :root:not([data-theme="light"]) .shiki,
+  :root:not([data-theme="light"]) .shiki span { color: var(--shiki-dark) !important; background-color: var(--shiki-dark-bg) !important; }
 }
 .editor-footer { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; gap: 8px; padding: 12px; background: var(--soft); }
 .branch-context { display: flex; align-items: center; gap: 12px; min-height: 48px; margin-bottom: 12px; padding: 0; color: var(--muted); font-size: 12px; }
