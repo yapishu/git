@@ -43,11 +43,11 @@ function PrivateApp() {
   const [error, setError] = useState('')
   const [peerActivity, setPeerActivity] = useState([])
   const [activityOpen, setActivityOpen] = useState(false)
-  const [theme, setTheme] = useState(() => localStorage.getItem('git-theme') || 'system')
+  const [theme, setTheme] = useState(() => localStorage.getItem('urgit-theme') || 'system')
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
-    localStorage.setItem('git-theme', theme)
+    localStorage.setItem('urgit-theme', theme)
   }, [theme])
   useEffect(() => { remoteSelectedRef.current = remoteSelected }, [remoteSelected])
 
@@ -231,11 +231,11 @@ function PrivateApp() {
 function PublicApp({ name }) {
   const [repo, setRepo] = useState(null)
   const [error, setError] = useState('')
-  const [theme, setTheme] = useState(() => localStorage.getItem('git-theme') || 'system')
+  const [theme, setTheme] = useState(() => localStorage.getItem('urgit-theme') || 'system')
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
-    localStorage.setItem('git-theme', theme)
+    localStorage.setItem('urgit-theme', theme)
   }, [theme])
   useEffect(() => {
     publicApi.repository(name).then(setRepo).catch((cause) => setError(cause.message))
@@ -244,13 +244,13 @@ function PublicApp({ name }) {
   const nextTheme = { system: 'light', light: 'dark', dark: 'system' }[theme]
   return <div className="public-shell">
     <div className="workspace">
-      <div className="topbar"><a className="public-brand" href="/apps/git/">git</a><div className="topbar-actions"><span className="public-read-label">read only</span><button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button></div></div>
+      <div className="topbar"><a className="public-brand" href="/apps/urgit/">urgit</a><div className="topbar-actions"><span className="public-read-label">read only</span><button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button></div></div>
       {error ? <main className="content"><div className="empty">{error}</div></main> : repo ? <RepositoryView repo={repo} publicMode client={publicApi} /> : <main className="content"><div className="empty">Loading repository…</div></main>}
     </div>
   </div>
 }
 
 export default function App() {
-  const match = location.pathname.match(/^\/apps\/git\/public\/([^/]+)\/?$/)
+  const match = location.pathname.match(/^\/apps\/urgit\/public\/([^/]+)\/?$/)
   return match ? <PublicApp name={decodeURIComponent(match[1])} /> : <PrivateApp />
 }

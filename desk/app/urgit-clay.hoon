@@ -1,4 +1,4 @@
-::  Isolates Clay mutations so their complete failure trace is returned to %git.
+::  Isolates Clay mutations so their complete failure trace is returned to %urgit.
 ::
 /-  git
 /+  dbug, default-agent

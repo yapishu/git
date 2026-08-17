@@ -1,15 +1,15 @@
-::  git-fileserver: static Clay file-serving agent
+::  urgit-fileserver: static Clay file-serving agent
 ::
 ::    for copying into desks as a standalone %deskname-fileserver agent.
 ::
 ::    ** in general, you should not need to modify this file directly. **
 ::    instead this agent will read configuration parameters from a
-::    /app/git-fileserver/config.hoon. this file must produce a core
+::    /app/urgit-fileserver/config.hoon. this file must produce a core
 ::    with at least a +web-root arm. all other overrides for the
 ::    default configuration (see below) are optional.
 ::
 /+  dbug
-/=  config  /app/git-fileserver/config
+/=  config  /app/urgit-fileserver/config
 ::
 ::TODO  restructure so config can take a byk.bowl argument?
 |%
@@ -121,7 +121,7 @@
       [(set-norm [our q.byk]:bowl foot.old &)]~
     ::
       ::  Always rebind the web root on every on-load, like the api agent
-      ::  does for /apps/git/api. Survives vere restarts and agent
+      ::  does for /apps/urgit/api. Survives vere restarts and agent
       ::  revives even when web-root is unchanged.
       ::
       ^-  (list card)
@@ -157,16 +157,16 @@
   ::
   =/  pwa-paths=(set @t)
     %-  ~(gas in *(set @t))
-    :~  '/apps/git/manifest.json'
-        '/apps/git/sw.js'
-        '/apps/git/git.svg'
-        '/apps/git/shared.html'
-        '/apps/git/app.js'
-        '/apps/git/app.css'
+    :~  '/apps/urgit/manifest.json'
+        '/apps/urgit/sw.js'
+        '/apps/urgit/git.svg'
+        '/apps/urgit/shared.html'
+        '/apps/urgit/app.js'
+        '/apps/urgit/app.css'
     ==
   ?.  ?|  authenticated
           (~(has in pwa-paths) url.request)
-          (starts-with '/apps/git/public/' url.request)
+          (starts-with '/apps/urgit/public/' url.request)
       ==
     [| [403 ~] `(as-octs:mimes:html 'unauthenticated')]
   ?.  ?=(%'GET' method.request)

@@ -1,6 +1,6 @@
 # Roadmap
 
-`%git` is a native Git object database and Smart HTTP server in Gall. Ordinary Git clients speak to Eyre; no Git executable or sidecar runs beside the ship.
+`%urgit` is a native Git object database and Smart HTTP server in Gall. Ordinary Git clients speak to Eyre; no Git executable or sidecar runs beside the ship.
 
 ## Working now
 
@@ -62,7 +62,7 @@
 - explicit Clay revision-to-Git commit mappings in both publication directions
 - canonical native Clay history for bound branches, with exact revision numbers, timestamps, takos, mapped Git commits, bounded revision diffs, historical file reads, and per-file revision history
 - live Clay/Git drift classification and explicit synchronization controls in both directions
-- reload-safe, cache-invalidating static fileserver at `/apps/git` and a separately rebound API at `/apps/git/api`
+- reload-safe, cache-invalidating static fileserver at `/apps/urgit` and a separately rebound API at `/apps/urgit/api`
 - unauthenticated, sanitized read-only pages and APIs for public repositories, with branch/file browsing, history, and commit diffs
 - direct GitHub Smart HTTP import and update with authentic refs, canonical OIDs, delta-pack decoding, reachable-graph validation, and 64 MiB/25,000-object bounds
 - fast-forward-only GitHub pulls that preserve local-only refs and authenticated branch-selectable receive-pack pushes with report-status validation

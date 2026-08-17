@@ -1,4 +1,4 @@
-# `%git` development notes
+# `%urgit` development notes
 
 - The source desk is `desk/`; use `zig build -Ddesk=<mounted-desk>` to assemble dependencies and copy it onto a mounted ship desk.
 - Keep persisted schemas at `state-0` while this project is greenfield. Change `state-0` in place and nuke/revive agents during development; do not add migrations or compatibility shims.

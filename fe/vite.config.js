@@ -17,14 +17,14 @@ const cacheBust = () => ({
       .digest('hex')
       .slice(0, 12)
     html.source = String(html.source)
-      .replace('/apps/git/app.js', `/apps/git/app.js?v=${digest}`)
-      .replace('/apps/git/app.css', `/apps/git/app.css?v=${digest}`)
+      .replace('/apps/urgit/app.js', `/apps/urgit/app.js?v=${digest}`)
+      .replace('/apps/urgit/app.css', `/apps/urgit/app.css?v=${digest}`)
   },
 })
 
 export default defineConfig({
   plugins: [react(), cacheBust()],
-  base: '/apps/git/',
+  base: '/apps/urgit/',
   build: {
     outDir: resolve(import.meta.dirname, '../desk/web'),
     emptyOutDir: true,

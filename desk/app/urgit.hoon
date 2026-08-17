@@ -1543,8 +1543,8 @@
 ++  on-init
   ^-  (quip card _this)
   :_  this
-  :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %git]
-      [%pass /eyre/api-connect %arvo %e %connect [~ /apps/git/api] %git]
+  :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
+      [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
 ::
 ++  on-save
@@ -1555,8 +1555,8 @@
   ^-  (quip card _this)
   =/  loaded=state-0:git  (settle-webhook-state !<(state-0:git old))
   :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
-  :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %git]
-      [%pass /eyre/api-connect %arvo %e %connect [~ /apps/git/api] %git]
+  :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
+      [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
 ::
 ++  on-poke
@@ -1584,7 +1584,7 @@
 ++  peer-card
   |=  [target=ship wire=wire packet=packet:git-peer]
   ^-  card
-  [%pass wire %agent [target %git] %poke %git-peer !>(packet)]
+  [%pass wire %agent [target %urgit] %poke %git-peer !>(packet)]
 ::
 ++  peer-activity-put
   |=  event=peer-activity
@@ -1899,7 +1899,7 @@
   =/  cards=(list card)
     ^-  (list card)
     :~  [%pass /peer/browse-grow/(scot %uv request) %grow browse-path json+!>(result)]
-        [%pass /peer/browse-ready/(scot %uv request) %agent [our.bowl %git] %poke %git-peer !>([%browse-ready request repository src.bowl])]
+        [%pass /peer/browse-ready/(scot %uv request) %agent [our.bowl %urgit] %poke %git-peer !>([%browse-ready request repository src.bowl])]
     ==
   [cards this]
 ::
@@ -2021,7 +2021,7 @@
     |=  page=(map oid:git object:git)
     [%pass /peer/grow/(scot %uv transfer.req) %grow snapshot-path noun+!>(page)]
   =/  final-cards=(list card)
-    :~  [%pass /peer/ready/(scot %uv transfer.req) %agent [our.bowl %git] %poke %git-peer !>([%ready transfer.req repository.req head.u.found refs.u.found (lent objects) (lent pages)])]
+    :~  [%pass /peer/ready/(scot %uv transfer.req) %agent [our.bowl %urgit] %poke %git-peer !>([%ready transfer.req repository.req head.u.found refs.u.found (lent objects) (lent pages)])]
         [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl ~m10)]
     ==
   :_  this
@@ -2910,7 +2910,7 @@
   ?.  =(%'GET' method)
     :_  this
     (api-error eyre-id 405 'public repository API is read-only')
-  ?:  ?=([%apps %git %api %public %repository @ ~] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
@@ -2918,7 +2918,7 @@
       (api-error eyre-id 404 'public repository not found')
     :_  this
     (api-json eyre-id 200 (public-repository-json name u.found))
-  ?:  ?=([%apps %git %api %public %repository @ %issues @ ~] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %issues @ ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.t.site)
     ?~  number
@@ -2934,7 +2934,7 @@
       (api-error eyre-id 404 'issue not found')
     :_  this
     (api-json eyre-id 200 (native-issue-json u.issue %.y))
-  ?:  ?=([%apps %git %api %public %repository @ %releases ~] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %releases ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
@@ -2950,7 +2950,7 @@
       (api-error eyre-id 404 'release not found')
     :_  this
     (api-json eyre-id 200 (release-json u.release %.y))
-  ?:  ?=([%apps %git %api %public %repository @ %archive ~] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %archive ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
@@ -2972,7 +2972,7 @@
       (api-error eyre-id 422 'archive requires a complete commit tree of at most 10,000 files and 64 MiB')
     :_  this
     (api-archive eyre-id name u.archive)
-  ?:  ?=([%apps %git %api %public %repository @ %files ~] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %files ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
@@ -2985,7 +2985,7 @@
       (api-error eyre-id 404 'ref not found')
     :_  this
     (api-json eyre-id 200 (repository-files-at-json name u.found ref))
-  ?:  ?=([%apps %git %api %public %repository @ %search ~] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %search ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
@@ -3002,7 +3002,7 @@
       (api-error eyre-id 422 'q must be between 2 and 200 bytes')
     :_  this
     (api-json eyre-id 200 (repository-search-json name u.found ref u.query))
-  ?:  ?=([%apps %git %api %public %repository @ %commits ~] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %commits ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
@@ -3015,7 +3015,7 @@
       (api-error eyre-id 404 'ref not found')
     :_  this
     (api-json eyre-id 200 (repository-history-json name u.found ref our.bowl now.bowl))
-  ?:  ?=([%apps %git %api %public %repository @ %compare ~] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %compare ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
@@ -3037,7 +3037,7 @@
       (api-error eyre-id 422 'commits do not have readable trees')
     :_  this
     (api-json eyre-id 200 u.diff)
-  ?:  ?=([%apps %git %api %public %repository @ %commit @ ~] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %commit @ ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  oid-text=@t  i.t.t.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3051,7 +3051,7 @@
       (api-error eyre-id 404 'commit not found')
     :_  this
     (api-json eyre-id 200 u.detail)
-  ?:  ?=([%apps %git %api %public %repository @ %file-history *] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %file-history *] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
@@ -3068,7 +3068,7 @@
       (api-error eyre-id 404 'ref not found')
     :_  this
     (api-json eyre-id 200 (repository-file-history-view-json name u.found ref u.file-path our.bowl now.bowl))
-  ?:  ?=([%apps %git %api %public %repository @ %file-blame *] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %file-blame *] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
@@ -3087,7 +3087,7 @@
       (api-error eyre-id 422 'blame is available for text files up to 256 KiB and 10,000 lines')
     :_  this
     (api-json eyre-id 200 u.blame)
-  ?:  ?=([%apps %git %api %public %repository @ %file *] site)
+  ?:  ?=([%apps %urgit %api %public %repository @ %file *] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
@@ -3113,21 +3113,21 @@
   |=  [eyre-id=@ta req=inbound-request:eyre line=request-line:server]
   ^-  (quip card _this)
   =/  site=(list @t)  site.line
-  ?:  ?=([%apps %git %api %hooks @ ~] site)
+  ?:  ?=([%apps %urgit %api %hooks @ ~] site)
     (handle-incoming-hook eyre-id req i.t.t.t.t.site)
-  ?:  ?=([%apps %git %api %public *] site)
+  ?:  ?=([%apps %urgit %api %public *] site)
     (handle-public-api eyre-id req line)
   ?.  authenticated.req
     :_  this
     (api-error eyre-id 401 'Urbit login required')
   =/  method=@tas  method.request.req
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %github %status ~] site)
+          ?=([%apps %urgit %api %github %status ~] site)
       ==
     :_  this
     (api-json eyre-id 200 github-results-json)
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %github %token ~] site)
+          ?=([%apps %urgit %api %github %token ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3141,13 +3141,13 @@
     :_  this
     (api-ok eyre-id 200)
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %github %token ~] site)
+          ?=([%apps %urgit %api %github %token ~] site)
       ==
     =.  github-token  ~
     :_  this
     (api-ok eyre-id 200)
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %github %import ~] site)
+          ?=([%apps %urgit %api %github %import ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3190,7 +3190,7 @@
     :_  next
     (weld cards (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['message' s+'GitHub import started']])))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %github %metadata ~] site)
+          ?=([%apps %urgit %api %repository @ %github %metadata ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3232,7 +3232,7 @@
     :_  +.result
     (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %github %issues @ ~] site)
+          ?=([%apps %urgit %api %repository @ %github %issues @ ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3256,7 +3256,7 @@
       [%'GET' (api-url:git-github owner remote suffix) (api-headers:git-github github-token) ~]
     (github-start ctx request)
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %github %pulls @ ~] site)
+          ?=([%apps %urgit %api %repository @ %github %pulls @ ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3280,7 +3280,7 @@
       [%'GET' (api-url:git-github owner remote suffix) (api-headers:git-github github-token) ~]
     (github-start ctx request)
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %github %file *] site)
+          ?=([%apps %urgit %api %repository @ %github %file *] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3322,7 +3322,7 @@
       [%'GET' (api-url:git-github owner remote suffix) (api-headers:git-github github-token) ~]
     (github-start ctx request)
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %github %push ~] site)
+          ?=([%apps %urgit %api %repository @ %github %push ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3364,7 +3364,7 @@
     :_  +.result
     (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %github %fork ~] site)
+          ?=([%apps %urgit %api %repository @ %github %fork ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3388,7 +3388,7 @@
     :_  +.result
     (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %github %pull ~] site)
+          ?=([%apps %urgit %api %repository @ %github %pull ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3436,23 +3436,23 @@
     :_  +.result
     (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %peer %activity ~] site)
+          ?=([%apps %urgit %api %peer %activity ~] site)
       ==
     :_  this
     (api-json eyre-id 200 peer-activities-json)
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %peer %activity ~] site)
+          ?=([%apps %urgit %api %peer %activity ~] site)
       ==
     =.  peer-activities  ~
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %peer %peers ~] site)
+          ?=([%apps %urgit %api %peer %peers ~] site)
       ==
     :_  this
     (api-json eyre-id 200 peers-json)
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %peer %peers ~] site)
+          ?=([%apps %urgit %api %peer %peers ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3468,7 +3468,7 @@
       (api-error eyre-id 422 'ship must be a valid Urbit ID')
     (api-with-action eyre-id 200 [%add-peer u.peer])
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %peer %peers ~] site)
+          ?=([%apps %urgit %api %peer %peers ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3484,12 +3484,12 @@
       (api-error eyre-id 422 'ship must be a valid Urbit ID')
     (api-with-action eyre-id 200 [%remove-peer u.peer])
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %peer %browses ~] site)
+          ?=([%apps %urgit %api %peer %browses ~] site)
       ==
     :_  this
     (api-json eyre-id 200 peer-browses-json)
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %peer %browses ~] site)
+          ?=([%apps %urgit %api %peer %browses ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3510,7 +3510,7 @@
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %peer %browse @ @ ~] site)
+          ?=([%apps %urgit %api %peer %browse @ @ ~] site)
       ==
     =/  ship-text=@t  i.t.t.t.t.t.site
     =/  repository=@t  i.t.t.t.t.t.t.site
@@ -3520,12 +3520,12 @@
       (api-error eyre-id 422 'valid ship and repository are required')
     (start-peer-browse eyre-id u.peer repository %overview)
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %peer %discoveries ~] site)
+          ?=([%apps %urgit %api %peer %discoveries ~] site)
       ==
     :_  this
     (api-json eyre-id 200 peer-discoveries-json)
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %peer %discover ~] site)
+          ?=([%apps %urgit %api %peer %discover ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3551,7 +3551,7 @@
       ==
     (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %peer %discoveries ~] site)
+          ?=([%apps %urgit %api %peer %discoveries ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3572,12 +3572,12 @@
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %peer %transfers ~] site)
+          ?=([%apps %urgit %api %peer %transfers ~] site)
       ==
     :_  this
     (api-json eyre-id 200 peer-results-json)
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %peer %transfers ~] site)
+          ?=([%apps %urgit %api %peer %transfers ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3608,7 +3608,7 @@
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %peer %fork ~] site)
+          ?=([%apps %urgit %api %peer %fork ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3675,7 +3675,7 @@
       ==
     (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['transfer' s+(scot %uv transfer)]]))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %peer %push ~] site)
+          ?=([%apps %urgit %api %peer %push ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3704,7 +3704,7 @@
       ==
     (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['transfer' s+(scot %uv transfer)]]))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %peer %pull-request ~] site)
+          ?=([%apps %urgit %api %peer %pull-request ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -3734,12 +3734,12 @@
       ==
     (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['transfer' s+(scot %uv transfer)]]))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repositories ~] site)
+          ?=([%apps %urgit %api %repositories ~] site)
       ==
     :_  this
     (api-json eyre-id 200 (repositories-json repositories))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %desks ~] site)
+          ?=([%apps %urgit %api %desks ~] site)
       ==
     =/  desks=(unit (set desk))
       %-  mole
@@ -3753,7 +3753,7 @@
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['desks' [%a entries]]]))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ ~] site)
+          ?=([%apps %urgit %api %repository @ ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3763,7 +3763,7 @@
     :_  this
     (api-json eyre-id 200 (repository-json name u.found))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %issues ~] site)
+          ?=([%apps %urgit %api %repository @ %issues ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3794,7 +3794,7 @@
     :_  +.dispatched
     (weld -.dispatched (api-json eyre-id 201 (native-issue-json issue %.y)))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %issues @ ~] site)
+          ?=([%apps %urgit %api %repository @ %issues @ ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -3812,7 +3812,7 @@
     :_  this
     (api-json eyre-id 200 (native-issue-json u.issue %.y))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %issues @ %comments ~] site)
+          ?=([%apps %urgit %api %repository @ %issues @ %comments ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -3847,7 +3847,7 @@
     :_  this
     (api-json eyre-id 201 (issue-comment-json comment))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %issues @ %state ~] site)
+          ?=([%apps %urgit %api %repository @ %issues @ %state ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -3878,7 +3878,7 @@
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['state' s+next-state]]))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %issues @ %labels ~] site)
+          ?=([%apps %urgit %api %repository @ %issues @ %labels ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -3912,7 +3912,7 @@
     :_  this
     (api-ok eyre-id 200)
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %issues @ %assignees ~] site)
+          ?=([%apps %urgit %api %repository @ %issues @ %assignees ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -3943,7 +3943,7 @@
     :_  this
     (api-ok eyre-id 200)
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %clay %status ~] site)
+          ?=([%apps %urgit %api %repository @ %clay %status ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3953,7 +3953,7 @@
     :_  this
     (api-json eyre-id 200 (clay-bridge-status-json name u.found our.bowl now.bowl))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %files ~] site)
+          ?=([%apps %urgit %api %repository @ %files ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3968,7 +3968,7 @@
     :_  this
     (api-json eyre-id 200 (repository-files-at-json name u.found ref))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %search ~] site)
+          ?=([%apps %urgit %api %repository @ %search ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3987,7 +3987,7 @@
     :_  this
     (api-json eyre-id 200 (repository-search-json name u.found ref u.query))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %commits ~] site)
+          ?=([%apps %urgit %api %repository @ %commits ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4002,7 +4002,7 @@
     :_  this
     (api-json eyre-id 200 (repository-history-json name u.found ref our.bowl now.bowl))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %compare ~] site)
+          ?=([%apps %urgit %api %repository @ %compare ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4026,7 +4026,7 @@
     :_  this
     (api-json eyre-id 200 u.diff)
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %commit @ ~] site)
+          ?=([%apps %urgit %api %repository @ %commit @ ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  oid-text=@t  i.t.t.t.t.t.t.site
@@ -4042,7 +4042,7 @@
     :_  this
     (api-json eyre-id 200 u.detail)
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %file-history *] site)
+          ?=([%apps %urgit %api %repository @ %file-history *] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4061,7 +4061,7 @@
     :_  this
     (api-json eyre-id 200 (repository-file-history-view-json name u.found ref u.file-path our.bowl now.bowl))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %file-blame *] site)
+          ?=([%apps %urgit %api %repository @ %file-blame *] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4082,7 +4082,7 @@
     :_  this
     (api-json eyre-id 200 u.blame)
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %file *] site)
+          ?=([%apps %urgit %api %repository @ %file *] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4103,7 +4103,7 @@
     :_  this
     (api-json eyre-id 200 (repository-file-json name u.found ref u.file-path u.data))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %file *] site)
+          ?=([%apps %urgit %api %repository @ %file *] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4201,7 +4201,7 @@
         [%pass /clay-timeout %arvo %b %wait timeout-at]
     ==
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %repository @ %file *] site)
+          ?=([%apps %urgit %api %repository @ %file *] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4292,7 +4292,7 @@
         [%pass /clay-timeout %arvo %b %wait timeout-at]
     ==
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repositories ~] site)
+          ?=([%apps %urgit %api %repositories ~] site)
       ==
     =/  jon=(unit json)  (api-body req)
     ?~  jon
@@ -4308,7 +4308,7 @@
       (api-error eyre-id 409 'repository already exists')
     (api-with-action eyre-id 201 [%create u.name u.public])
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %repository @ ~] site)
+          ?=([%apps %urgit %api %repository @ ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     ?.  (~(has by repositories) name)
@@ -4316,7 +4316,7 @@
       (api-error eyre-id 404 'repository not found')
     (api-with-action eyre-id 200 [%delete name])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %public ~] site)
+          ?=([%apps %urgit %api %repository @ %public ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     ?.  (~(has by repositories) name)
@@ -4332,7 +4332,7 @@
       (api-error eyre-id 422 'publicRead is required')
     (api-with-action eyre-id 200 [%set-public name u.public])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %description ~] site)
+          ?=([%apps %urgit %api %repository @ %description ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     ?.  (~(has by repositories) name)
@@ -4348,7 +4348,7 @@
       (api-error eyre-id 422 'description is required')
     (api-with-action eyre-id 200 [%set-description name u.description])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %branches ~] site)
+          ?=([%apps %urgit %api %repository @ %branches ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4377,7 +4377,7 @@
       (api-error eyre-id 404 'branch source not found')
     (api-with-action eyre-id 201 [%set-ref name branch-ref u.source])
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %repository @ %branches ~] site)
+          ?=([%apps %urgit %api %repository @ %branches ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4407,7 +4407,7 @@
       (api-error eyre-id 409 'cannot delete a branch linked to a Clay desk')
     (api-with-action eyre-id 200 [%delete-ref name branch-ref])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %branches %default ~] site)
+          ?=([%apps %urgit %api %repository @ %branches %default ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4428,7 +4428,7 @@
       (api-error eyre-id 404 'branch not found')
     (api-with-action eyre-id 200 [%set-head name branch-ref])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %webhooks ~] site)
+          ?=([%apps %urgit %api %repository @ %webhooks ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4466,7 +4466,7 @@
     :_  this
     (api-json eyre-id 201 (webhook-json hook))
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %repository @ %webhooks ~] site)
+          ?=([%apps %urgit %api %repository @ %webhooks ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4486,7 +4486,7 @@
     :_  this
     (api-ok eyre-id 200)
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %webhooks @ %test ~] site)
+          ?=([%apps %urgit %api %repository @ %webhooks @ %test ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  id=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -4507,7 +4507,7 @@
     :_  next
     (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %incoming-hook ~] site)
+          ?=([%apps %urgit %api %repository @ %incoming-hook ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4527,7 +4527,7 @@
     :_  this
     (api-ok eyre-id 200)
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %repository @ %incoming-hook ~] site)
+          ?=([%apps %urgit %api %repository @ %incoming-hook ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4538,7 +4538,7 @@
     :_  this
     (api-ok eyre-id 200)
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %repository @ %upstream-updates ~] site)
+          ?=([%apps %urgit %api %repository @ %upstream-updates ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4560,7 +4560,7 @@
     :_  this
     (api-ok eyre-id 200)
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %releases ~] site)
+          ?=([%apps %urgit %api %repository @ %releases ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4599,7 +4599,7 @@
     :_  +.dispatched
     (weld -.dispatched (api-json eyre-id 201 (release-json release %.y)))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %releases ~] site)
+          ?=([%apps %urgit %api %repository @ %releases ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4617,7 +4617,7 @@
     :_  this
     (api-json eyre-id 200 (release-json u.release %.y))
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %repository @ %releases ~] site)
+          ?=([%apps %urgit %api %repository @ %releases ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4637,7 +4637,7 @@
     :_  this
     (api-ok eyre-id 200)
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %archive ~] site)
+          ?=([%apps %urgit %api %repository @ %archive ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4661,7 +4661,7 @@
     :_  this
     (api-archive eyre-id name u.archive)
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %tags ~] site)
+          ?=([%apps %urgit %api %repository @ %tags ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4715,7 +4715,7 @@
     :_  +.dispatched
     (weld -.dispatched (api-json eyre-id 201 (pairs:enjs:format ~[['ok' b+%.y] ['ref' s+tag-ref] ['oid' s+(oid-text:git-codec tag-oid)]])))
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %repository @ %tags ~] site)
+          ?=([%apps %urgit %api %repository @ %tags ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4741,7 +4741,7 @@
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %pulls ~] site)
+          ?=([%apps %urgit %api %repository @ %pulls ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -4789,7 +4789,7 @@
     :_  +.dispatched
     (weld -.dispatched (api-json eyre-id 201 (pairs:enjs:format ~[['ok' b+%.y] ['number' n+(decimal number)]])))
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %pulls @ ~] site)
+          ?=([%apps %urgit %api %repository @ %pulls @ ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -4817,7 +4817,7 @@
     :_  this
     (api-json eyre-id 200 [%o fields])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %pulls @ %comments ~] site)
+          ?=([%apps %urgit %api %repository @ %pulls @ %comments ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -4883,7 +4883,7 @@
     :_  this
     (api-json eyre-id 201 (review-comment-json comment))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %pulls @ %comments @ %resolve ~] site)
+          ?=([%apps %urgit %api %repository @ %pulls @ %comments @ %resolve ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -4929,7 +4929,7 @@
     :_  this
     (api-json eyre-id 200 (review-comment-json updated))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %pulls @ %state ~] site)
+          ?=([%apps %urgit %api %repository @ %pulls @ %state ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -4967,7 +4967,7 @@
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['state' s+next-state]]))
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %pulls @ %merge ~] site)
+          ?=([%apps %urgit %api %repository @ %pulls @ %merge ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
@@ -5072,7 +5072,7 @@
         [%pass /clay-timeout %arvo %b %wait timeout-at]
     ==
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %writers ~] site)
+          ?=([%apps %urgit %api %repository @ %writers ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     ?.  (~(has by repositories) name)
@@ -5095,7 +5095,7 @@
       (api-with-action eyre-id 200 [%grant-writer name u.writer])
     (api-with-action eyre-id 200 [%revoke-writer name u.writer])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %protected ~] site)
+          ?=([%apps %urgit %api %repository @ %protected ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     ?.  (~(has by repositories) name)
@@ -5116,7 +5116,7 @@
       (api-error eyre-id 422 'a valid branch ref and protected flag are required')
     (api-with-action eyre-id 200 [%set-protected name u.ref u.protected])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %token ~] site)
+          ?=([%apps %urgit %api %repository @ %token ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     ?.  (~(has by repositories) name)
@@ -5132,7 +5132,7 @@
       (api-error eyre-id 422 'non-empty token is required')
     (api-with-action eyre-id 200 [%set-write-token name u.token])
   ?:  ?&  =(%'DELETE' method)
-          ?=([%apps %git %api %repository @ %token ~] site)
+          ?=([%apps %urgit %api %repository @ %token ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     ?.  (~(has by repositories) name)
@@ -5140,7 +5140,7 @@
       (api-error eyre-id 404 'repository not found')
     (api-with-action eyre-id 200 [%clear-write-token name])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %bind ~] site)
+          ?=([%apps %urgit %api %repository @ %bind ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     ?.  (~(has by repositories) name)
@@ -5172,7 +5172,7 @@
       (api-error eyre-id 404 'Clay desk not found')
     (api-with-action eyre-id 200 [%bind-desk name u.desk-name u.branch])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %unbind ~] site)
+          ?=([%apps %urgit %api %repository @ %unbind ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     ?.  (~(has by repositories) name)
@@ -5180,7 +5180,7 @@
       (api-error eyre-id 404 'repository not found')
     (api-with-action eyre-id 200 [%unbind-desk name])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %publish ~] site)
+          ?=([%apps %urgit %api %repository @ %publish ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -5203,7 +5203,7 @@
       (api-error eyre-id 422 'non-empty message is required')
     (api-with-action eyre-id 202 [%publish-desk name u.message])
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %clay %apply ~] site)
+          ?=([%apps %urgit %api %repository @ %clay %apply ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -5264,7 +5264,7 @@
         [%pass /clay-timeout %arvo %b %wait timeout-at]
     ==
   ?:  ?&  =(%'GET' method)
-          ?=([%apps %git %api %repository @ %lfs %gc ~] site)
+          ?=([%apps %urgit %api %repository @ %lfs %gc ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -5278,7 +5278,7 @@
     :_  this
     (api-json eyre-id 200 u.preview)
   ?:  ?&  =(%'POST' method)
-          ?=([%apps %git %api %repository @ %lfs %gc ~] site)
+          ?=([%apps %urgit %api %repository @ %lfs %gc ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -5669,7 +5669,7 @@
   ^-  (quip card _this)
   =/  line=request-line:server  (parse-request-line:server url.request.req)
   =/  site=(list @t)  site.line
-  ?:  (starts-with '/apps/git/api' url.request.req)
+  ?:  (starts-with '/apps/urgit/api' url.request.req)
     (handle-api eyre-id req line)
   ?:  ?=([%git @ %info %lfs %locks %verify ~] site)
     (handle-lfs-lock-verify eyre-id req (repository-name i.t.site))
@@ -6539,7 +6539,7 @@
     ?~  found  `this
     ?.  active.u.found  `this
     =/  release=card
-      [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %git] %poke %git-peer !>([%browse-release u.request])]
+      [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
     =/  failure
       |=  message=@t
       ^-  (quip card _this)
@@ -6607,7 +6607,7 @@
         (fail 'Fine repository object page is malformed')
       [%snapshot u.transfer u.decoded]
     :_  this
-    :~  [%pass /peer/snapshot/(scot %uv u.transfer) %agent [our.bowl %git] %poke %git-peer !>(packet)]
+    :~  [%pass /peer/snapshot/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ==
   ::
       [%peer %timeout @ ~]
@@ -6619,7 +6619,7 @@
     =/  packet=packet:git-peer
       [%snapshot-error u.transfer 'Fine repository read timed out']
     :_  this
-    :~  [%pass /peer/timeout-result/(scot %uv u.transfer) %agent [our.bowl %git] %poke %git-peer !>(packet)]
+    :~  [%pass /peer/timeout-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ==
   ::
       [%peer %serve-timeout @ ~]
@@ -6719,7 +6719,7 @@
           [%pass /clay-report %arvo %b %wait report-at]
       ==
     :_  this
-    :~  [%pass /clay-push %agent [our.bowl %git-clay] %poke %git-clay-action !>([desk-name.pending delta.pending])]
+    :~  [%pass /clay-push %agent [our.bowl %urgit-clay] %poke %git-clay-action !>([desk-name.pending delta.pending])]
     ==
   ::
       [%clay-timeout ~]
@@ -6765,8 +6765,8 @@
         :~  ['desk' s+desk-name.pending]
             ['commit' s+(oid-text:git-codec new-oid.pending)]
         ==
-      :~  [%pass /webhook/push %agent [our.bowl %git] %poke %git-webhook-event !>([repository.pending %push push-data])]
-          [%pass /webhook/clay-sync %agent [our.bowl %git] %poke %git-webhook-event !>([repository.pending %clay-sync clay-data])]
+      :~  [%pass /webhook/push %agent [our.bowl %urgit] %poke %git-webhook-event !>([repository.pending %push push-data])]
+          [%pass /webhook/clay-sync %agent [our.bowl %urgit] %poke %git-webhook-event !>([repository.pending %clay-sync clay-data])]
       ==
     =.  pending-clay  ~
     =.  peer-activities
@@ -6780,7 +6780,7 @@
       =/  packet=packet:git-peer
         [%result transfer.u.peer-response.pending ok.result message.result]
       =/  response-cards=(list card)
-        ~[[%pass /peer/result/(scot %uv transfer.u.peer-response.pending) %agent [ship.u.peer-response.pending %git] %poke %git-peer !>(packet)]]
+        ~[[%pass /peer/result/(scot %uv transfer.u.peer-response.pending) %agent [ship.u.peer-response.pending %urgit] %poke %git-peer !>(packet)]]
       (weld webhook-cards response-cards)
     ?:  api-response.pending
       =/  jon=json

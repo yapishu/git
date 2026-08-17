@@ -506,7 +506,7 @@ function Webhooks({ repo, onMutate }) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
-  const incomingUrl = `${window.location.origin}/apps/git/api/hooks/${encodeURIComponent(repo.name)}`
+  const incomingUrl = `${window.location.origin}/apps/urgit/api/hooks/${encodeURIComponent(repo.name)}`
 
   function toggleEvent(event) {
     setEvents((current) => {
@@ -758,7 +758,7 @@ function IssueText({ text = '' }) {
   const parts = text.split(/(~[a-z0-9-]+\/[A-Za-z0-9._-]+#\d+)/g)
   return <>{parts.map((part, index) => {
     const match = /^(~[a-z0-9-]+)\/([A-Za-z0-9._-]+)#(\d+)$/.exec(part)
-    return match ? <a key={index} className="issue-reference" href={`/apps/git/#/peer/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}`} title={`Issue #${match[3]} on ${match[1]}/${match[2]}`}>{part}</a> : part
+    return match ? <a key={index} className="issue-reference" href={`/apps/urgit/#/peer/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}`} title={`Issue #${match[3]} on ${match[1]}/${match[2]}`}>{part}</a> : part
   })}</>
 }
 
@@ -882,7 +882,7 @@ function CommitDetail({ data, onBack, onOpenGit, onCreateTag }) {
 }
 
 function Settings({ repo, onMutate }) {
-  const publicUrl = `${window.location.origin}/apps/git/public/${encodeURIComponent(repo.name)}`
+  const publicUrl = `${window.location.origin}/apps/urgit/public/${encodeURIComponent(repo.name)}`
   const [description, setDescription] = useState(repo.description || '')
   const [desk, setDesk] = useState(repo.binding?.desk || '')
   const [branch, setBranch] = useState(repo.binding?.branch || repo.head || 'refs/heads/main')

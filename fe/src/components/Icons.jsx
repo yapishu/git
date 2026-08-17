@@ -1,5 +1,5 @@
 export function GitIcon({ size = 18 }) {
-  return <img src="/apps/git/git.svg" width={size} height={size} alt="" aria-hidden="true" />
+  return <img src="/apps/urgit/git.svg" width={size} height={size} alt="" aria-hidden="true" />
 }
 
 export function RefreshIcon() {

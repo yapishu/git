@@ -47,7 +47,7 @@ export default function Sidebar({ repositories, peers, selected, remoteSelected,
 
   return (
     <aside className="sidebar">
-      <div className="brand"><GitIcon size={20} /><span>git</span></div>
+      <div className="brand"><GitIcon size={20} /><span>urgit</span></div>
       <div className="sidebar-heading">
         <span>Repositories</span>
         <button className="icon-button" onClick={onCreate} title="New repository"><PlusIcon /></button>

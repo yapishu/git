@@ -1,4 +1,4 @@
-:~  %git
-    %git-clay
-    %git-fileserver
+:~  %urgit
+    %urgit-clay
+    %urgit-fileserver
 ==

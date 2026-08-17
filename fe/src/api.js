@@ -1,4 +1,4 @@
-const BASE = '/apps/git/api'
+const BASE = '/apps/urgit/api'
 
 const fileRoute = (name, path) => {
   const parts = path.split('/').filter(Boolean).map(encodeURIComponent)

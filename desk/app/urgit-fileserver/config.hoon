@@ -1,6 +1,6 @@
 |%
 ++  web-root  ^-  (list @t)
-  /apps/git
+  /apps/urgit
 ++  file-root  ^-  path
   /web
 ++  index  ^-  $@(~ [~ path])

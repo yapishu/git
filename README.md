@@ -61,7 +61,7 @@ Further protocol work is tracked in [`specs/roadmap.md`](specs/roadmap.md). Prot
 Build directly into a mounted desk:
 
 ```sh
-zig build -Ddesk=/path/to/pier/git
+zig build -Ddesk=/path/to/pier/urgit
 ```
 
 The build requires Git, Zig, and Node.js 22 (or Node.js 20.19 or newer). It installs frontend dependencies with `npm` when needed.
@@ -69,20 +69,20 @@ The build requires Git, Zig, and Node.js 22 (or Node.js 20.19 or newer). It inst
 Then commit the `%urgit` desk and run the protocol vectors:
 
 ```hoon
-+git!git-codec-vector
-+git!git-pack-vector
-+git!git-pack-decode-vector
-+git!git-stock-pack-vector
-+git!git-delta-pack-vector
-+git!git-ofs-delta-pack-vector
-+git!git-storage-vector
-+git!git-clay-vector
-+git!git-tree-vector
-+git!git-archive-vector
-+git!git-shallow-vector
-+git!git-blame-vector
-+git!git-github-vector
-+git!git-webhook-vector
++urgit!git-codec-vector
++urgit!git-pack-vector
++urgit!git-pack-decode-vector
++urgit!git-stock-pack-vector
++urgit!git-delta-pack-vector
++urgit!git-ofs-delta-pack-vector
++urgit!git-storage-vector
++urgit!git-clay-vector
++urgit!git-tree-vector
++urgit!git-archive-vector
++urgit!git-shallow-vector
++urgit!git-blame-vector
++urgit!git-github-vector
++urgit!git-webhook-vector
 ```
 
 The codec vector's blob OID must be `3b18e512dba79e4c8300dd08aeb37f8e728b8dad`, matching `git hash-object` for `hello world\n`. The pack vectors cover local round trips and stock Git packs containing binary tree data, `REF_DELTA`, and `OFS_DELTA` entries. The storage vector checks that object-store transfers contain authorization, date, and payload-hash headers. The archive vector checks executable and symbolic-link tar entries. The webhook vector checks a standard HMAC-SHA256 value and GitHub push parsing.
@@ -97,4 +97,4 @@ The web read model is available through `%urgit` scries at `/repositories/json`,
 
 The repository settings page compares the current branch tree with the live bound desk and reports whether they are synchronized, ahead on either side, divergent, or not yet mapped. “Apply branch to desk” uses the same Clay-gated transaction as a linked Git push; “Publish desk to branch” snapshots Clay in the other direction.
 
-The authenticated web app is served at `/apps/git`. Public repositories also have a read-only page at `/apps/git/public/<repository>` that requires no Urbit login. Its new-repository dialog creates a blank repository, publishes a mounted desk, forks from a ship, or imports from GitHub. The API manages repository policy and Clay bindings, browses, searches, compares, and edits local files, keeps peer bookmarks, remotely browses public repositories over Fine, forks and refreshes repositories, manages native issues and releases, opens or merges native pull requests, and configures incoming and outgoing webhooks. GitHub pull and push packs are limited to 64 MiB and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.
+The authenticated web app is served at `/apps/urgit`. Public repositories also have a read-only page at `/apps/urgit/public/<repository>` that requires no Urbit login. Its new-repository dialog creates a blank repository, publishes a mounted desk, forks from a ship, or imports from GitHub. The API manages repository policy and Clay bindings, browses, searches, compares, and edits local files, keeps peer bookmarks, remotely browses public repositories over Fine, forks and refreshes repositories, manages native issues and releases, opens or merges native pull requests, and configures incoming and outgoing webhooks. GitHub pull and push packs are limited to 64 MiB and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.
