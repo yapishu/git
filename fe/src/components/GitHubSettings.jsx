@@ -28,7 +28,7 @@ export default function GitHubSettings({ onImport, onBack }) {
       {error && <div className="inline-error">{error}</div>}
       <div className="settings-columns">
         <section className="panel">
-          <div className="section-title"><div><h2>Personal access token</h2><p>The token stays in Gall state and is never returned to the browser. Public imports work without one; private repositories and write operations require it.</p></div><span className={status?.tokenSet ? 'status good' : 'status'}>{status?.tokenSet ? 'connected' : 'optional'}</span></div>
+          <div className="section-title"><div><h2>Personal access token</h2><p>The token stays in Gall state and is never returned to the browser. Use a fine-grained token with access to the repository and Contents set to read/write. Pull requests need Pull requests read/write.</p></div><span className={status?.tokenSet ? 'status good' : 'status'}>{status?.tokenSet ? 'connected' : 'optional'}</span></div>
           <label><span>GitHub token</span><div className="inline-field"><input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder={status?.tokenSet ? 'Token is stored' : 'github_pat_…'} /><button className="button" disabled={busy || !token} onClick={save}>Save</button></div></label>
           {status?.tokenSet && <button className="text-button danger-text" disabled={busy} onClick={clear}>Disconnect GitHub</button>}
         </section>

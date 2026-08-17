@@ -17,6 +17,7 @@
 - Clay-gated pushes: invalid desks are rejected by Git with the complete Ford stack trace
 - Clay-to-Git publishing that snapshots a bound desk as canonical blobs, trees, and commits
 - GitHub-style web interface for repositories, branches, files, commit details, authorship, per-file history, and repository settings
+- unauthenticated read-only repository pages for public projects, including branches, files, history, and commit diffs
 - repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
 - one-click publication of any mounted Clay desk as a Git repository
 - verified, incremental native forks: Ames coordinates access and refs while Fine carries only the missing immutable object snapshot
@@ -24,7 +25,7 @@
 - ship write ACLs with fast-forward-only native push-back from authorized forks
 - native pull requests between ships with per-file red/green diffs and Clay-gated merges
 - explicit Clay revision-to-commit history for both pushed Git trees and published desk snapshots
-- direct GitHub import and update through Git Smart HTTP, preserving branches, tags, commits, trees, blobs, and object IDs
+- bidirectional GitHub synchronization through Git Smart HTTP: safe fast-forward pulls and branch-selectable pushes preserving canonical object IDs
 - optional GitHub token support for private imports, GitHub forks, and opening pull requests
 - cached GitHub issues and pull-request status, synchronized through the GitHub REST API
 - JSON scries and HTTP APIs for repository summaries, refs, first-parent history, and file trees
@@ -59,6 +60,7 @@ Then commit the `%git` desk and run the protocol vectors:
 +git!git-ofs-delta-pack-vector
 +git!git-storage-vector
 +git!git-clay-vector
++git!git-github-vector
 ```
 
 The codec vector's blob OID must be `3b18e512dba79e4c8300dd08aeb37f8e728b8dad`, matching `git hash-object` for `hello world\n`. The pack vectors cover local round trips and stock Git packs containing binary tree data, `REF_DELTA`, and `OFS_DELTA` entries. The storage vector checks that object-store transfers contain authorization, date, and payload-hash headers.
@@ -71,4 +73,4 @@ A repository branch can be linked to a Clay desk with `%bind-desk`. A push to th
 
 The web read model is available through `%git` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`.
 
-The authenticated web app is served at `/apps/git`. Its new-repository dialog creates a blank repository, publishes a mounted desk, forks from a ship, or imports from GitHub. The API manages repository policy and Clay bindings, browses and edits local files, keeps peer bookmarks, remotely browses public repositories over Fine, forks and refreshes repositories, and opens or merges native pull requests. GitHub imports are limited to a 64 MiB pack response and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.
+The authenticated web app is served at `/apps/git`. Public repositories also have a read-only page at `/apps/git/public/<repository>` that requires no Urbit login. Its new-repository dialog creates a blank repository, publishes a mounted desk, forks from a ship, or imports from GitHub. The API manages repository policy and Clay bindings, browses and edits local files, keeps peer bookmarks, remotely browses public repositories over Fine, forks and refreshes repositories, and opens or merges native pull requests. GitHub pull and push packs are limited to 64 MiB and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.

@@ -43,6 +43,7 @@ GitHub
   v
 %git GitHub integration
   |- canonical pack ingestion and ref validation
+  |- fast-forward pull and receive-pack push
   |- issue and pull-request metadata cache
   `- authenticated fork and pull-request actions
 ```
@@ -101,11 +102,15 @@ Peer operations also write a bounded, transient activity ledger. Incoming snapsh
 
 `%git-fileserver` serves the built React application from `/web` at `/apps/git`. It watches Clay for frontend changes, clears Eyre's static-response cache when the tree changes, and unconditionally replaces its binding on load. Extensionless routes fall back to the application shell.
 
-The main `%git` agent owns `/apps/git/api`. Every API request requires an authenticated Urbit web session; Git Basic credentials are deliberately limited to Git and LFS operations. Read routes expose repository counts, branch trees, commit identities and detail, per-file history, Clay links, peer bookmarks, remote overviews, and pull-request diffs. Mutation routes create and delete repositories, change public access, rotate the hashed write token, manage ship writers and desk bindings, publish desks, edit files, start native forks or updates, and manage pull requests. Mutations reuse the same state transitions as native `%git-action` pokes.
+The main `%git` agent owns `/apps/git/api`. Administrative and mutation requests require an authenticated Urbit web session; Git Basic credentials are deliberately limited to Git and LFS operations. Read routes expose repository counts, branch trees, commit identities and detail, per-file history, Clay links, peer bookmarks, remote overviews, and pull-request diffs. Mutation routes create and delete repositories, change public access, rotate the hashed write token, manage ship writers and desk bindings, publish desks, edit files, start native forks or updates, and manage pull requests. Mutations reuse the same state transitions as native `%git-action` pokes.
+
+Public repositories additionally expose a narrow unauthenticated API under `/apps/git/api/public/repository/<name>`. It returns a sanitized repository view, branches, files, first-parent history, per-file history, and commit diffs while omitting write-token state, writer ACLs, Clay bindings, and native origin metadata. `%git-fileserver` permits the application shell and immutable frontend assets without a login at `/apps/git/public/<name>`. The React application detects that route and renders only read operations; private and nonexistent repositories both return 404.
 
 ## GitHub integration
 
-GitHub repositories enter through the same Git protocol boundary as any other remote. `%git` requests the upload-pack advertisement through Iris, retains valid refs and the advertised symbolic `HEAD`, asks for the advertised object graph, and decodes the returned pack with the native pack implementation. Every object ID and complete reachable ref graph is verified before the repository is installed. An update is accepted only for a repository linked to the same GitHub origin and not currently bound to Clay. Pack responses are capped at 64 MiB and 25,000 objects.
+GitHub repositories enter through the same Git protocol boundary as any other remote. `%git` requests the upload-pack advertisement through Iris, retains valid refs and the advertised symbolic `HEAD`, asks for the advertised object graph, and decodes the returned pack with the native pack implementation. Every object ID and complete reachable ref graph is verified before the repository is installed. Pull preserves local-only refs and advances matching refs only when the old local tip is reachable from the advertised GitHub tip; divergence is reported instead of overwriting local work. An update is accepted only for a repository linked to the same GitHub origin and not currently bound to Clay.
+
+Push uses authenticated Smart HTTP receive-pack rather than reconstructing commits through GitHub's REST API. `%git` discovers the selected remote branch, requires its advertised tip to be in the local branch's reachable closure, emits a standard compare-and-swap command plus a complete canonical pack, and accepts the update only when GitHub returns both `unpack ok` and `ok <ref>` report-status records. A remote-only commit therefore produces an explicit pull-before-push failure, and GitHub independently enforces its repository and protected-branch policy. Pull and push are capped at 64 MiB and 25,000 objects.
 
 The optional personal access token remains server-side in Gall state and is never included in the web read model. Git Smart HTTP uses it for private repository access; GitHub REST uses it for private metadata and write operations. Issue and pull-request lists are cached as bounded metadata, excluding issue bodies and comments. Fork creation and pull-request creation are direct REST actions. These operations run asynchronously through Iris and expose transient status to the authenticated web UI.
 

@@ -50,12 +50,14 @@
 - pull-request merges and authorized native updates gated by Clay when the destination branch is desk-bound
 - explicit Clay revision-to-Git commit mappings in both publication directions
 - reload-safe, cache-invalidating static fileserver at `/apps/git` and a separately rebound API at `/apps/git/api`
+- unauthenticated, sanitized read-only pages and APIs for public repositories, with branch/file browsing, history, and commit diffs
 - direct GitHub Smart HTTP import and update with authentic refs, canonical OIDs, delta-pack decoding, reachable-graph validation, and 64 MiB/25,000-object bounds
+- fast-forward-only GitHub pulls that preserve local-only refs and authenticated branch-selectable receive-pack pushes with report-status validation
 - optional server-side GitHub token for private repositories and authenticated REST operations
 - bounded GitHub issue and pull-request synchronization plus GitHub fork and pull-request creation
 - consolidated new-repository flow for blank repositories, Clay desks, peer forks, and GitHub imports
 - repository navigation and filtering: repository search, code, issues, pull requests, branches, commits, file editing/history, and settings
-- conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, Clay snapshots, and object-store request signing
+- conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, GitHub receive-pack requests/results, Clay snapshots, and object-store request signing
 
 ## Next
 
