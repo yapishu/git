@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { api } from '../api'
-import { GitIcon, PlusIcon } from './Icons'
+import { GitIcon, PlusIcon, SettingsIcon } from './Icons'
 
-export default function Sidebar({ repositories, peers, selected, remoteSelected, onSelect, onSelectRemote, onCreate, onPeersChanged, onGitHubSettings }) {
+export default function Sidebar({ repositories, peers, selected, remoteSelected, onSelect, onSelectRemote, onCreate, onPeersChanged, onSettings }) {
   const [query, setQuery] = useState('')
   const [addingPeer, setAddingPeer] = useState(false)
   const [peerName, setPeerName] = useState('')
@@ -83,7 +83,7 @@ export default function Sidebar({ repositories, peers, selected, remoteSelected,
         </div>)}
         {!peers.length && <small className="quiet peer-empty">Add a ship to browse its repositories.</small>}
       </nav>
-      <div className="sidebar-footer"><button className="repo-link" onClick={onGitHubSettings}><span className="github-mark">GH</span><span>GitHub</span><span className="sidebar-arrow">›</span></button></div>
+      <div className="sidebar-footer"><button className="repo-link" onClick={onSettings}><span className="settings-mark"><SettingsIcon /></span><span>Settings</span><span className="sidebar-arrow">›</span></button></div>
     </aside>
   )
 }

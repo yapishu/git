@@ -274,7 +274,11 @@ export async function waitForPeerBrowse(requestId, { interval = 500, onProgress 
     const browse = status.browses?.find((item) => item.request === requestId)
     if (!browse) {
       missingPolls += 1
-      if (missingPolls >= 8) throw new Error('ship no longer tracks this peer browse')
+      if (missingPolls >= 8) {
+        const error = new Error('peer browse state was reset')
+        error.code = 'PEER_BROWSE_MISSING'
+        throw error
+      }
       continue
     }
     missingPolls = 0

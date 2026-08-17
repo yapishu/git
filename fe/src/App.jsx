@@ -2,19 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, publicApi, waitForPeerBrowse, waitForPeerTransfer } from './api'
 import ForkPeer from './components/ForkPeer'
 import GitHubImport from './components/GitHubImport'
-import GitHubSettings from './components/GitHubSettings'
 import { ActivityIcon, RefreshIcon } from './components/Icons'
 import PeerActivity from './components/PeerActivity'
 import PublishDesk from './components/PublishDesk'
 import RepositoryView from './components/RepositoryView'
 import NewRepositoryModal from './components/NewRepositoryModal'
 import RemoteRepositoryView from './components/RemoteRepositoryView'
+import Settings from './components/Settings'
 import Sidebar from './components/Sidebar'
 
 function routeFromHash() {
   const raw = location.hash.replace(/^#\/?/, '').split('?')[0]
   const parts = raw.split('/').filter(Boolean)
   try {
+    if (parts[0] === 'settings') return { kind: 'settings' }
     if (parts[0] === 'peer' && parts.length >= 3) return { kind: 'peer', ship: decodeURIComponent(parts[1]), name: decodeURIComponent(parts[2]) }
     return { kind: 'repository', name: parts[0] ? decodeURIComponent(parts[0]) : '' }
   } catch {
@@ -41,7 +42,7 @@ function PrivateApp() {
   const [publishingDesk, setPublishingDesk] = useState(false)
   const [forkingPeer, setForkingPeer] = useState(false)
   const [importingGitHub, setImportingGitHub] = useState(false)
-  const [githubSettings, setGithubSettings] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [peerActivity, setPeerActivity] = useState([])
@@ -99,15 +100,16 @@ function PrivateApp() {
   useEffect(() => {
     const pop = () => {
       const route = routeFromHash()
-      setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false)
-      if (route.kind === 'peer') {
+      setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setSettingsOpen(false)
+      if (route.kind === 'settings') openSettings(false)
+      else if (route.kind === 'peer') {
         const current = remoteSelectedRef.current
         if (!current || current.ship !== route.ship || current.name !== route.name) chooseRemote(route.ship, route.name, false)
       }
       else { setRemoteSelected(null); setRemoteData(null); setRemoteStatus(''); setRemoteError(''); setSelected(route.name) }
     }
     addEventListener('popstate', pop)
-    if (routeFromHash().kind === 'peer') pop()
+    if (routeFromHash().kind !== 'repository') pop()
     return () => removeEventListener('popstate', pop)
   }, [])
 
@@ -119,7 +121,7 @@ function PrivateApp() {
     setPublishingDesk(false)
     setForkingPeer(false)
     setImportingGitHub(false)
-    setGithubSettings(false)
+    setSettingsOpen(false)
     setRemoteSelected(null)
     setRemoteData(null)
     setRemoteStatus('')
@@ -138,29 +140,46 @@ function PrivateApp() {
     const selection = { ship, name }
     remoteSelectedRef.current = selection
     setError(''); setRemoteSelected(selection); setRemoteData(null); setRemoteStatus('Contacting peer'); setRemoteError(''); setSelected('')
-    setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false)
+    setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setSettingsOpen(false)
     if (pushHistory) history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(name)}`)
     try {
-      const started = await api.peerBrowse(ship, name)
-      if (remoteBrowseRef.current.generation !== generation) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const started = await api.peerBrowse(ship, name)
+        if (remoteBrowseRef.current.generation !== generation) {
+          await api.peerDeleteBrowse(started.request).catch(() => {})
+          return
+        }
+        remoteBrowseRef.current.request = started.request
+        let found
+        try {
+          found = await waitForPeerBrowse(started.request, {
+            onProgress: (browse) => {
+              if (remoteBrowseRef.current.generation === generation) setRemoteStatus(browse.message || 'Loading from peer')
+            },
+          })
+        } catch (cause) {
+          if (remoteBrowseRef.current.generation !== generation) return
+          remoteBrowseRef.current.request = ''
+          if (cause.code === 'PEER_BROWSE_MISSING' && attempt === 0) {
+            setRemoteStatus('Restarting peer browse after agent reload')
+            continue
+          }
+          if (cause.code === 'PEER_BROWSE_MISSING') {
+            throw new Error('Peer browse was interrupted while the app reloaded. Retry when the ship is ready.')
+          }
+          throw cause
+        }
         await api.peerDeleteBrowse(started.request).catch(() => {})
+        if (remoteBrowseRef.current.generation !== generation) return
+        remoteBrowseRef.current.request = ''
+        if (!found.ok) throw new Error(found.message)
+        if (found.ship !== ship || found.repository !== name || found.result?.repository?.name !== name) {
+          throw new Error('peer browse returned a different repository')
+        }
+        setRemoteStatus('')
+        setRemoteData(found.result)
         return
       }
-      remoteBrowseRef.current.request = started.request
-      const found = await waitForPeerBrowse(started.request, {
-        onProgress: (browse) => {
-          if (remoteBrowseRef.current.generation === generation) setRemoteStatus(browse.message || 'Loading from peer')
-        },
-      })
-      await api.peerDeleteBrowse(started.request).catch(() => {})
-      if (remoteBrowseRef.current.generation !== generation) return
-      remoteBrowseRef.current.request = ''
-      if (!found.ok) throw new Error(found.message)
-      if (found.ship !== ship || found.repository !== name || found.result?.repository?.name !== name) {
-        throw new Error('peer browse returned a different repository')
-      }
-      setRemoteStatus('')
-      setRemoteData(found.result)
     } catch (cause) {
       if (remoteBrowseRef.current.generation === generation) {
         remoteBrowseRef.current.request = ''
@@ -211,12 +230,28 @@ function PrivateApp() {
     }
   }
 
+  function openSettings(pushHistory = true) {
+    remoteBrowseRef.current.generation += 1
+    if (remoteBrowseRef.current.request) api.peerDeleteBrowse(remoteBrowseRef.current.request).catch(() => {})
+    remoteBrowseRef.current.request = ''
+    remoteSelectedRef.current = null
+    setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false)
+    setRemoteSelected(null); setRemoteData(null); setRemoteStatus(''); setRemoteError('')
+    setSettingsOpen(true)
+    if (pushHistory) history.pushState({ urgitSettings: true }, '', '#/settings')
+  }
+
+  function closeSettings() {
+    if (history.state?.urgitSettings) history.back()
+    else choose(selected || repositories[0]?.name || '')
+  }
+
   return (
     <div className="app-shell">
-      <Sidebar repositories={repositories} peers={peers} selected={selected} remoteSelected={remoteSelected} onSelect={choose} onSelectRemote={chooseRemote} onCreate={() => setCreating(true)} onPeersChanged={refreshPeers} onGitHubSettings={() => { setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setRemoteSelected(null); setGithubSettings(true) }} />
+      <Sidebar repositories={repositories} peers={peers} selected={selected} remoteSelected={remoteSelected} onSelect={choose} onSelectRemote={chooseRemote} onCreate={() => setCreating(true)} onPeersChanged={refreshPeers} onSettings={openSettings} />
       <div className="workspace">
         <div className="topbar">
-          <span className="topbar-label">{repo ? repo.owner : 'Repositories'}</span>
+          <span className="topbar-label">{settingsOpen ? 'Settings' : repo ? repo.owner : 'Repositories'}</span>
           <div className="topbar-actions">
             <div className="activity-anchor">
               <button className="icon-button activity-button" onClick={() => { setActivityOpen((open) => !open); refreshActivity() }} title="Peer activity"><ActivityIcon />{activePeers > 0 && <span className="activity-badge">{activePeers}</span>}</button>
@@ -227,8 +262,8 @@ function PrivateApp() {
           </div>
         </div>
         {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError('')}>×</button></div>}
-        {githubSettings ? (
-          <GitHubSettings onImport={() => { setGithubSettings(false); setImportingGitHub(true) }} onBack={() => setGithubSettings(false)} />
+        {settingsOpen ? (
+          <Settings theme={theme} onThemeChange={setTheme} repositoryCount={repositories.length} peerCount={peers.length} onImport={() => { setSettingsOpen(false); setImportingGitHub(true) }} onBack={closeSettings} />
         ) : importingGitHub ? (
           <GitHubImport onComplete={published} onCancel={() => setImportingGitHub(false)} />
         ) : forkingPeer ? (
@@ -246,7 +281,7 @@ function PrivateApp() {
           </main>
         )}
       </div>
-      {creating && <NewRepositoryModal onCreate={create} onClose={() => setCreating(false)} onPublishDesk={() => { setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false); setPublishingDesk(true) }} onForkPeer={() => { setPublishingDesk(false); setImportingGitHub(false); setGithubSettings(false); setForkingPeer(true) }} onImportGitHub={() => { setPublishingDesk(false); setForkingPeer(false); setGithubSettings(false); setImportingGitHub(true) }} />}
+      {creating && <NewRepositoryModal onCreate={create} onClose={() => setCreating(false)} onPublishDesk={() => { setForkingPeer(false); setImportingGitHub(false); setSettingsOpen(false); setPublishingDesk(true) }} onForkPeer={() => { setPublishingDesk(false); setImportingGitHub(false); setSettingsOpen(false); setForkingPeer(true) }} onImportGitHub={() => { setPublishingDesk(false); setForkingPeer(false); setSettingsOpen(false); setImportingGitHub(true) }} />}
     </div>
   )
 }

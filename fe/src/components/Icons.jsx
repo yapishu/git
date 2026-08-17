@@ -17,3 +17,7 @@ export function CopyIcon() {
 export function ActivityIcon() {
   return <svg viewBox="0 0 24 24"><path d="M4 12h3l2-6 4 12 2-6h5" /></svg>
 }
+
+export function SettingsIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M4 7h7M15 7h5M4 17h3M11 17h9M11 4v6M7 14v6" /></svg>
+}

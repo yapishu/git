@@ -68,7 +68,8 @@ button { color: inherit; }
 .remote-repo-link { min-height: 31px; padding-left: 8px; font-size: 11px; }
 .write-badge { margin-left: auto; color: #1a7f37; font-size: 8px; text-transform: uppercase; }
 .peer-empty { display: block; padding: 8px 10px; font-size: 10px; line-height: 1.45; }
-.github-mark { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--text); color: var(--panel); font-size: 8px; font-weight: 800; }
+.settings-mark { width: 22px; height: 22px; display: grid; place-items: center; color: var(--muted); }
+.settings-mark svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7px; stroke-linecap: round; stroke-linejoin: round; }
 .sidebar-arrow { margin-left: auto; color: var(--muted); font-size: 18px; }
 .workspace { min-width: 0; }
 .public-shell { min-height: 100vh; }
@@ -514,14 +515,14 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
 .page-header p { margin: 8px 0 0; }
 .settings-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .8fr); gap: 16px; align-items: start; }
-.compact-empty { padding: 26px 0 6px; color: var(--muted); font-size: 12px; text-align: center; }
-.job-list { display: grid; margin: 8px -22px -22px; }
-.job-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 54px; padding: 8px 18px; border-top: 1px solid var(--line); }
-.job-row strong, .job-row small { display: block; }
-.job-row small { margin-top: 3px; color: var(--muted); font-size: 10px; }
-.job-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
-.job-dot.active { background: #bf8700; box-shadow: 0 0 0 3px color-mix(in srgb, #bf8700 15%, transparent); }
-.job-dot.ok { background: #1a7f37; }
+.settings-stack { display: grid; gap: 16px; }
+.theme-options { text-transform: capitalize; }
+.settings-summary { display: grid; gap: 1px; margin: 4px -22px -22px; background: var(--line); }
+.settings-summary > div { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 22px; background: var(--panel); }
+.settings-summary dt { color: var(--muted); font-size: 12px; }
+.settings-summary dd { margin: 0; font-weight: 650; }
+.field-help { margin: 9px 0 0; font-size: 11px; }
+.settings-actions { display: flex; align-items: center; gap: 14px; margin-top: 20px; }
 .release-list { display: grid; gap: 12px; }
 .release-card { margin: 0; }
 .release-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
