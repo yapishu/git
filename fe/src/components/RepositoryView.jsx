@@ -105,10 +105,10 @@ const imageType = (path) => {
   return ({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' })[extension]
 }
 
-function Files({ data, commit, loading, onOpen }) {
+function Files({ data, commit, loading, onOpen, onOpenCommit }) {
   if (loading) return <div className="empty">Loading tree…</div>
   if (!data?.files?.length) return <div className="empty">This repository has no files yet.</div>
-  const header = commit ? <div className="latest-commit"><span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span><span><strong>{commit.subject || 'Untitled commit'}</strong><small>{identityLabel(commit.author)}{dateLabel(commit.committer) ? ` · ${dateLabel(commit.committer)}` : ''}</small></span><code title={commit.oid}>{shortOid(commit.oid)}</code></div> : null
+  const header = commit ? <div className="latest-commit"><span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span><span><strong>{commit.subject || 'Untitled commit'}</strong><small>{identityLabel(commit.author)}{dateLabel(commit.committer) ? ` · ${dateLabel(commit.committer)}` : ''}</small></span><button className="commit-hash" title={`View ${commit.kind === 'clay' ? `revision ${commit.revision}` : commit.oid}`} onClick={() => onOpenCommit?.(commit)} disabled={!onOpenCommit}><code>{historyId(commit)}</code></button></div> : null
   return <FileTree files={data.files} header={header} onOpen={onOpen} />
 }
 
@@ -1234,7 +1234,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
           : filePath
           ? <FileView repository={repo.name} path={filePath} branch={branch} githubOrigin={!publicMode ? repo.githubOrigin : null} lineStart={lineStart} lineEnd={lineEnd} onSelectLine={(selected, extend, dragAnchor) => { const anchor = extend ? (dragAnchor || lineStart || selected) : selected; navigate({ lineStart: Math.min(anchor, selected), lineEnd: Math.max(anchor, selected) }) }} onOpenCommit={(commit) => commit && navigate({ tab: 'commits', filePath: '', commitOid: commit.oid })} editable={!publicMode} onBack={() => navigate({ filePath: '' })} onSaved={mutate} onDeleted={async () => { await mutate(); navigate({ filePath: '', lineStart: null, lineEnd: null }) }} client={client} />
           : searchQuery ? <SearchResults data={searchData} query={searchQuery} loading={searchLoading} error={searchError} onOpen={(result) => navigate({ tab: 'code', filePath: result.path, lineStart: result.line, lineEnd: result.line, commitOid: '' })} />
-            : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} />)}
+            : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} onOpenCommit={openCommit} />)}
         {tab === 'issues' && <Issues repo={repo} publicMode={publicMode} client={client} onMutate={mutate} />}
         {tab === 'branches' && <Branches repo={repo} publicMode={publicMode} onBrowse={browseBranch} onMutate={mutate} client={client} />}
         {tab === 'tags' && <Tags repo={repo} publicMode={publicMode} onMutate={mutate} initialTarget={tagTarget} initialKind={tagKind} onTargetConsumed={() => navigate({ tagTarget: '', tagKind: '' }, true)} />}

@@ -1922,7 +1922,7 @@
       ==
     `this
   =/  scry-path=path
-    /g/x/1/git//1/browse/(scot %uv request)
+    /g/x/1/urgit//1/browse/(scot %uv request)
   :_  this
   :~  [%pass /peer/browse/(scot %uv request) %keen %.n src.bowl scry-path]
   ==
@@ -2061,7 +2061,7 @@
     %+  turn  (gulf 1 pages.msg)
     |=  revision=@ud
     =/  scry-path=path
-      /g/x/(scot %ud revision)/git//1/fine/(peer-fine-name transfer.msg)
+      /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer.msg)
     [%pass /peer/fine/(scot %uv transfer.msg)/(scot %ud revision) %keen %.n src.bowl scry-path]
   =/  timeout-cards=(list card)
     :~  [%pass /peer/timeout/(scot %uv transfer.msg) %arvo %b %wait (add now.bowl ~m10)]
