@@ -151,6 +151,15 @@ p { color: var(--muted); line-height: 1.55; }
 .file-row:hover { background: var(--soft); }
 .file-path { display: flex; align-items: center; gap: 10px; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .file-path i { width: 8px; height: 10px; border: 1px solid var(--muted); border-radius: 1px; opacity: .6; }
+.file-tree .table-row { min-height: 39px; }
+.tree-group { display: contents; }
+.tree-row .file-path { padding-left: calc(var(--tree-depth, 0) * 18px); }
+.tree-chevron, .tree-spacer { width: 12px; flex: 0 0 12px; color: var(--muted); text-align: center; font: 17px/1 system-ui, sans-serif; }
+.directory-row { font-weight: 600; }
+.directory-row .quiet { font-size: 11px; font-weight: 400; }
+.file-path .folder-icon { position: relative; width: 12px; height: 9px; border: 1px solid var(--muted); border-radius: 2px; background: color-mix(in srgb, var(--muted) 7%, transparent); opacity: .75; }
+.file-path .folder-icon::before { content: ''; position: absolute; left: 0; top: -4px; width: 6px; height: 3px; border: 1px solid var(--muted); border-bottom: 0; border-radius: 2px 2px 0 0; background: var(--panel); }
+.static-file-row { cursor: default; }
 .quiet { color: var(--muted); }
 .empty { border: 1px dashed var(--line); border-radius: 7px; padding: 70px 20px; text-align: center; color: var(--muted); }
 .empty.compact { padding: 38px 20px; }

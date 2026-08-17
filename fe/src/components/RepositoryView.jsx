@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { exactBytes, formatBytes } from '../format'
+import FileTree from './FileTree'
 import { CopyIcon } from './Icons'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
@@ -10,6 +11,31 @@ const commitDate = (identity) => {
   return Number.isFinite(value) && value > 0 ? new Date(value) : null
 }
 const dateLabel = (identity) => commitDate(identity)?.toLocaleString() || ''
+const validTabs = new Set(['code', 'issues', 'pulls', 'branches', 'commits', 'settings'])
+
+function routeForRepository(repo) {
+  const [rawPath, rawQuery = ''] = location.hash.replace(/^#\/?/, '').split('?')
+  let name = ''
+  try { name = decodeURIComponent(rawPath) } catch { /* malformed hash */ }
+  const params = new URLSearchParams(rawQuery)
+  const tab = validTabs.has(params.get('tab')) ? params.get('tab') : 'code'
+  return {
+    tab,
+    branch: name === repo.name && params.get('branch') ? params.get('branch') : repo.head,
+    filePath: name === repo.name && tab === 'code' ? params.get('file') || '' : '',
+    commitOid: name === repo.name && tab === 'commits' ? params.get('commit') || '' : '',
+  }
+}
+
+function repositoryHash(repo, route) {
+  const params = new URLSearchParams()
+  if (route.tab !== 'code') params.set('tab', route.tab)
+  if (route.branch && route.branch !== repo.head) params.set('branch', route.branch)
+  if (route.filePath) params.set('file', route.filePath)
+  if (route.commitOid) params.set('commit', route.commitOid)
+  const query = params.toString()
+  return `#/${encodeURIComponent(repo.name)}${query ? `?${query}` : ''}`
+}
 
 const decodeBase64 = (content) => {
   const raw = atob(content)
@@ -37,18 +63,8 @@ const imageType = (path) => {
 function Files({ data, commit, loading, onOpen }) {
   if (loading) return <div className="empty">Loading tree…</div>
   if (!data?.files?.length) return <div className="empty">This repository has no files yet.</div>
-  return (
-    <div className="table">
-      {commit && <div className="latest-commit"><span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span><span><strong>{commit.subject || 'Untitled commit'}</strong><small>{identityLabel(commit.author)}{dateLabel(commit.committer) ? ` · ${dateLabel(commit.committer)}` : ''}</small></span><code title={commit.oid}>{shortOid(commit.oid)}</code></div>}
-      <div className="table-head"><span>Path</span><span>Size</span></div>
-      {data.files.map((file) => (
-        <button className="table-row file-row" key={file.path} onClick={() => onOpen(file.path)}>
-          <span className="file-path"><i />{file.path}</span>
-          <span className="quiet" title={exactBytes(file.size)}>{formatBytes(file.size)}</span>
-        </button>
-      ))}
-    </div>
-  )
+  const header = commit ? <div className="latest-commit"><span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span><span><strong>{commit.subject || 'Untitled commit'}</strong><small>{identityLabel(commit.author)}{dateLabel(commit.committer) ? ` · ${dateLabel(commit.committer)}` : ''}</small></span><code title={commit.oid}>{shortOid(commit.oid)}</code></div> : null
+  return <FileTree files={data.files} header={header} onOpen={onOpen} />
 }
 
 function FileView({ repository, path, branch, editable, onBack, onSaved, client = api }) {
@@ -464,13 +480,31 @@ function Settings({ repo, onMutate }) {
 }
 
 export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMode = false, client = api }) {
-  const [tab, setTab] = useState('code')
-  const [filePath, setFilePath] = useState('')
-  const [branch, setBranch] = useState(repo.head)
+  const initialRoute = routeForRepository(repo)
+  const [tab, setTab] = useState(initialRoute.tab)
+  const [filePath, setFilePath] = useState(initialRoute.filePath)
+  const [branch, setBranch] = useState(initialRoute.branch)
+  const [commitOid, setCommitOid] = useState(initialRoute.commitOid)
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
   const [commitDetail, setCommitDetail] = useState(null)
+  const [commitLoading, setCommitLoading] = useState(false)
   const cloneUrl = `${window.location.origin}/git/${repo.name}.git`
+
+  function applyRoute(route) {
+    setTab(route.tab)
+    setBranch(route.branch)
+    setFilePath(route.filePath)
+    setCommitOid(route.commitOid)
+  }
+
+  function navigate(changes, replace = false) {
+    const route = { tab, branch, filePath, commitOid, ...changes }
+    if (route.tab !== 'code') route.filePath = ''
+    if (route.tab !== 'commits') route.commitOid = ''
+    history[replace ? 'replaceState' : 'pushState']({}, '', repositoryHash(repo, route))
+    applyRoute(route)
+  }
 
   useEffect(() => {
     let active = true
@@ -490,18 +524,30 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
     return () => { active = false }
   }, [repo.name, repo.refs, tab, branch, client])
 
-  useEffect(() => { setFilePath(''); setBranch(repo.head) }, [repo.name, repo.head])
-  useEffect(() => { setCommitDetail(null) }, [repo.name, branch, tab])
+  useEffect(() => {
+    const restore = () => applyRoute(routeForRepository(repo))
+    restore()
+    addEventListener('popstate', restore)
+    return () => removeEventListener('popstate', restore)
+  }, [repo.name, repo.head])
+
+  useEffect(() => {
+    let active = true
+    setCommitDetail(null)
+    if (!commitOid || tab !== 'commits') return () => { active = false }
+    setCommitLoading(true)
+    client.commit(repo.name, commitOid)
+      .then((data) => active && setCommitDetail(data))
+      .finally(() => active && setCommitLoading(false))
+    return () => { active = false }
+  }, [repo.name, tab, commitOid, client])
 
   function browseBranch(ref) {
-    setBranch(ref)
-    setFilePath('')
-    setTab('code')
+    navigate({ branch: ref, filePath: '', tab: 'code', commitOid: '' })
   }
 
-  async function openCommit(commit) {
-    setCommitDetail(null); setLoading(true)
-    try { setCommitDetail(await client.commit(repo.name, commit.oid)) } finally { setLoading(false) }
+  function openCommit(commit) {
+    navigate({ tab: 'commits', filePath: '', commitOid: commit.oid })
   }
 
   async function mutate() {
@@ -519,16 +565,16 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
         {repo.binding?.bound && <span className="clay-chip">Clay · {repo.binding.desk}</span>}
       </div>
       <nav className="tabs">
-        {(publicMode ? [['code', 'Code'], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['commits', 'Commits']] : [['code', 'Code'], ['issues', 'Issues', repo.githubIssues?.length], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['commits', 'Commits'], ['settings', 'Settings']]).map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => setTab(name)}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
+        {(publicMode ? [['code', 'Code'], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['commits', 'Commits']] : [['code', 'Code'], ['issues', 'Issues', repo.githubIssues?.length], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['commits', 'Commits'], ['settings', 'Settings']]).map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => navigate({ tab: name, filePath: '', commitOid: '' })}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
       </nav>
       <section className="repo-body">
         {tab === 'code' && <div className="branch-context"><select value={branch} onChange={(event) => browseBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option key={ref.name} value={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select><span>{detail?.files?.files?.length || 0} files</span>{branch !== repo.head && <button className="text-button" onClick={() => browseBranch(repo.head)}>Default branch</button>}</div>}
         {tab === 'code' && (filePath
-          ? <FileView repository={repo.name} path={filePath} branch={branch} editable={!publicMode && branch === repo.head} onBack={() => setFilePath('')} onSaved={mutate} client={client} />
-          : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={setFilePath} />)}
+          ? <FileView repository={repo.name} path={filePath} branch={branch} editable={!publicMode && branch === repo.head} onBack={() => navigate({ filePath: '' })} onSaved={mutate} client={client} />
+          : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} />)}
         {tab === 'issues' && <Issues repo={repo} />}
         {tab === 'branches' && <Branches repo={repo} selected={branch} onBrowse={browseBranch} />}
-        {tab === 'commits' && (commitDetail ? <CommitDetail data={commitDetail} onBack={() => setCommitDetail(null)} /> : <Commits data={detail} loading={loading} onSelect={openCommit} />)}
+        {tab === 'commits' && (commitOid ? commitLoading || !commitDetail ? <div className="empty">Loading commit…</div> : <CommitDetail data={commitDetail} onBack={() => navigate({ commitOid: '' })} /> : <Commits data={detail} loading={loading} onSelect={openCommit} />)}
         {tab === 'pulls' && <PullRequests repo={repo} onMutate={mutate} onOpenOrigin={onOpenOrigin} />}
         {tab === 'settings' && <Settings repo={repo} onMutate={mutate} />}
       </section>

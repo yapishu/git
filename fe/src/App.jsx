@@ -11,7 +11,21 @@ import NewRepositoryModal from './components/NewRepositoryModal'
 import RemoteRepositoryView from './components/RemoteRepositoryView'
 import Sidebar from './components/Sidebar'
 
-const repoFromHash = () => decodeURIComponent(location.hash.replace(/^#\/?/, ''))
+function routeFromHash() {
+  const raw = location.hash.replace(/^#\/?/, '').split('?')[0]
+  const parts = raw.split('/').filter(Boolean)
+  try {
+    if (parts[0] === 'peer' && parts.length >= 3) return { kind: 'peer', ship: decodeURIComponent(parts[1]), name: decodeURIComponent(parts[2]) }
+    return { kind: 'repository', name: parts[0] ? decodeURIComponent(parts[0]) : '' }
+  } catch {
+    return { kind: 'repository', name: '' }
+  }
+}
+
+const repoFromHash = () => {
+  const route = routeFromHash()
+  return route.kind === 'repository' ? route.name : ''
+}
 
 function PrivateApp() {
   const [repositories, setRepositories] = useState([])
@@ -75,7 +89,12 @@ function PrivateApp() {
     return () => clearInterval(timer)
   }, [refreshActivity])
   useEffect(() => {
-    const pop = () => { setSelected(repoFromHash()); setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false) }
+    const pop = () => {
+      const route = routeFromHash()
+      setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false)
+      if (route.kind === 'peer') chooseRemote(route.ship, route.name, false)
+      else { setRemoteSelected(null); setRemoteData(null); setSelected(route.name) }
+    }
     addEventListener('popstate', pop)
     return () => removeEventListener('popstate', pop)
   }, [])
@@ -92,10 +111,10 @@ function PrivateApp() {
     history.pushState({}, '', `#/${encodeURIComponent(name)}`)
   }
 
-  async function chooseRemote(ship, name) {
+  async function chooseRemote(ship, name, pushHistory = true) {
     setError(''); setRemoteSelected({ ship, name }); setRemoteData(null); setSelected('')
     setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false)
-    history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(name)}`)
+    if (pushHistory) history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(name)}`)
     try {
       const started = await api.peerBrowse(ship, name)
       for (let attempt = 0; attempt < 60; attempt += 1) {
