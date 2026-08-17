@@ -1,10 +1,10 @@
-# %git
+# %urgit
 
 ## `|install ~matwet %urgit`
 
 <img width="947" height="585" alt="image" src="https://github.com/user-attachments/assets/b13cdad5-ab95-4e9a-95af-e3fc81fbdd18" />
 
-`%git` makes an Urbit ship a native Git remote. Standard Git clients use Smart HTTP through Eyre while Gall owns the object database, refs, and repository policy. No Git executable or server-side sidecar is involved.
+`%urgit` makes an Urbit ship a native Git remote. Standard Git clients use Smart HTTP through Eyre while Gall owns the object database, refs, and repository policy. No Git executable or server-side sidecar is involved.
 
 ## Features
 
@@ -66,7 +66,7 @@ zig build -Ddesk=/path/to/pier/git
 
 The build requires Git, Zig, and Node.js 22 (or Node.js 20.19 or newer). It installs frontend dependencies with `npm` when needed.
 
-Then commit the `%git` desk and run the protocol vectors:
+Then commit the `%urgit` desk and run the protocol vectors:
 
 ```hoon
 +git!git-codec-vector
@@ -93,7 +93,7 @@ A repository branch can be linked to a Clay desk with `%bind-desk`. A push to th
 
 `%publish-desk` snapshots the current bound desk into the linked branch. Clay pages are rendered to their canonical source representation, assembled into ordinary Git blobs and recursively sorted trees, and committed with the ship as author and committer. The existing branch tip becomes the parent.
 
-The web read model is available through `%git` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`. A desk-bound branch reports Clay's native revision sequence through the history endpoint; ordinary branches report Git commits.
+The web read model is available through `%urgit` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`. A desk-bound branch reports Clay's native revision sequence through the history endpoint; ordinary branches report Git commits.
 
 The repository settings page compares the current branch tree with the live bound desk and reports whether they are synchronized, ahead on either side, divergent, or not yet mapped. “Apply branch to desk” uses the same Clay-gated transaction as a linked Git push; “Publish desk to branch” snapshots Clay in the other direction.
 
