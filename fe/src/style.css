@@ -163,6 +163,10 @@ p { color: var(--muted); line-height: 1.55; }
 .quiet { color: var(--muted); }
 .empty { border: 1px dashed var(--line); border-radius: 7px; padding: 70px 20px; text-align: center; color: var(--muted); }
 .empty.compact { padding: 38px 20px; }
+.empty > small { display: block; margin-top: 9px; color: var(--muted); }
+.remote-browse-failure { display: grid; justify-items: center; gap: 12px; }
+.remote-browse-failure strong { color: var(--text); font-size: 14px; }
+.remote-browse-failure span { max-width: 680px; }
 .latest-commit { min-height: 45px; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--accent-soft); }
 .latest-commit { grid-template-columns: 28px minmax(0, 1fr) auto; padding-top: 7px; padding-bottom: 7px; }
 .latest-commit strong, .latest-commit small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

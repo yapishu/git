@@ -35,6 +35,8 @@ function PrivateApp() {
   const remoteSelectedRef = useRef(null)
   const remoteBrowseRef = useRef({ generation: 0, request: '' })
   const [remoteData, setRemoteData] = useState(null)
+  const [remoteStatus, setRemoteStatus] = useState('')
+  const [remoteError, setRemoteError] = useState('')
   const [creating, setCreating] = useState(false)
   const [publishingDesk, setPublishingDesk] = useState(false)
   const [forkingPeer, setForkingPeer] = useState(false)
@@ -102,7 +104,7 @@ function PrivateApp() {
         const current = remoteSelectedRef.current
         if (!current || current.ship !== route.ship || current.name !== route.name) chooseRemote(route.ship, route.name, false)
       }
-      else { setRemoteSelected(null); setRemoteData(null); setSelected(route.name) }
+      else { setRemoteSelected(null); setRemoteData(null); setRemoteStatus(''); setRemoteError(''); setSelected(route.name) }
     }
     addEventListener('popstate', pop)
     if (routeFromHash().kind === 'peer') pop()
@@ -120,6 +122,8 @@ function PrivateApp() {
     setGithubSettings(false)
     setRemoteSelected(null)
     setRemoteData(null)
+    setRemoteStatus('')
+    setRemoteError('')
     setSelected(name)
     history.pushState({}, '', `#/${encodeURIComponent(name)}`)
   }
@@ -133,7 +137,7 @@ function PrivateApp() {
     if (previous) api.peerDeleteBrowse(previous).catch(() => {})
     const selection = { ship, name }
     remoteSelectedRef.current = selection
-    setError(''); setRemoteSelected(selection); setRemoteData(null); setSelected('')
+    setError(''); setRemoteSelected(selection); setRemoteData(null); setRemoteStatus('Contacting peer'); setRemoteError(''); setSelected('')
     setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false)
     if (pushHistory) history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(name)}`)
     try {
@@ -143,7 +147,11 @@ function PrivateApp() {
         return
       }
       remoteBrowseRef.current.request = started.request
-      const found = await waitForPeerBrowse(started.request)
+      const found = await waitForPeerBrowse(started.request, {
+        onProgress: (browse) => {
+          if (remoteBrowseRef.current.generation === generation) setRemoteStatus(browse.message || 'Loading from peer')
+        },
+      })
       await api.peerDeleteBrowse(started.request).catch(() => {})
       if (remoteBrowseRef.current.generation !== generation) return
       remoteBrowseRef.current.request = ''
@@ -151,11 +159,13 @@ function PrivateApp() {
       if (found.ship !== ship || found.repository !== name || found.result?.repository?.name !== name) {
         throw new Error('peer browse returned a different repository')
       }
+      setRemoteStatus('')
       setRemoteData(found.result)
     } catch (cause) {
       if (remoteBrowseRef.current.generation === generation) {
         remoteBrowseRef.current.request = ''
-        setError(cause.message)
+        setRemoteStatus('')
+        setRemoteError(cause.message)
       }
     }
   }
@@ -226,7 +236,7 @@ function PrivateApp() {
         ) : publishingDesk ? (
           <PublishDesk repositories={repositories} onComplete={published} onCancel={() => setPublishingDesk(false)} />
         ) : remoteSelected ? (
-          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} data={remoteData} onFork={forkRemote} /> : <main className="content"><div className="empty"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…</div></main>
+          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} data={remoteData} onFork={forkRemote} /> : remoteError ? <main className="content"><div className="empty remote-browse-failure"><strong>Could not load {remoteSelected.ship}/{remoteSelected.name}</strong><span>{remoteError}</span><button className="button primary" onClick={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false)}>Retry</button></div></main> : <main className="content"><div className="empty"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…<small>{remoteStatus}</small></div></main>
         ) : repo ? (
           <RepositoryView repo={repo} onRefresh={refresh} onOpenOrigin={chooseRemote} />
         ) : (

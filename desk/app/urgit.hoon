@@ -2743,7 +2743,7 @@
   :_  this
   %+  weld
     :~  (peer-card peer /peer/browse-request/(scot %uv request) [%browse-request request repository])
-        [%pass /peer/browse-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~m2)]
+        [%pass /peer/browse-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s45)]
     ==
   (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
 ::
@@ -6673,8 +6673,12 @@
     =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
     ?~  found  `this
     ?.  active.u.found  `this
+    =/  message=@t
+      ?:  =('reading peer overview over Fine' message.u.found)
+        'the peer Fine overview did not resolve; update %urgit on the source ship'
+      'peer did not answer the repository browse request'
     =.  peer-browses
-      (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer did not answer the repository browse request'))
+      (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message message))
     `this
   ::
       [%peer %timeout @ ~]
