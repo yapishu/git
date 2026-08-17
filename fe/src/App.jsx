@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api } from './api'
+import { api, publicApi } from './api'
 import ForkPeer from './components/ForkPeer'
 import GitHubImport from './components/GitHubImport'
 import GitHubSettings from './components/GitHubSettings'
@@ -13,7 +13,7 @@ import Sidebar from './components/Sidebar'
 
 const repoFromHash = () => decodeURIComponent(location.hash.replace(/^#\/?/, ''))
 
-export default function App() {
+function PrivateApp() {
   const [repositories, setRepositories] = useState([])
   const [peers, setPeers] = useState([])
   const [selected, setSelected] = useState(repoFromHash())
@@ -198,4 +198,31 @@ export default function App() {
       {creating && <NewRepositoryModal onCreate={create} onClose={() => setCreating(false)} onPublishDesk={() => { setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false); setPublishingDesk(true) }} onForkPeer={() => { setPublishingDesk(false); setImportingGitHub(false); setGithubSettings(false); setForkingPeer(true) }} onImportGitHub={() => { setPublishingDesk(false); setForkingPeer(false); setGithubSettings(false); setImportingGitHub(true) }} />}
     </div>
   )
+}
+
+function PublicApp({ name }) {
+  const [repo, setRepo] = useState(null)
+  const [error, setError] = useState('')
+  const [theme, setTheme] = useState(() => localStorage.getItem('git-theme') || 'system')
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('git-theme', theme)
+  }, [theme])
+  useEffect(() => {
+    publicApi.repository(name).then(setRepo).catch((cause) => setError(cause.message))
+  }, [name])
+
+  const nextTheme = { system: 'light', light: 'dark', dark: 'system' }[theme]
+  return <div className="public-shell">
+    <div className="workspace">
+      <div className="topbar"><a className="public-brand" href="/apps/git/">git</a><div className="topbar-actions"><span className="public-read-label">read only</span><button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button></div></div>
+      {error ? <main className="content"><div className="empty">{error}</div></main> : repo ? <RepositoryView repo={repo} publicMode client={publicApi} /> : <main className="content"><div className="empty">Loading repository…</div></main>}
+    </div>
+  </div>
+}
+
+export default function App() {
+  const match = location.pathname.match(/^\/apps\/git\/public\/([^/]+)\/?$/)
+  return match ? <PublicApp name={decodeURIComponent(match[1])} /> : <PrivateApp />
 }

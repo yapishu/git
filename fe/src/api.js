@@ -24,6 +24,20 @@ async function request(path, options = {}) {
   return data
 }
 
+const publicFileRoute = (name, path) => {
+  const parts = path.split('/').filter(Boolean).map(encodeURIComponent)
+  return `/public/repository/${encodeURIComponent(name)}/file/${parts.join('/')}`
+}
+
+export const publicApi = {
+  repository: (name) => request(`/public/repository/${encodeURIComponent(name)}`),
+  files: (name, ref) => request(atRef(`/public/repository/${encodeURIComponent(name)}/files`, ref)),
+  file: (name, path, ref) => request(atRef(publicFileRoute(name, path), ref)),
+  fileHistory: (name, path, ref) => request(atRef(publicFileRoute(name, path).replace('/file/', '/file-history/'), ref)),
+  commits: (name, ref) => request(atRef(`/public/repository/${encodeURIComponent(name)}/commits`, ref)),
+  commit: (name, oid) => request(`/public/repository/${encodeURIComponent(name)}/commit/${encodeURIComponent(oid)}`),
+}
+
 export const api = {
   repositories: () => request('/repositories'),
   desks: () => request('/desks'),
@@ -49,6 +63,9 @@ export const api = {
   clearGithubToken: () => request('/github/token', { method: 'DELETE' }),
   githubImport: (owner, repository, name, publicRead) =>
     request('/github/import', { method: 'POST', body: JSON.stringify({ owner, repository, name, publicRead }) }),
+  githubPush: (name, branch) => request(`/repository/${encodeURIComponent(name)}/github/push`, {
+    method: 'POST', body: JSON.stringify({ branch }),
+  }),
   githubMetadata: (name, kind) => request(`/repository/${encodeURIComponent(name)}/github/metadata`, { method: 'POST', body: JSON.stringify({ kind }) }),
   githubFork: (name) => request(`/repository/${encodeURIComponent(name)}/github/fork`, { method: 'POST', body: '{}' }),
   githubPull: (name, title, head, base, body) =>

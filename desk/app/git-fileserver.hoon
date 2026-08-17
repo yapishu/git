@@ -30,6 +30,14 @@
 ::TODO  populate cache eagerly?
 ::
 |%
+++  starts-with
+  |=  [prefix=@t value=@t]
+  ^-  ?
+  =/  pre=tape  (trip prefix)
+  =/  val=tape  (trip value)
+  ?.  (lte (lent pre) (lent val))  %.n
+  =(pre (scag (lent pre) val))
+::
 +$  state-0
   $:  %0
       foot=path
@@ -153,9 +161,12 @@
         '/apps/git/sw.js'
         '/apps/git/git.svg'
         '/apps/git/shared.html'
+        '/apps/git/app.js'
+        '/apps/git/app.css'
     ==
   ?.  ?|  authenticated
           (~(has in pwa-paths) url.request)
+          (starts-with '/apps/git/public/' url.request)
       ==
     [| [403 ~] `(as-octs:mimes:html 'unauthenticated')]
   ?.  ?=(%'GET' method.request)

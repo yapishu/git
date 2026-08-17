@@ -1,7 +1,7 @@
 ::  GitHub Smart HTTP and REST helpers.
 ::
 /-  git
-/+  git-codec, git-protocol
+/+  git-codec, git-pack, git-protocol
 |%
 ++  github-refs
   $:  head=@t
@@ -74,6 +74,20 @@
   ^-  (list [@t @t])
   =/  headers=(list [@t @t])
     :~  ['accept' ?~(content-type 'application/x-git-upload-pack-advertisement' 'application/x-git-upload-pack-result')]
+        ['user-agent' 'urbit-git']
+    ==
+  =?  headers  ?=(^ content-type)
+    [['content-type' u.content-type] headers]
+  ?~  token  headers
+  =/  credentials=octs  (text:git-codec (rap 3 ~['x-access-token:' u.token]))
+  =/  encoded=@t  (en:base64:mimes:html credentials)
+  [['authorization' (rap 3 ~['Basic ' encoded])] headers]
+::
+++  receive-headers
+  |=  [token=(unit @t) content-type=(unit @t)]
+  ^-  (list [@t @t])
+  =/  headers=(list [@t @t])
+    :~  ['accept' ?~(content-type 'application/x-git-receive-pack-advertisement' 'application/x-git-receive-pack-result')]
         ['user-agent' 'urbit-git']
     ==
   =?  headers  ?=(^ content-type)
@@ -199,6 +213,56 @@
   =/  next=(unit [pkt=packet:git-codec rest=octs])  (de-pkt:git-codec remaining)
   ?~  next  ~
   $(remaining rest.u.next)
+::
+++  receive-request
+  |=  [old=(unit oid:git) new=oid:git ref=@t objects=(list object:git)]
+  ^-  octs
+  =/  old-text=@t  ?~(old zero-oid-text:git-protocol (oid-text:git-codec u.old))
+  =/  line=octs
+    %-  join-all:git-codec
+    :~  (text:git-codec old-text)
+        (text:git-codec ' ')
+        (text:git-codec (oid-text:git-codec new))
+        (text:git-codec ' ')
+        (text:git-codec ref)
+        (oct:git-codec 0)
+        (text:git-codec 'report-status agent=urbit-git/0.1\0a')
+    ==
+  %-  join-all:git-codec
+  :~  (en-pkt:git-codec [%data line])
+      (en-pkt:git-codec [%flush ~])
+      (encode-pack:git-pack objects)
+  ==
+::
+++  receive-result
+  |=  [body=octs ref=@t]
+  ^-  (unit [ok=? message=@t])
+  =/  packets=(unit (list packet:git-codec))  (de-pkts:git-codec body)
+  ?~  packets  ~
+  =/  unpacked=?  %.n
+  =/  updated=?  %.n
+  =/  failure=(unit @t)  ~
+  =/  remaining=(list packet:git-codec)  u.packets
+  |-
+  ?~  remaining
+    ?^  failure  `[%.n u.failure]
+    ?:  &(unpacked updated)  `[%.y '']
+    ~
+  =/  packet=packet:git-codec  i.remaining
+  ?.  ?=(%data -.packet)
+    $(remaining t.remaining)
+  =/  payload=octs  payload.packet
+  ?:  (starts-with:git-protocol payload 'unpack ok')
+    $(remaining t.remaining, unpacked %.y)
+  ?:  (starts-with:git-protocol payload 'unpack ')
+    $(remaining t.remaining, failure `(text-through payload 7 (silt ~[10])))
+  =/  ok-prefix=@t  (rap 3 ~['ok ' ref])
+  ?:  (starts-with:git-protocol payload ok-prefix)
+    $(remaining t.remaining, updated %.y)
+  =/  ng-prefix=@t  (rap 3 ~['ng ' ref ' '])
+  ?:  (starts-with:git-protocol payload ng-prefix)
+    $(remaining t.remaining, failure `(text-through payload (lent (trip ng-prefix)) (silt ~[10])))
+  $(remaining t.remaining)
 ::
 ++  forge-items
   |=  [jon=json include-pulls=?]

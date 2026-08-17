@@ -50,7 +50,7 @@ function Files({ data, commit, loading, onOpen }) {
   )
 }
 
-function FileView({ repository, path, branch, editable, onBack, onSaved }) {
+function FileView({ repository, path, branch, editable, onBack, onSaved, client = api }) {
   const [file, setFile] = useState(null)
   const [history, setHistory] = useState(null)
   const [view, setView] = useState('file')
@@ -68,7 +68,7 @@ function FileView({ repository, path, branch, editable, onBack, onSaved }) {
     let active = true
     setBusy(true)
     setError('')
-    api.file(repository, path, revision).then((data) => {
+    client.file(repository, path, revision).then((data) => {
       if (!active) return
       const decoded = decodeBase64(data.content)
       setFile({ ...data, ...decoded })
@@ -76,12 +76,12 @@ function FileView({ repository, path, branch, editable, onBack, onSaved }) {
       setOriginal(decoded.text ?? '')
     }).catch((cause) => active && setError(cause.message)).finally(() => active && setBusy(false))
     return () => { active = false }
-  }, [repository, path, revision])
+  }, [repository, path, revision, client])
 
   useEffect(() => {
     if (view !== 'history' || history) return
-    api.fileHistory(repository, path, branch).then(setHistory).catch((cause) => setError(cause.message))
-  }, [view, history, repository, path, branch])
+    client.fileHistory(repository, path, branch).then(setHistory).catch((cause) => setError(cause.message))
+  }, [view, history, repository, path, branch, client])
 
   async function save() {
     setBusy(true)
@@ -297,6 +297,7 @@ function CommitDetail({ data, onBack }) {
 }
 
 function Settings({ repo, onMutate }) {
+  const publicUrl = `${window.location.origin}/apps/git/public/${encodeURIComponent(repo.name)}`
   const [description, setDescription] = useState(repo.description || '')
   const [desk, setDesk] = useState(repo.binding?.desk || '')
   const [branch, setBranch] = useState(repo.binding?.branch || repo.head || 'refs/heads/main')
@@ -309,11 +310,13 @@ function Settings({ repo, onMutate }) {
   const [githubTitle, setGithubTitle] = useState('')
   const [githubHead, setGithubHead] = useState('')
   const [githubBase, setGithubBase] = useState((repo.head || 'refs/heads/main').replace('refs/heads/', ''))
+  const [githubBranch, setGithubBranch] = useState(repo.head || 'refs/heads/main')
 
   useEffect(() => {
     setDescription(repo.description || '')
     setDesk(repo.binding?.desk || '')
     setBranch(repo.binding?.branch || repo.head || 'refs/heads/main')
+    setGithubBranch(repo.head || 'refs/heads/main')
   }, [repo])
 
   async function act(label, fn) {
@@ -388,8 +391,10 @@ function Settings({ repo, onMutate }) {
       </section>}
       {repo.githubOrigin && <section className="panel github-panel">
         <div className="section-title"><div><h2>GitHub origin</h2><p>Linked to <a href={`https://github.com/${repo.githubOrigin.owner}/${repo.githubOrigin.repository}`} target="_blank" rel="noreferrer">{repo.githubOrigin.owner}/{repo.githubOrigin.repository}</a>. Code is fetched with Git Smart HTTP; forge data uses GitHub’s API.</p></div><span className="status good">linked</span></div>
+        <label><span>Branch</span><select value={githubBranch} onChange={(event) => setGithubBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option value={ref.name} key={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select></label>
         <div className="github-action-grid">
-          <button className="button" disabled={busy} onClick={() => githubAction('github-code', () => api.githubImport(repo.githubOrigin.owner, repo.githubOrigin.repository, repo.name, repo.publicRead), ['import', 'update'])}>{busy === 'github-code' ? 'Updating…' : 'Update code'}</button>
+          <button className="button" disabled={busy} onClick={() => githubAction('github-pull', () => api.githubImport(repo.githubOrigin.owner, repo.githubOrigin.repository, repo.name, repo.publicRead), ['import', 'update'])}>{busy === 'github-pull' ? 'Pulling…' : 'Pull from GitHub'}</button>
+          <button className="button primary" disabled={busy || !githubBranch} onClick={() => githubAction('github-push', () => api.githubPush(repo.name, githubBranch), ['push', 'push-send'])}>{busy === 'github-push' ? 'Pushing…' : 'Push to GitHub'}</button>
           <button className="button" disabled={busy} onClick={() => githubAction('github-meta', () => Promise.all([api.githubMetadata(repo.name, 'issues'), api.githubMetadata(repo.name, 'pulls')]), ['issues', 'pulls'])}>{busy === 'github-meta' ? 'Syncing…' : 'Sync issues & PRs'}</button>
           <button className="button" disabled={busy} onClick={() => githubAction('github-fork', () => api.githubFork(repo.name), ['fork'])}>{busy === 'github-fork' ? 'Requesting…' : 'Fork on GitHub'}</button>
         </div>
@@ -427,6 +432,7 @@ function Settings({ repo, onMutate }) {
           <input type="checkbox" checked={repo.publicRead} onChange={(e) => act('public', () => api.setPublic(repo.name, e.target.checked))} />
           <span><strong>Public read access</strong><small>{repo.publicRead ? 'Clone and fetch are open.' : 'Urbit authentication is required.'}</small></span>
         </label>
+        {repo.publicRead && <div className="form-actions split"><code className="public-url">{publicUrl}</code><div><button className="button" onClick={() => navigator.clipboard.writeText(publicUrl)}>Copy public link</button> <a className="button link-button" href={publicUrl} target="_blank" rel="noreferrer">Open</a></div></div>}
         <label><span>Write token</span><div className="inline-field"><input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={repo.writeTokenSet ? 'Token is set' : 'Set a Git password'} /><button className="button" disabled={busy || !token} onClick={() => act('token', async () => { await api.setToken(repo.name, token); setToken('') })}>Save</button></div></label>
         {repo.writeTokenSet && <button className="text-button danger-text" onClick={() => act('clear-token', () => api.clearToken(repo.name))}>Clear write token</button>}
         <div className="subsection">
@@ -456,7 +462,7 @@ function Settings({ repo, onMutate }) {
   )
 }
 
-export default function RepositoryView({ repo, onRefresh, onOpenOrigin }) {
+export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMode = false, client = api }) {
   const [tab, setTab] = useState('code')
   const [filePath, setFilePath] = useState('')
   const [branch, setBranch] = useState(repo.head)
@@ -475,13 +481,13 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin }) {
     const load = !branchExists
       ? Promise.resolve(tab === 'commits' ? emptyCommits : tab === 'code' ? { files: emptyFiles, commits: emptyCommits } : null)
       : tab === 'commits'
-        ? api.commits(repo.name, branch)
+        ? client.commits(repo.name, branch)
         : tab === 'code'
-          ? Promise.all([api.files(repo.name, branch), api.commits(repo.name, branch)]).then(([files, commits]) => ({ files, commits }))
+          ? Promise.all([client.files(repo.name, branch), client.commits(repo.name, branch)]).then(([files, commits]) => ({ files, commits }))
           : Promise.resolve(null)
     load.then((data) => active && setDetail(data)).finally(() => active && setLoading(false))
     return () => { active = false }
-  }, [repo.name, repo.refs, tab, branch])
+  }, [repo.name, repo.refs, tab, branch, client])
 
   useEffect(() => { setFilePath(''); setBranch(repo.head) }, [repo.name, repo.head])
   useEffect(() => { setCommitDetail(null) }, [repo.name, branch, tab])
@@ -494,11 +500,11 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin }) {
 
   async function openCommit(commit) {
     setCommitDetail(null); setLoading(true)
-    try { setCommitDetail(await api.commit(repo.name, commit.oid)) } finally { setLoading(false) }
+    try { setCommitDetail(await client.commit(repo.name, commit.oid)) } finally { setLoading(false) }
   }
 
   async function mutate() {
-    await onRefresh(repo.name)
+    await onRefresh?.(repo.name)
   }
 
   return (
@@ -512,12 +518,12 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin }) {
         {repo.binding?.bound && <span className="clay-chip">Clay · {repo.binding.desk}</span>}
       </div>
       <nav className="tabs">
-        {[['code', 'Code'], ['issues', 'Issues', repo.githubIssues?.length], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['commits', 'Commits'], ['settings', 'Settings']].map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => setTab(name)}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
+        {(publicMode ? [['code', 'Code'], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['commits', 'Commits']] : [['code', 'Code'], ['issues', 'Issues', repo.githubIssues?.length], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['commits', 'Commits'], ['settings', 'Settings']]).map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => setTab(name)}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
       </nav>
       <section className="repo-body">
         {tab === 'code' && <div className="branch-context"><select value={branch} onChange={(event) => browseBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option key={ref.name} value={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select><span>{detail?.files?.files?.length || 0} files</span>{branch !== repo.head && <button className="text-button" onClick={() => browseBranch(repo.head)}>Default branch</button>}</div>}
         {tab === 'code' && (filePath
-          ? <FileView repository={repo.name} path={filePath} branch={branch} editable={branch === repo.head} onBack={() => setFilePath('')} onSaved={mutate} />
+          ? <FileView repository={repo.name} path={filePath} branch={branch} editable={!publicMode && branch === repo.head} onBack={() => setFilePath('')} onSaved={mutate} client={client} />
           : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={setFilePath} />)}
         {tab === 'issues' && <Issues repo={repo} />}
         {tab === 'branches' && <Branches repo={repo} selected={branch} onBrowse={browseBranch} />}

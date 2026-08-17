@@ -78,7 +78,7 @@
       message=@t
       when=@da
   ==
-+$  github-kind  ?(%import %update %issues %pulls %fork %open-pull)
++$  github-kind  ?(%import %update %push %push-send %issues %pulls %fork %open-pull)
 +$  github-request
   $:  job=@uv
       kind=github-kind
@@ -312,6 +312,18 @@
       |=  [name=@t repo=repository:git]
       (repository-json name repo)
   ==
+::
+++  public-repository-json
+  |=  [name=@t repo=repository:git]
+  ^-  json
+  =/  full=json  (repository-json name repo)
+  ?>  ?=(%o -.full)
+  =/  fields=(map @t json)  p.full
+  =.  fields  (~(del by fields) 'writeTokenSet')
+  =.  fields  (~(del by fields) 'writers')
+  =.  fields  (~(del by fields) 'binding')
+  =.  fields  (~(del by fields) 'peerOrigin')
+  [%o fields]
 ::
 ++  repository-files-at-json
   |=  [name=@t repo=repository:git ref=@t]
@@ -1787,13 +1799,115 @@
   :~  [%pass /github/(scot %uv request-id) %arvo %i %request request *outbound-config:iris]
   ==
 ::
+++  handle-public-api
+  |=  [eyre-id=@ta req=inbound-request:eyre line=request-line:server]
+  ^-  (quip card _this)
+  =/  site=(list @t)  site.line
+  =/  method=@tas  method.request.req
+  ?.  =(%'GET' method)
+    :_  this
+    (api-error eyre-id 405 'public repository API is read-only')
+  ?:  ?=([%apps %git %api %public %repository @ ~] site)
+    =/  name=@t  i.t.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?.  ?&(?=(^ found) public-read.u.found)
+      :_  this
+      (api-error eyre-id 404 'public repository not found')
+    :_  this
+    (api-json eyre-id 200 (public-repository-json name u.found))
+  ?:  ?=([%apps %git %api %public %repository @ %files ~] site)
+    =/  name=@t  i.t.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?.  ?&(?=(^ found) public-read.u.found)
+      :_  this
+      (api-error eyre-id 404 'public repository not found')
+    =/  requested=(unit @t)  (query-value 'ref' args.line)
+    =/  ref=@t  ?~(requested head.u.found u.requested)
+    ?~  (revision-oid u.found ref)
+      :_  this
+      (api-error eyre-id 404 'ref not found')
+    :_  this
+    (api-json eyre-id 200 (repository-files-at-json name u.found ref))
+  ?:  ?=([%apps %git %api %public %repository @ %commits ~] site)
+    =/  name=@t  i.t.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?.  ?&(?=(^ found) public-read.u.found)
+      :_  this
+      (api-error eyre-id 404 'public repository not found')
+    =/  requested=(unit @t)  (query-value 'ref' args.line)
+    =/  ref=@t  ?~(requested head.u.found u.requested)
+    ?~  (revision-oid u.found ref)
+      :_  this
+      (api-error eyre-id 404 'ref not found')
+    :_  this
+    (api-json eyre-id 200 (repository-commits-json name u.found ref))
+  ?:  ?=([%apps %git %api %public %repository @ %commit @ ~] site)
+    =/  name=@t  i.t.t.t.t.t.site
+    =/  oid-text=@t  i.t.t.t.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?.  ?&(?=(^ found) public-read.u.found)
+      :_  this
+      (api-error eyre-id 404 'public repository not found')
+    =/  parsed=(unit oid:git)  (revision-oid u.found oid-text)
+    ?~  parsed
+      :_  this
+      (api-error eyre-id 404 'commit not found')
+    =/  detail=(unit json)  (repository-commit-json name u.found u.parsed)
+    ?~  detail
+      :_  this
+      (api-error eyre-id 404 'commit not found')
+    :_  this
+    (api-json eyre-id 200 u.detail)
+  ?:  ?=([%apps %git %api %public %repository @ %file-history *] site)
+    =/  name=@t  i.t.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?.  ?&(?=(^ found) public-read.u.found)
+      :_  this
+      (api-error eyre-id 404 'public repository not found')
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.t.site)
+    ?~  file-path
+      :_  this
+      (api-error eyre-id 422 'valid file path required')
+    =/  requested=(unit @t)  (query-value 'ref' args.line)
+    =/  ref=@t  ?~(requested head.u.found u.requested)
+    ?~  (revision-oid u.found ref)
+      :_  this
+      (api-error eyre-id 404 'ref not found')
+    :_  this
+    (api-json eyre-id 200 (repository-file-history-json name u.found ref u.file-path))
+  ?:  ?=([%apps %git %api %public %repository @ %file *] site)
+    =/  name=@t  i.t.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?.  ?&(?=(^ found) public-read.u.found)
+      :_  this
+      (api-error eyre-id 404 'public repository not found')
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.t.site)
+    ?~  file-path
+      :_  this
+      (api-error eyre-id 422 'valid file path required')
+    =/  requested=(unit @t)  (query-value 'ref' args.line)
+    =/  ref=@t  ?~(requested head.u.found u.requested)
+    ?~  (revision-oid u.found ref)
+      :_  this
+      (api-error eyre-id 404 'ref not found')
+    =/  data=(unit octs)  (repository-file-at u.found ref u.file-path)
+    ?~  data
+      :_  this
+      (api-error eyre-id 404 'file not found')
+    :_  this
+    (api-json eyre-id 200 (repository-file-json name u.found ref u.file-path u.data))
+  :_  this
+  (api-error eyre-id 404 'public repository route not found')
+::
 ++  handle-api
   |=  [eyre-id=@ta req=inbound-request:eyre line=request-line:server]
   ^-  (quip card _this)
+  =/  site=(list @t)  site.line
+  ?:  ?=([%apps %git %api %public *] site)
+    (handle-public-api eyre-id req line)
   ?.  authenticated.req
     :_  this
     (api-error eyre-id 401 'Urbit login required')
-  =/  site=(list @t)  site.line
   =/  method=@tas  method.request.req
   ?:  ?&  =(%'GET' method)
           ?=([%apps %git %api %github %status ~] site)
@@ -1894,6 +2008,48 @@
       ?:(=(%issues kind) '/issues?state=all&per_page=100' '/pulls?state=all&per_page=100')
     =/  request=request:http
       [%'GET' (api-url:git-github owner remote suffix) (api-headers:git-github github-token) ~]
+    =/  result  (github-start ctx request)
+    :_  +.result
+    (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %github %push ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  github-origin.u.found
+      :_  this
+      (api-error eyre-id 409 'repository has no GitHub origin')
+    ?~  github-token
+      :_  this
+      (api-error eyre-id 409 'connect a GitHub token first')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  branch=(unit @t)  (string-at 'branch' u.jon)
+    ?~  branch
+      :_  this
+      (api-error eyre-id 422 'branch is required')
+    ?.  ?&  (valid-ref:git-protocol u.branch)
+            (starts-with:git-protocol (text:git-codec u.branch) 'refs/heads/')
+        ==
+      :_  this
+      (api-error eyre-id 422 'branch must be a valid refs/heads ref')
+    ?.  (~(has by refs.u.found) u.branch)
+      :_  this
+      (api-error eyre-id 404 'local branch not found')
+    =/  owner=@t  owner.u.github-origin.u.found
+    =/  remote=@t  repository.u.github-origin.u.found
+    =/  ctx=github-request  [0v0 %push name owner remote public-read.u.found u.branch ~]
+    =/  request=request:http
+      :*  %'GET'
+          (git-url:git-github owner remote '/info/refs?service=git-receive-pack')
+          (receive-headers:git-github github-token ~)
+          ~
+      ==
     =/  result  (github-start ctx request)
     :_  +.result
     (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
@@ -3755,11 +3911,13 @@
     =/  context=(unit github-request)  (~(get by github-in-flight) u.request-id)
     ?~  context  `this
     =.  github-in-flight  (~(del by github-in-flight) u.request-id)
+    =/  result-kind=github-kind
+      ?:(=(%push-send kind.u.context) %push kind.u.context)
     =/  fail
       |=  message=@t
       ^-  (quip card _this)
       =.  github-results
-        (~(put by github-results) job.u.context [%.n %.n kind.u.context repository.u.context message])
+        (~(put by github-results) job.u.context [%.n %.n result-kind repository.u.context message])
       `this
     ?.  ?=([%iris %http-response *] sign-arvo)
       (fail 'GitHub request failed')
@@ -3773,6 +3931,63 @@
         (crip (scag 500 (trip `@t`q.data.u.full-file.response)))
       (fail ?:(=('' detail) (rap 3 ~['GitHub returned HTTP ' (decimal status)]) detail))
     =/  body=octs  ?~(full-file.response [0 0] data.u.full-file.response)
+    ?:  =(%push kind.u.context)
+      =/  advertised=(unit github-refs:git-github)
+        (advertised-refs:git-github body)
+      ?~  advertised
+        (fail 'GitHub did not advertise a usable branch')
+      =/  found=(unit repository:git)  (~(get by repositories) repository.u.context)
+      ?~  found
+        (fail 'local repository disappeared during GitHub sync')
+      =/  new=(unit oid:git)  (~(get by refs.u.found) head.u.context)
+      ?~  new
+        (fail 'local branch disappeared during GitHub sync')
+      =/  closure=(unit (set oid:git))
+        (reachable:git-graph objects.u.found (silt ~[u.new]))
+      ?~  closure
+        (fail 'local branch does not have a complete reachable object graph')
+      =/  old=(unit oid:git)  (~(get by refs.u.advertised) head.u.context)
+      ?:  ?&  ?=(^ old)
+              !(~(has in u.closure) u.old)
+          ==
+        (fail 'GitHub branch has commits that are not local; pull before pushing')
+      =/  ids=(list oid:git)  ~(tap in u.closure)
+      ?:  (gth (lent ids) 25.000)
+        (fail 'GitHub push exceeds the 25,000 object limit')
+      =/  objects=(list object:git)
+        %+  turn  ids
+        |=  id=oid:git
+        (~(got by objects.u.found) id)
+      =/  request-body=octs
+        (receive-request:git-github old u.new head.u.context objects)
+      ?:  (gth p.request-body 67.108.864)
+        (fail 'GitHub push exceeds the 64 MiB limit')
+      =/  next-id=@uv
+        `@uv`(shas %git-github-push (cat 3 eny.bowl request-count))
+      =.  request-count  +(request-count)
+      =/  next=github-request  u.context(kind %push-send, refs refs.u.advertised)
+      =.  github-in-flight  (~(put by github-in-flight) next-id next)
+      =.  github-results
+        (~(put by github-results) job.u.context [%.y %.n %push repository.u.context 'uploading Git object pack'])
+      =/  request=request:http
+        :*  %'POST'
+            (git-url:git-github owner.u.context remote.u.context '/git-receive-pack')
+            (receive-headers:git-github github-token `'application/x-git-receive-pack-request')
+            `request-body
+        ==
+      :_  this
+      :~  [%pass /github/(scot %uv next-id) %arvo %i %request request *outbound-config:iris]
+      ==
+    ?:  =(%push-send kind.u.context)
+      =/  result=(unit [ok=? message=@t])
+        (receive-result:git-github body head.u.context)
+      ?~  result
+        (fail 'GitHub returned an invalid receive-pack result')
+      ?.  ok.u.result
+        (fail ?:(=('' message.u.result) 'GitHub rejected the branch update' message.u.result))
+      =.  github-results
+        (~(put by github-results) job.u.context [%.n %.y %push repository.u.context 'GitHub branch synchronized'])
+      `this
     ?:  ?|  =(%import kind.u.context)
             =(%update kind.u.context)
         ==
@@ -3830,6 +4045,28 @@
         ?=(^ closure)
       ?.  refs-valid
         (fail 'GitHub pack did not contain a complete reachable object graph')
+      =/  fast-forward=?
+        ?~  existing  %.y
+        %+  levy  ~(tap by refs.u.context)
+        |=  entry=[@t oid:git]
+        =/  old=(unit oid:git)  (~(get by refs.u.existing) -.entry)
+        ?~  old  %.y
+        ?:  =(u.old +.entry)  %.y
+        =/  closure=(unit (set oid:git))
+          (reachable:git-graph combined (silt ~[+.entry]))
+        ?&  ?=(^ closure)
+            (~(has in u.closure) u.old)
+        ==
+      ?.  fast-forward
+        (fail 'GitHub and local branches have diverged; push or reconcile before pulling')
+      =/  next-refs=(map @t oid:git)
+        ?~  existing  refs.u.context
+        =/  working=(map @t oid:git)  refs.u.existing
+        =/  incoming=(list [@t oid:git])  ~(tap by refs.u.context)
+        |-
+        ?~  incoming  working
+        =.  working  (~(put by working) -.i.incoming +.i.incoming)
+        $(incoming t.incoming)
       =/  origin=github-origin:git  [owner.u.context remote.u.context]
       =/  repo=repository:git
         ?~  existing
@@ -3837,7 +4074,7 @@
               public-read.u.context
               ''
               head.u.context
-              refs.u.context
+              next-refs
               ~
               combined
               (silt ~[our.bowl])
@@ -3851,7 +4088,7 @@
               ~
               ~
           ==
-        u.existing(head head.u.context, refs refs.u.context, objects combined, github-origin `origin)
+        u.existing(head head.u.context, refs next-refs, objects combined, github-origin `origin)
       =.  repositories  (~(put by repositories) repository.u.context repo)
       =.  github-results
         (~(put by github-results) job.u.context [%.n %.y kind.u.context repository.u.context 'GitHub repository synchronized'])
