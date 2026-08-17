@@ -1,7 +1,7 @@
 ::  Verified Git pack v2 decoder with native delta resolution.
 ::
 /-  git
-/+  git-codec, git-delta, git-inflate
+/+  git-codec, git-delta, git-inflate, git-zlib
 |%
 +$  decoded-pack  [objects=(map oid:git object:git)]
 +$  packed-kind
@@ -110,6 +110,17 @@
   ?~  identified  ~
   =/  packed=packed-kind  kind.u.identified
   =.  data-offset  data-offset.u.identified
+  ::  Vere's %zlib-v0 jet accepts a cursor into the complete byte stream.
+  ::  Besides being dramatically faster than interpreted DEFLATE, this avoids
+  ::  copying the entire remainder of the pack once for every object.
+  =/  jetted  (mule |.((decompress-zlib:git-zlib [data-offset source])))
+  ?:  ?=(%& -.jetted)
+    =/  result=[octs bays:git-zlib]  p.jetted
+    ?.  =(p.-.result size.u.header)  ~
+    ?:  (gth pos.+.result trailer)  ~
+    =.  cursor  pos.+.result
+    $(remaining (dec remaining), entries [[entry-offset packed -.result] entries])
+  ::  Older runtimes without the jet retain the portable decoder.
   =/  compressed=octs
     (slice:git-codec source data-offset (sub trailer data-offset))
   =/  inflated=(unit inflated:git-inflate)
