@@ -15,6 +15,7 @@ export default function RemoteRepositoryView({ ship, data, onFork }) {
     return ['code', 'pulls', 'commits', 'branches'].includes(requested) ? requested : 'code'
   }
   const [tab, setTab] = useState(routeTab)
+  const [forking, setForking] = useState(false)
   useEffect(() => {
     const restore = () => setTab(routeTab())
     addEventListener('popstate', restore)
@@ -25,11 +26,17 @@ export default function RemoteRepositoryView({ ship, data, onFork }) {
     history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(repo.name)}${query}`)
     setTab(next)
   }
+  async function fork() {
+    if (forking) return
+    setForking(true)
+    const complete = await onFork(ship, repo.name)
+    if (!complete) setForking(false)
+  }
   if (!repo) return <main className="content"><div className="empty">Repository data is unavailable.</div></main>
   const commits = data.commits?.commits || []
   const pulls = repo.pullRequests || []
   return <main className="content">
-    <header className="repo-header"><div><div className="repo-breadcrumb"><span>{ship}</span><b>/</b><h1>{repo.name}</h1><span className="visibility-badge">Peer</span></div>{repo.description && <p className="repo-description">{repo.description}</p>}</div><button className="button primary" onClick={() => onFork(ship, repo.name)}>Fork repository</button></header>
+    <header className="repo-header"><div><div className="repo-breadcrumb"><span>{ship}</span><b>/</b><h1>{repo.name}</h1><span className="visibility-badge">Peer</span></div>{repo.description && <p className="repo-description">{repo.description}</p>}</div><button className="button primary" disabled={forking} onClick={fork}>{forking ? 'Forking…' : 'Fork repository'}</button></header>
     <div className="repo-meta"><span><b>{repo.fileCount || 0}</b> files</span><span><b>{repo.commitCount || 0}</b> commits</span><span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span></div>
     <nav className="tabs"><button className={tab === 'code' ? 'active' : ''} onClick={() => chooseTab('code')}>Code</button><button className={tab === 'pulls' ? 'active' : ''} onClick={() => chooseTab('pulls')}>Pull requests <span className="tab-count">{pulls.length}</span></button><button className={tab === 'commits' ? 'active' : ''} onClick={() => chooseTab('commits')}>Commits <span className="tab-count">{commits.length}</span></button><button className={tab === 'branches' ? 'active' : ''} onClick={() => chooseTab('branches')}>Branches <span className="tab-count">{repo.branchCount || 0}</span></button></nav>
     <section className="repo-body">

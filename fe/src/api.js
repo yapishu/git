@@ -246,5 +246,22 @@ export const api = {
     request(`/repository/${encodeURIComponent(name)}/clay/apply`, {
       method: 'POST',
       body: '{}',
-    }),
+  }),
+}
+
+export async function waitForPeerTransfer(transferId, { interval = 750, onProgress } = {}) {
+  let missingPolls = 0
+  while (true) {
+    await new Promise((resolve) => setTimeout(resolve, interval))
+    const status = await api.peerTransfers()
+    const transfer = status.transfers?.find((item) => item.transfer === transferId)
+    if (!transfer) {
+      missingPolls += 1
+      if (missingPolls >= 8) throw new Error('ship no longer tracks this peer transfer')
+      continue
+    }
+    missingPolls = 0
+    onProgress?.(transfer)
+    if (!transfer.active) return transfer
+  }
 }

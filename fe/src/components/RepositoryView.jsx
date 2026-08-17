@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '../api'
+import { api, waitForPeerTransfer } from '../api'
 import { exactBytes, formatBytes } from '../format'
 import { comparisonPatch } from '../patch'
 import FileTree from './FileTree'
@@ -641,24 +641,14 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
         return
       }
       const started = await api.peerPullRequest(repo.name, title.trim())
-      for (let attempt = 0; attempt < 120; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        const status = await api.peerTransfers()
-        const transfer = status.transfers?.find((item) => item.transfer === started.transfer)
-        if (!transfer || transfer.message === 'opening pull request') continue
-        if (transfer?.active) {
-          if (transfer.message) setSubmitStatus(transfer.message)
-          continue
-        }
-        if (transfer) {
-          await api.peerDeleteTransfer(started.transfer).catch(() => {})
-          if (!transfer.ok) throw new Error(transfer.message)
-          setSubmitStatus(transfer.message || 'Pull request opened')
-          setTitle('')
-          return
-        }
-      }
-      throw new Error('origin did not finish the pull request in time')
+      const transfer = await waitForPeerTransfer(started.transfer, {
+        onProgress: (current) => current.message && setSubmitStatus(current.message),
+      })
+      await api.peerDeleteTransfer(started.transfer).catch(() => {})
+      if (!transfer.ok) throw new Error(transfer.message)
+      setSubmitStatus(transfer.message || 'Pull request opened')
+      setTitle('')
+      return
     } catch (cause) {
       setError(cause.message); setSubmitStatus('')
     } finally {
@@ -939,19 +929,14 @@ function Settings({ repo, onMutate }) {
     setSyncResult('Offering update to origin…')
     try {
       const started = await api.peerPush(repo.name)
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        const status = await api.peerTransfers()
-        const transfer = status.transfers?.find((item) => item.transfer === started.transfer)
-        if (transfer && !transfer.active && transfer.message !== 'offering update') {
-          await api.peerDeleteTransfer(started.transfer).catch(() => {})
-          if (!transfer.ok) throw new Error(transfer.message)
-          setSyncResult(transfer.message)
-          await onMutate()
-          return
-        }
-      }
-      throw new Error('origin did not finish the update in time')
+      const transfer = await waitForPeerTransfer(started.transfer, {
+        onProgress: (current) => current.message && setSyncResult(current.message),
+      })
+      await api.peerDeleteTransfer(started.transfer).catch(() => {})
+      if (!transfer.ok) throw new Error(transfer.message)
+      setSyncResult(transfer.message)
+      await onMutate()
+      return
     } catch (cause) {
       setError(cause.message)
       setSyncResult('')

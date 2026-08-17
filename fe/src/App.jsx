@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, publicApi } from './api'
+import { api, publicApi, waitForPeerTransfer } from './api'
 import ForkPeer from './components/ForkPeer'
 import GitHubImport from './components/GitHubImport'
 import GitHubSettings from './components/GitHubSettings'
@@ -144,18 +144,11 @@ function PrivateApp() {
     setError('')
     try {
       const started = await api.peerFork(ship, repository, repository, true)
-      for (let attempt = 0; attempt < 120; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        const status = await api.peerTransfers()
-        const found = status.transfers?.find((item) => item.transfer === started.transfer)
-        if (found && !found.active && found.message !== 'transferring') {
-          await api.peerDeleteTransfer(started.transfer).catch(() => {})
-          if (!found.ok) throw new Error(found.message)
-          await refresh(repository); choose(repository); return
-        }
-      }
-      throw new Error('fork did not complete in time')
-    } catch (cause) { setError(cause.message) }
+      const result = await waitForPeerTransfer(started.transfer)
+      await api.peerDeleteTransfer(started.transfer).catch(() => {})
+      if (!result.ok) throw new Error(result.message)
+      await refresh(repository); choose(repository); return true
+    } catch (cause) { setError(cause.message); return false }
   }
 
   async function published(name) {
