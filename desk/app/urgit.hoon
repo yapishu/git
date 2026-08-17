@@ -1821,17 +1821,11 @@
       %browse-request
     (peer-browse-request request.packet repository.packet)
   ::
-      %browse-ready
-    (peer-browse-ready request.packet repository.packet target.packet)
-  ::
-      %browse-begin
-    (peer-browse-begin request.packet repository.packet)
+      %browse-response
+    (peer-browse-response request.packet repository.packet result.packet)
   ::
       %browse-error
     (peer-browse-error request.packet message.packet)
-  ::
-      %browse-release
-    (peer-browse-release request.packet)
   ::
       %offer
     (peer-offer offer.packet)
@@ -1894,38 +1888,35 @@
     :_  this
     :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or not public'])
     ==
-  =/  browse-path=path  /browse/(scot %uv request)
-  =/  result=json  (repository-browse-json repository u.found)
-  =/  cards=(list card)
-    ^-  (list card)
-    :~  [%pass /peer/browse-grow/(scot %uv request) %grow browse-path json+!>(result)]
-        [%pass /peer/browse-ready/(scot %uv request) %agent [our.bowl %urgit] %poke %git-peer !>([%browse-ready request repository src.bowl])]
-    ==
-  [cards this]
-::
-++  peer-browse-ready
-  |=  [request=@uv repository=@t target=ship]
-  ^-  (quip card _this)
-  ?.  =(src.bowl our.bowl)  `this
   :_  this
-  :~  (peer-card target /peer/browse-begin/(scot %uv request) [%browse-begin request repository])
+  :~  (peer-card src.bowl /peer/browse-response/(scot %uv request) [%browse-response request repository (repository-browse-json repository u.found)])
   ==
 ::
-++  peer-browse-begin
-  |=  [request=@uv repository=@t]
+++  peer-browse-response
+  |=  [request=@uv repository=@t result=json]
   ^-  (quip card _this)
   =/  found=(unit peer-browse)  (~(get by peer-browses) request)
   ?~  found  `this
-  ?.  ?&  =(src.bowl peer.u.found)
+  ?.  ?&  active.u.found
+          =(src.bowl peer.u.found)
           =(repository repository.u.found)
-          active.u.found
       ==
     `this
-  =/  scry-path=path
-    /g/x/1/urgit//1/browse/(scot %uv request)
-  :_  this
-  :~  [%pass /peer/browse/(scot %uv request) %keen %.n src.bowl scry-path]
-  ==
+  =/  valid=?
+    ?.  ?=(%o -.result)  %.n
+    =/  repository-json=(unit json)  (~(get by p.result) 'repository')
+    ?~  repository-json  %.n
+    ?.  ?=(%o -.u.repository-json)  %.n
+    =/  name-json=(unit json)  (~(get by p.u.repository-json) 'name')
+    ?~  name-json  %.n
+    ?&(?=(%s -.u.name-json) =(p.u.name-json repository))
+  ?.  valid
+    =.  peer-browses
+      (~(put by peer-browses) request u.found(active %.n, ok %.n, message 'peer browse result has the wrong repository identity'))
+    `this
+  =.  peer-browses
+    (~(put by peer-browses) request u.found(active %.n, ok %.y, message 'complete', result `result))
+  `this
 ::
 ++  peer-browse-error
   |=  [request=@uv message=@t]
@@ -1936,13 +1927,6 @@
   =.  peer-browses
     (~(put by peer-browses) request u.found(active %.n, ok %.n, message message))
   `this
-::
-++  peer-browse-release
-  |=  request=@uv
-  ^-  (quip card _this)
-  :_  this
-  :~  [%pass /peer/browse-cull/(scot %uv request) %cull [%ud 1] /browse/(scot %uv request)]
-  ==
 ::
 ++  peer-offer
   |=  offer=offer:git-peer
@@ -2639,12 +2623,15 @@
     |=  entry=[@uv peer-result]
     =/  transfer=@uv  -.entry
     =/  result=peer-result  +.entry
+    =/  flight=(unit peer-receive)  (~(get by peer-receiving) transfer)
     %-  pairs:enjs:format
     :~  ['transfer' s+(scot %uv transfer)]
-        ['active' b+(~(has by peer-receiving) transfer)]
+        ['active' b+?=(^ flight)]
         ['ok' b+status.result]
         ['message' s+message.result]
         ['repository' s+repository.result]
+        ['received' n+(decimal ?~(flight 0 received.u.flight))]
+        ['expected' n+(decimal ?~(flight 0 expected.u.flight))]
     ==
   (pairs:enjs:format ~[['transfers' [%a entries]]])
 ::
@@ -2703,18 +2690,31 @@
 ++  start-peer-browse
   |=  [eyre-id=@ta peer=ship repository=@t view=?(%overview %file)]
   ^-  (quip card _this)
+  =/  duplicate=(unit [@uv peer-browse])
+    =/  matches=(list [@uv peer-browse])
+      %+  murn  ~(tap by peer-browses)
+      |=  entry=[@uv peer-browse]
+      =/  browse=peer-browse  +.entry
+      ?.  ?&  active.browse
+              =(peer peer.browse)
+              =(repository repository.browse)
+              =(view view.browse)
+          ==
+        ~
+      `entry
+    ?~(matches ~ `i.matches)
+  ?^  duplicate
+    :_  this
+    (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv -.u.duplicate)] ['deduplicated' b+%.y]]))
   =/  request=@uv
     `@uv`(shas %git-peer-browse (cat 3 eny.bowl request-count))
   =.  request-count  +(request-count)
   =.  peer-browses
     (~(put by peer-browses) request [peer repository view %.y %.n 'reading from peer' ~])
-  =/  cards=(list card)
-    ^-  (list card)
-    :~  (peer-card peer /peer/browse-request/(scot %uv request) [%browse-request request repository])
-        [%pass /peer/browse-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s30)]
-    ==
   :_  this
-  %+  weld  cards
+  %+  weld
+    :~  (peer-card peer /peer/browse-request/(scot %uv request) [%browse-request request repository])
+    ==
   (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
 ::
 ++  peer-activities-json
@@ -3507,13 +3507,8 @@
     ?~  found
       :_  this
       (api-error eyre-id 404 'browse request not found')
-    =/  cleanup=(list card)
-      ?.  active.u.found  ~
-      :~  [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
-      ==
     =.  peer-browses  (~(del by peer-browses) u.request)
     :_  this
-    %+  weld  cleanup
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %peer %browse @ @ ~] site)
@@ -3545,6 +3540,17 @@
     ?~  source
       :_  this
       (api-error eyre-id 422 'ship must be a valid Urbit ID')
+    =/  duplicate=(unit [@uv peer-discovery])
+      =/  matches=(list [@uv peer-discovery])
+        %+  murn  ~(tap by peer-discoveries)
+        |=  entry=[@uv peer-discovery]
+        =/  discovery=peer-discovery  +.entry
+        ?.  ?&(active.discovery =(u.source peer.discovery))  ~
+        `entry
+      ?~(matches ~ `i.matches)
+    ?^  duplicate
+      :_  this
+      (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv -.u.duplicate)] ['deduplicated' b+%.y]]))
     =/  request=@uv
       `@uv`(shas %git-peer-discovery (cat 3 eny.bowl request-count))
     =.  request-count  +(request-count)
@@ -3637,6 +3643,22 @@
     ?~  source
       :_  this
       (api-error eyre-id 422 'ship must be a valid Urbit ID')
+    =/  duplicate=(unit [@uv peer-receive])
+      =/  matches=(list [@uv peer-receive])
+        %+  murn  ~(tap by peer-receiving)
+        |=  entry=[@uv peer-receive]
+        =/  flight=peer-receive  +.entry
+        ?.  ?&  =(%fork purpose.flight)
+                =(u.source source.flight)
+                =(u.source-repository source-repository.flight)
+                =(u.local-repository local-repository.flight)
+            ==
+          ~
+        `entry
+      ?~(matches ~ `i.matches)
+    ?^  duplicate
+      :_  this
+      (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['transfer' s+(scot %uv -.u.duplicate)] ['deduplicated' b+%.y]]))
     =/  existing=(unit repository:git)  (~(get by repositories) u.local-repository)
     =/  conflict=(unit @t)
       ?~  existing  ~
@@ -6538,56 +6560,6 @@
     [[status ~[['content-type' 'application/vnd.git-lfs+json'] ['cache-control' 'no-store']]] `(json-to-octs:server jon)]
   ?+  wire  (on-arvo:def wire sign-arvo)
       [%eyre *]  `this
-      [%peer %browse @ ~]
-    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
-    ?~  request  `this
-    =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
-    ?~  found  `this
-    ?.  active.u.found  `this
-    =/  release=card
-      [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
-    =/  failure
-      |=  message=@t
-      ^-  (quip card _this)
-      :_  this(peer-browses (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message message)))
-      :~  release
-      ==
-    ?.  ?=([%ames %sage *] sign-arvo)
-      (failure 'Fine browse failed')
-    =/  =sage:mess:ames  sage.sign-arvo
-    ?.  =(ship.p.sage peer.u.found)
-      (failure 'Fine browse response came from the wrong ship')
-    ?~  q.sage
-      (failure 'repository is unavailable or not public')
-    ?.  =(%json p.q.sage)
-      (failure 'Fine browse returned the wrong mark')
-    =/  decoded=(unit json)
-      %-  mole
-      |.(;;(json +.q.q.sage))
-    ?~  decoded
-      (failure 'Fine browse result is malformed')
-    =.  peer-browses
-      (~(put by peer-browses) u.request u.found(active %.n, ok %.y, message 'complete', result `u.decoded))
-    :_  this
-    :~  release
-    ==
-  ::
-      [%peer %browse-timeout @ ~]
-    ?.  ?=([%behn %wake *] sign-arvo)
-      (on-arvo:def wire sign-arvo)
-    ?^  error.sign-arvo  `this
-    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
-    ?~  request  `this
-    =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
-    ?~  found  `this
-    ?.  active.u.found  `this
-    =/  release=card
-      [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
-    =.  peer-browses
-      (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer browse timed out'))
-    :_  this
-    [release ~]
-  ::
       [%peer %fine @ @ ~]
     =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
     ?~  transfer  `this

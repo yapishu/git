@@ -265,3 +265,20 @@ export async function waitForPeerTransfer(transferId, { interval = 750, onProgre
     if (!transfer.active) return transfer
   }
 }
+
+export async function waitForPeerBrowse(requestId, { interval = 500, onProgress } = {}) {
+  let missingPolls = 0
+  while (true) {
+    await new Promise((resolve) => setTimeout(resolve, interval))
+    const status = await api.peerBrowses()
+    const browse = status.browses?.find((item) => item.request === requestId)
+    if (!browse) {
+      missingPolls += 1
+      if (missingPolls >= 8) throw new Error('ship no longer tracks this peer browse')
+      continue
+    }
+    missingPolls = 0
+    onProgress?.(browse)
+    if (!browse.active) return browse
+  }
+}

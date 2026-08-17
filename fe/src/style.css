@@ -258,6 +258,16 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .field-error { display: block; margin-top: 6px; color: var(--danger); }
 .field-note { display: block; margin-top: 6px; color: var(--muted); }
 .transfer-status { margin: 16px 0 4px; padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-size: 12px; }
+.transfer-status progress { display: block; width: 100%; height: 5px; margin-top: 9px; accent-color: var(--accent); }
+.peer-transfer-progress { display: grid; gap: 9px; margin: 0 0 14px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line)); border-radius: 8px; background: var(--accent-soft); }
+.peer-transfer-progress > div:first-child { display: flex; justify-content: space-between; gap: 16px; color: var(--accent); font-size: 12px; }
+.peer-transfer-progress strong { color: var(--text); }
+.peer-transfer-progress small { color: var(--muted); }
+.peer-transfer-progress progress { width: 100%; height: 6px; accent-color: var(--accent); }
+.progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--accent) 15%, var(--panel)); }
+.progress-track i { display: block; width: 35%; height: 100%; border-radius: inherit; background: var(--accent); }
+.progress-track.indeterminate i { animation: progress-slide 1.35s ease-in-out infinite; }
+@keyframes progress-slide { from { transform: translateX(-110%); } to { transform: translateX(310%); } }
 .peer-catalog { display: grid; gap: 5px; max-height: 240px; margin-top: 12px; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); overflow: auto; }
 .peer-repo { min-height: 48px; padding: 7px 9px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .peer-repo:hover { background: var(--panel); }

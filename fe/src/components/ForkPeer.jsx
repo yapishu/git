@@ -10,6 +10,7 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
   const [discovering, setDiscovering] = useState(false)
   const [catalog, setCatalog] = useState([])
   const [status, setStatus] = useState('')
+  const [progress, setProgress] = useState(null)
   const [error, setError] = useState('')
   const transferPoll = useRef(null)
   const discoveryPoll = useRef(null)
@@ -67,6 +68,7 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
     setBusy(true)
     setError('')
     setStatus('Contacting peer…')
+    setProgress(null)
     try {
       const started = await api.peerFork(ship.trim(), repository.trim(), name.trim(), publicRead)
       activeTransfer.current = started.transfer
@@ -75,7 +77,12 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
           const data = await api.peerTransfers()
           const transfer = data.transfers?.find((item) => item.transfer === started.transfer)
           if (!transfer || transfer.active) {
-            setStatus('Receiving verified Git objects…')
+            if (transfer) {
+              setProgress(transfer)
+              const received = Number(transfer.received || 0)
+              const expected = Number(transfer.expected || 0)
+              setStatus(expected > 0 ? `Receiving verified Git objects · ${received} / ${expected}` : 'Preparing repository snapshot…')
+            } else setStatus('Contacting peer…')
             return
           }
           clearInterval(transferPoll.current)
@@ -118,7 +125,7 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
         <h1>Fork from a ship</h1>
         <p>Copy a public repository through Ames and Fine.</p>
         {error && <div className="inline-error">{error}</div>}
-        {status && !error && <div className="transfer-status">{status}</div>}
+        {status && !error && <div className="transfer-status"><span className={busy ? 'spinner' : ''} />{status}{busy && progress && Number(progress.expected || 0) > 0 && <progress max={Number(progress.expected)} value={Number(progress.received || 0)} />}</div>}
         <label><span>Source ship</span><div className="inline-field"><input value={ship} onChange={(event) => { setShip(event.target.value); setCatalog([]) }} placeholder="~sampel-palnet" autoFocus /><button type="button" className="button" disabled={busy || discovering || !ship.trim()} onClick={discover}>{discovering ? 'Scanning…' : 'Discover'}</button></div></label>
         {!!catalog.length && <div className="peer-catalog">{catalog.map((repo) => <button type="button" key={repo.name} className={repository === repo.name ? 'peer-repo selected' : 'peer-repo'} onClick={() => selectRemote(repo)}><span><strong>{repo.name}</strong><small>{repo.head}</small></span><span className="peer-repo-meta">{repo.refs} refs · {repo.objects} objects{repo.writable ? ' · write' : ''}</span></button>)}</div>}
         <label><span>Source repository</span><input value={repository} onChange={(event) => { setRepository(event.target.value); if (!name) setName(event.target.value) }} placeholder="project" /></label>

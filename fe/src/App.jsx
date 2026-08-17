@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, publicApi, waitForPeerTransfer } from './api'
+import { api, publicApi, waitForPeerBrowse, waitForPeerTransfer } from './api'
 import ForkPeer from './components/ForkPeer'
 import GitHubImport from './components/GitHubImport'
 import GitHubSettings from './components/GitHubSettings'
@@ -33,6 +33,7 @@ function PrivateApp() {
   const [selected, setSelected] = useState(repoFromHash())
   const [remoteSelected, setRemoteSelected] = useState(null)
   const remoteSelectedRef = useRef(null)
+  const remoteBrowseRef = useRef({ generation: 0, request: '' })
   const [remoteData, setRemoteData] = useState(null)
   const [creating, setCreating] = useState(false)
   const [publishingDesk, setPublishingDesk] = useState(false)
@@ -109,6 +110,9 @@ function PrivateApp() {
   }, [])
 
   function choose(name) {
+    remoteBrowseRef.current.generation += 1
+    if (remoteBrowseRef.current.request) api.peerDeleteBrowse(remoteBrowseRef.current.request).catch(() => {})
+    remoteBrowseRef.current.request = ''
     setCreating(false)
     setPublishingDesk(false)
     setForkingPeer(false)
@@ -121,30 +125,46 @@ function PrivateApp() {
   }
 
   async function chooseRemote(ship, name, pushHistory = true) {
-    setError(''); setRemoteSelected({ ship, name }); setRemoteData(null); setSelected('')
+    const current = remoteSelectedRef.current
+    if (current?.ship === ship && current?.name === name && (remoteData || remoteBrowseRef.current.request)) return
+    const previous = remoteBrowseRef.current.request
+    const generation = remoteBrowseRef.current.generation + 1
+    remoteBrowseRef.current = { generation, request: '' }
+    if (previous) api.peerDeleteBrowse(previous).catch(() => {})
+    const selection = { ship, name }
+    remoteSelectedRef.current = selection
+    setError(''); setRemoteSelected(selection); setRemoteData(null); setSelected('')
     setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false)
     if (pushHistory) history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(name)}`)
     try {
       const started = await api.peerBrowse(ship, name)
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        const status = await api.peerBrowses()
-        const found = status.browses?.find((item) => item.request === started.request)
-        if (found && !found.active) {
-          await api.peerDeleteBrowse(started.request).catch(() => {})
-          if (!found.ok) throw new Error(found.message)
-          setRemoteData(found.result); return
-        }
+      if (remoteBrowseRef.current.generation !== generation) {
+        await api.peerDeleteBrowse(started.request).catch(() => {})
+        return
       }
-      throw new Error('peer repository did not load in time')
-    } catch (cause) { setError(cause.message) }
+      remoteBrowseRef.current.request = started.request
+      const found = await waitForPeerBrowse(started.request)
+      await api.peerDeleteBrowse(started.request).catch(() => {})
+      if (remoteBrowseRef.current.generation !== generation) return
+      remoteBrowseRef.current.request = ''
+      if (!found.ok) throw new Error(found.message)
+      if (found.ship !== ship || found.repository !== name || found.result?.repository?.name !== name) {
+        throw new Error('peer browse returned a different repository')
+      }
+      setRemoteData(found.result)
+    } catch (cause) {
+      if (remoteBrowseRef.current.generation === generation) {
+        remoteBrowseRef.current.request = ''
+        setError(cause.message)
+      }
+    }
   }
 
-  async function forkRemote(ship, repository) {
+  async function forkRemote(ship, repository, onProgress) {
     setError('')
     try {
       const started = await api.peerFork(ship, repository, repository, true)
-      const result = await waitForPeerTransfer(started.transfer)
+      const result = await waitForPeerTransfer(started.transfer, { onProgress })
       await api.peerDeleteTransfer(started.transfer).catch(() => {})
       if (!result.ok) throw new Error(result.message)
       await refresh(repository); choose(repository); return true
@@ -206,7 +226,7 @@ function PrivateApp() {
         ) : publishingDesk ? (
           <PublishDesk repositories={repositories} onComplete={published} onCancel={() => setPublishingDesk(false)} />
         ) : remoteSelected ? (
-          remoteData ? <RemoteRepositoryView ship={remoteSelected.ship} data={remoteData} onFork={forkRemote} /> : <main className="content"><div className="empty">Remotely scrying {remoteSelected.ship}/{remoteSelected.name}...</div></main>
+          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} data={remoteData} onFork={forkRemote} /> : <main className="content"><div className="empty"><span className="spinner" />Remotely scrying {remoteSelected.ship}/{remoteSelected.name}…</div></main>
         ) : repo ? (
           <RepositoryView repo={repo} onRefresh={refresh} onOpenOrigin={chooseRemote} />
         ) : (
