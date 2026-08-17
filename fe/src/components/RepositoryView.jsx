@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { exactBytes, formatBytes } from '../format'
 import FileTree from './FileTree'
+import { HighlightedCode, HighlightedEditor } from './HighlightedCode'
 import { CopyIcon } from './Icons'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
@@ -136,7 +137,7 @@ function FileView({ repository, path, branch, editable, onBack, onSaved, client 
         !history ? <div className="empty">Loading file history…</div> : !history.commits?.length ? <div className="empty">No changes found for this file.</div> : <Commits data={history} loading={false} onSelect={(commit) => { if (commit.present) { setRevision(commit.oid); setView('file') } }} />
       ) : busy && !file ? <div className="empty">Loading file…</div> : editing ? (
         <div className="editor-panel">
-          <textarea className="code-editor" value={text} onChange={(event) => setText(event.target.value)} spellCheck="false" />
+          <HighlightedEditor value={text} path={path} onChange={(event) => setText(event.target.value)} />
           <div className="editor-footer">
             <input value={message} onChange={(event) => setMessage(event.target.value)} aria-label="Commit message" />
             <button className="button" onClick={() => { setText(original); setEditing(false) }}>Cancel</button>
@@ -146,7 +147,7 @@ function FileView({ repository, path, branch, editable, onBack, onSaved, client 
       ) : objectUrl ? (
         <div className="image-view"><img src={objectUrl} alt={path} /></div>
       ) : file?.text !== null ? (
-        <pre className="code-view"><code>{file?.text}</code></pre>
+        <HighlightedCode code={file?.text} path={path} />
       ) : file ? (
         <div className="empty" title={exactBytes(file.size)}>Binary file · {formatBytes(file.size)}</div>
       ) : null}

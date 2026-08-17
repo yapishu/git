@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, publicApi } from './api'
 import ForkPeer from './components/ForkPeer'
 import GitHubImport from './components/GitHubImport'
@@ -32,6 +32,7 @@ function PrivateApp() {
   const [peers, setPeers] = useState([])
   const [selected, setSelected] = useState(repoFromHash())
   const [remoteSelected, setRemoteSelected] = useState(null)
+  const remoteSelectedRef = useRef(null)
   const [remoteData, setRemoteData] = useState(null)
   const [creating, setCreating] = useState(false)
   const [publishingDesk, setPublishingDesk] = useState(false)
@@ -48,6 +49,7 @@ function PrivateApp() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('git-theme', theme)
   }, [theme])
+  useEffect(() => { remoteSelectedRef.current = remoteSelected }, [remoteSelected])
 
   const refresh = useCallback(async (preferred) => {
     setError('')
@@ -60,7 +62,10 @@ function PrivateApp() {
         setSelected(target)
         return true
       }
-      setSelected(repos[0]?.name || '')
+      const fallback = repos[0]?.name || ''
+      setSelected(fallback)
+      const route = routeFromHash()
+      if (fallback && route.kind === 'repository') history.replaceState({}, '', `#/${encodeURIComponent(fallback)}`)
       return false
     } catch (cause) {
       setError(cause.message)
@@ -92,10 +97,14 @@ function PrivateApp() {
     const pop = () => {
       const route = routeFromHash()
       setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false)
-      if (route.kind === 'peer') chooseRemote(route.ship, route.name, false)
+      if (route.kind === 'peer') {
+        const current = remoteSelectedRef.current
+        if (!current || current.ship !== route.ship || current.name !== route.name) chooseRemote(route.ship, route.name, false)
+      }
       else { setRemoteSelected(null); setRemoteData(null); setSelected(route.name) }
     }
     addEventListener('popstate', pop)
+    if (routeFromHash().kind === 'peer') pop()
     return () => removeEventListener('popstate', pop)
   }, [])
 

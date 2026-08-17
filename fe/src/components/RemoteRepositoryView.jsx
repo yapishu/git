@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import FileTree from './FileTree'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
@@ -8,15 +8,30 @@ const formatDate = (timestamp) => {
 }
 
 export default function RemoteRepositoryView({ ship, data, onFork }) {
-  const [tab, setTab] = useState('code')
   const repo = data?.repository
+  const routeTab = () => {
+    const query = location.hash.split('?')[1] || ''
+    const requested = new URLSearchParams(query).get('tab')
+    return ['code', 'pulls', 'commits', 'branches'].includes(requested) ? requested : 'code'
+  }
+  const [tab, setTab] = useState(routeTab)
+  useEffect(() => {
+    const restore = () => setTab(routeTab())
+    addEventListener('popstate', restore)
+    return () => removeEventListener('popstate', restore)
+  }, [ship, repo?.name])
+  function chooseTab(next) {
+    const query = next === 'code' ? '' : `?tab=${encodeURIComponent(next)}`
+    history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(repo.name)}${query}`)
+    setTab(next)
+  }
   if (!repo) return <main className="content"><div className="empty">Repository data is unavailable.</div></main>
   const commits = data.commits?.commits || []
   const pulls = repo.pullRequests || []
   return <main className="content">
     <header className="repo-header"><div><div className="repo-breadcrumb"><span>{ship}</span><b>/</b><h1>{repo.name}</h1><span className="visibility-badge">Peer</span></div>{repo.description && <p className="repo-description">{repo.description}</p>}</div><button className="button primary" onClick={() => onFork(ship, repo.name)}>Fork repository</button></header>
     <div className="repo-meta"><span><b>{repo.fileCount || 0}</b> files</span><span><b>{repo.commitCount || 0}</b> commits</span><span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span></div>
-    <nav className="tabs"><button className={tab === 'code' ? 'active' : ''} onClick={() => setTab('code')}>Code</button><button className={tab === 'pulls' ? 'active' : ''} onClick={() => setTab('pulls')}>Pull requests <span className="tab-count">{pulls.length}</span></button><button className={tab === 'commits' ? 'active' : ''} onClick={() => setTab('commits')}>Commits <span className="tab-count">{commits.length}</span></button><button className={tab === 'branches' ? 'active' : ''} onClick={() => setTab('branches')}>Branches <span className="tab-count">{repo.branchCount || 0}</span></button></nav>
+    <nav className="tabs"><button className={tab === 'code' ? 'active' : ''} onClick={() => chooseTab('code')}>Code</button><button className={tab === 'pulls' ? 'active' : ''} onClick={() => chooseTab('pulls')}>Pull requests <span className="tab-count">{pulls.length}</span></button><button className={tab === 'commits' ? 'active' : ''} onClick={() => chooseTab('commits')}>Commits <span className="tab-count">{commits.length}</span></button><button className={tab === 'branches' ? 'active' : ''} onClick={() => chooseTab('branches')}>Branches <span className="tab-count">{repo.branchCount || 0}</span></button></nav>
     <section className="repo-body">
       {tab === 'code' && <FileTree files={data.files?.files || []} />}
       {tab === 'commits' && <div className="commit-list">{commits.map((commit) => { const date = formatDate(commit.committer?.timestamp); return <div className="commit-row" key={commit.oid}><span className="commit-avatar">{(commit.author?.name || '?').slice(0, 1).toUpperCase()}</span><div><strong>{commit.subject || 'Untitled commit'}</strong><small>{commit.author?.name || commit.author?.email || 'Unknown author'}{date ? ` committed ${date}` : ''}</small></div><code title={commit.oid}>{shortOid(commit.oid)}</code></div> })}</div>}
