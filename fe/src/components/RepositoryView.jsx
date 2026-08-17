@@ -14,17 +14,27 @@ const commitDate = (identity) => {
 const dateLabel = (identity) => commitDate(identity)?.toLocaleString() || ''
 const validTabs = new Set(['code', 'issues', 'pulls', 'branches', 'commits', 'settings'])
 
+function parseLineRange(value) {
+  const match = /^(\d+)(?:-(\d+))?$/.exec(value || '')
+  if (!match) return { lineStart: null, lineEnd: null }
+  const first = Number(match[1])
+  const second = Number(match[2] || match[1])
+  if (first < 1 || second < 1) return { lineStart: null, lineEnd: null }
+  return { lineStart: Math.min(first, second), lineEnd: Math.max(first, second) }
+}
+
 function routeForRepository(repo) {
   const [rawPath, rawQuery = ''] = location.hash.replace(/^#\/?/, '').split('?')
   let name = ''
   try { name = decodeURIComponent(rawPath) } catch { /* malformed hash */ }
   const params = new URLSearchParams(rawQuery)
   const tab = validTabs.has(params.get('tab')) ? params.get('tab') : 'code'
+  const lines = name === repo.name && tab === 'code' && params.get('file') ? parseLineRange(params.get('line')) : { lineStart: null, lineEnd: null }
   return {
     tab,
     branch: name === repo.name && params.get('branch') ? params.get('branch') : repo.head,
     filePath: name === repo.name && tab === 'code' ? params.get('file') || '' : '',
-    line: name === repo.name && tab === 'code' && params.get('file') && /^\d+$/.test(params.get('line') || '') ? Number(params.get('line')) : null,
+    ...lines,
     commitOid: name === repo.name && tab === 'commits' ? params.get('commit') || '' : '',
   }
 }
@@ -34,7 +44,7 @@ function repositoryHash(repo, route) {
   if (route.tab !== 'code') params.set('tab', route.tab)
   if (route.branch && route.branch !== repo.head) params.set('branch', route.branch)
   if (route.filePath) params.set('file', route.filePath)
-  if (route.filePath && route.line) params.set('line', String(route.line))
+  if (route.filePath && route.lineStart) params.set('line', route.lineEnd && route.lineEnd !== route.lineStart ? `${route.lineStart}-${route.lineEnd}` : String(route.lineStart))
   if (route.commitOid) params.set('commit', route.commitOid)
   const query = params.toString()
   return `#/${encodeURIComponent(repo.name)}${query ? `?${query}` : ''}`
@@ -70,7 +80,7 @@ function Files({ data, commit, loading, onOpen }) {
   return <FileTree files={data.files} header={header} onOpen={onOpen} />
 }
 
-function FileView({ repository, path, branch, line, onSelectLine, editable, onBack, onSaved, client = api }) {
+function FileView({ repository, path, branch, lineStart, lineEnd, onSelectLine, editable, onBack, onSaved, client = api }) {
   const [file, setFile] = useState(null)
   const [history, setHistory] = useState(null)
   const [view, setView] = useState('file')
@@ -128,7 +138,7 @@ function FileView({ repository, path, branch, line, onSelectLine, editable, onBa
         <button className="text-button file-back" onClick={onBack}>← Files</button>
         <code>{path} · {revision === branch ? branch.replace('refs/heads/', '') : shortOid(revision)}</code>
         <div className="file-actions">
-          {file?.text !== null && view === 'file' && <button className="button" onClick={() => navigator.clipboard.writeText(location.href)}>{line ? `Copy line ${line} link` : 'Copy file link'}</button>}
+          {file?.text !== null && view === 'file' && <button className="button" onClick={() => navigator.clipboard.writeText(location.href)}>{lineStart ? lineEnd !== lineStart ? `Copy lines ${lineStart}–${lineEnd} link` : `Copy line ${lineStart} link` : 'Copy file link'}</button>}
           {downloadUrl && <a className="button link-button" href={downloadUrl} download={path.split('/').pop()}>Download</a>}
           <button className={view === 'history' ? 'button active' : 'button'} onClick={() => setView(view === 'history' ? 'file' : 'history')}>{view === 'history' ? 'View file' : 'History'}</button>
           {revision !== branch && <button className="button" onClick={() => { setRevision(branch); setView('file') }}>Latest</button>}
@@ -150,7 +160,7 @@ function FileView({ repository, path, branch, line, onSelectLine, editable, onBa
       ) : objectUrl ? (
         <div className="image-view"><img src={objectUrl} alt={path} /></div>
       ) : file?.text !== null ? (
-        <HighlightedCode code={file?.text} path={path} selectedLine={line} onSelectLine={onSelectLine} />
+        <HighlightedCode code={file?.text} path={path} selectedStart={lineStart} selectedEnd={lineEnd} onSelectLine={onSelectLine} />
       ) : file ? (
         <div className="empty" title={exactBytes(file.size)}>Binary file · {formatBytes(file.size)}</div>
       ) : null}
@@ -487,7 +497,8 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   const initialRoute = routeForRepository(repo)
   const [tab, setTab] = useState(initialRoute.tab)
   const [filePath, setFilePath] = useState(initialRoute.filePath)
-  const [line, setLine] = useState(initialRoute.line)
+  const [lineStart, setLineStart] = useState(initialRoute.lineStart)
+  const [lineEnd, setLineEnd] = useState(initialRoute.lineEnd)
   const [branch, setBranch] = useState(initialRoute.branch)
   const [commitOid, setCommitOid] = useState(initialRoute.commitOid)
   const [detail, setDetail] = useState(null)
@@ -500,15 +511,16 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
     setTab(route.tab)
     setBranch(route.branch)
     setFilePath(route.filePath)
-    setLine(route.line)
+    setLineStart(route.lineStart)
+    setLineEnd(route.lineEnd)
     setCommitOid(route.commitOid)
   }
 
   function navigate(changes, replace = false) {
-    const route = { tab, branch, filePath, line, commitOid, ...changes }
-    if (Object.hasOwn(changes, 'filePath') && changes.filePath !== filePath && !Object.hasOwn(changes, 'line')) route.line = null
-    if (route.tab !== 'code') { route.filePath = ''; route.line = null }
-    if (!route.filePath) route.line = null
+    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, ...changes }
+    if (Object.hasOwn(changes, 'filePath') && changes.filePath !== filePath && !Object.hasOwn(changes, 'lineStart')) { route.lineStart = null; route.lineEnd = null }
+    if (route.tab !== 'code') { route.filePath = ''; route.lineStart = null; route.lineEnd = null }
+    if (!route.filePath) { route.lineStart = null; route.lineEnd = null }
     if (route.tab !== 'commits') route.commitOid = ''
     history[replace ? 'replaceState' : 'pushState']({}, '', repositoryHash(repo, route))
     applyRoute(route)
@@ -578,7 +590,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
       <section className="repo-body">
         {tab === 'code' && <div className="branch-context"><select value={branch} onChange={(event) => browseBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option key={ref.name} value={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select><span>{detail?.files?.files?.length || 0} files</span>{branch !== repo.head && <button className="text-button" onClick={() => browseBranch(repo.head)}>Default branch</button>}</div>}
         {tab === 'code' && (filePath
-          ? <FileView repository={repo.name} path={filePath} branch={branch} line={line} onSelectLine={(selected) => navigate({ line: selected })} editable={!publicMode && branch === repo.head} onBack={() => navigate({ filePath: '' })} onSaved={mutate} client={client} />
+          ? <FileView repository={repo.name} path={filePath} branch={branch} lineStart={lineStart} lineEnd={lineEnd} onSelectLine={(selected, extend) => { const anchor = extend && lineStart ? lineStart : selected; navigate({ lineStart: Math.min(anchor, selected), lineEnd: Math.max(anchor, selected) }) }} editable={!publicMode && branch === repo.head} onBack={() => navigate({ filePath: '' })} onSaved={mutate} client={client} />
           : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} />)}
         {tab === 'issues' && <Issues repo={repo} />}
         {tab === 'branches' && <Branches repo={repo} selected={branch} onBrowse={browseBranch} />}

@@ -31,43 +31,50 @@ function lineAnchor(line) {
   return `<a class="line-number" href="${href}" data-line-link="${line}" aria-label="Link to line ${line}">${line}</a>`
 }
 
-function annotateLines(html, selectedLine) {
-  let line = 0
-  return html.replace(/<span class="line">/g, () => {
-    line += 1
-    const selected = line === selectedLine ? ' selected-line' : ''
-    return `<span class="line${selected}" id="L${line}" data-line="${line}">${lineAnchor(line)}`
-  })
+function isSelected(line, selectedStart, selectedEnd) {
+  return selectedStart && line >= selectedStart && line <= (selectedEnd || selectedStart)
 }
 
-function PlainCode({ code, selectedLine, onSelectLine }) {
+function annotateLines(html, selectedStart, selectedEnd) {
+  let line = 0
+  const annotated = html.replace(/<span class="line">/g, () => {
+    line += 1
+    const selected = isSelected(line, selectedStart, selectedEnd) ? ' selected-line' : ''
+    return `<span class="line${selected}" id="L${line}" data-line="${line}">${lineAnchor(line)}`
+  })
+  // Shiki separates its line spans with literal newlines. Once the spans are
+  // block-level those separators render as additional blank lines in <pre>.
+  return annotated.replace(/<\/span>\r?\n(?=<span class="line(?: |"))/g, '</span>')
+}
+
+function PlainCode({ code, selectedStart, selectedEnd, onSelectLine }) {
   const lines = code.split('\n')
   return (
     <pre className="code-view plain-code"><code>{lines.map((content, index) => {
       const line = index + 1
-      return <span className={`line${line === selectedLine ? ' selected-line' : ''}`} id={`L${line}`} data-line={line} key={line}><a className="line-number" href={lineHref(line)} onClick={(event) => { event.preventDefault(); onSelectLine?.(line) }} aria-label={`Link to line ${line}`}>{line}</a>{content || ' '}</span>
+      return <span className={`line${isSelected(line, selectedStart, selectedEnd) ? ' selected-line' : ''}`} id={`L${line}`} data-line={line} key={line}><a className="line-number" href={lineHref(line)} onClick={(event) => { event.preventDefault(); onSelectLine?.(line, event.shiftKey) }} aria-label={`Link to line ${line}`} title="Click to select; Shift-click to select a range">{line}</a>{content || ' '}</span>
     })}</code></pre>
   )
 }
 
-export function HighlightedCode({ code, path, selectedLine, onSelectLine }) {
+export function HighlightedCode({ code, path, selectedStart, selectedEnd, onSelectLine }) {
   const html = useHighlight(code, path)
-  const annotated = useMemo(() => html ? annotateLines(html, selectedLine) : null, [html, selectedLine])
+  const annotated = useMemo(() => html ? annotateLines(html, selectedStart, selectedEnd) : null, [html, selectedStart, selectedEnd])
 
   useEffect(() => {
-    if (!selectedLine) return
-    const frame = requestAnimationFrame(() => document.getElementById(`L${selectedLine}`)?.scrollIntoView({ block: 'center' }))
+    if (!selectedStart) return
+    const frame = requestAnimationFrame(() => document.getElementById(`L${selectedStart}`)?.scrollIntoView({ block: 'center' }))
     return () => cancelAnimationFrame(frame)
-  }, [selectedLine, annotated])
+  }, [selectedStart, annotated])
 
   function chooseLine(event) {
     const anchor = event.target.closest('[data-line-link]')
     if (!anchor) return
     event.preventDefault()
-    onSelectLine?.(Number(anchor.dataset.lineLink))
+    onSelectLine?.(Number(anchor.dataset.lineLink), event.shiftKey)
   }
 
-  if (!annotated) return <PlainCode code={code} selectedLine={selectedLine} onSelectLine={onSelectLine} />
+  if (!annotated) return <PlainCode code={code} selectedStart={selectedStart} selectedEnd={selectedEnd} onSelectLine={onSelectLine} />
   return <div className="code-view highlighted-code" onClick={chooseLine} dangerouslySetInnerHTML={{ __html: annotated }} />
 }
 
