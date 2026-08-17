@@ -54,6 +54,8 @@
 - native pull requests whose object graphs are stored at the origin without advancing a branch
 - pull-request creation in the fork UI with source/target context, live transfer status, origin navigation, remote PR listings, review diffs, and merge controls
 - native pull-request detail with bounded per-file red/green textual diffs
+- native issues with ship authors, open/close lifecycle, comments, deduplicated labels, ship assignees, and bounded repository summaries
+- unauthenticated native issue reads for public repositories and linked `~ship/repository#number` references in issue discussion
 - same-repository branch pull requests plus close/reopen lifecycle and native review discussion with general comments, base/head line anchors, and resolve/reopen state
 - pull-request integration by fast-forward, already-contained detection, or canonical two-parent three-way merge with content and file-mode conflict detection
 - pull-request merges and authorized native updates gated by Clay when the destination branch is desk-bound
@@ -73,13 +75,18 @@
 - authenticated and public branch comparison with bounded tree diffs and downloadable unified patches for text-only changes
 - bounded branch-aware code search with line-level deep links for authenticated and public repository views
 - structural web editing that creates the first commit in a blank repository, creates nested files, preserves existing modes, removes empty directories, and deletes files through Clay-gated commits
-- web creation and deletion of lightweight and annotated tags, with canonical tag objects and peeled tag advertisements for stock Git clients
-- conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, GitHub receive-pack requests/results, Clay snapshots, and object-store request signing
+- web creation and deletion of lightweight and annotated tags from contextual history actions or compact revision/ref/unique-short-hash targets, with canonical tag objects and peeled tag advertisements for stock Git clients
+- on-demand materialization of selected native Clay revisions as canonical Git commits for tags, archives, diffs, and revision-to-commit mapping
+- tag-rooted releases with bounded notes, public detail reads, and deterministic ustar source archives limited to 10,000 files and 64 MiB
+- HMAC-SHA256 outgoing repository webhooks with event filters, pending/success/failure delivery history, and Smart HTTP plus Clay-gated push integration
+- HMAC-SHA256 incoming GitHub ping/push endpoints that record bounded upstream notices and expose explicit pull-or-dismiss actions in the web interface
+- conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, GitHub receive-pack requests/results, Clay snapshots, object-store request signing, and webhook signing/parsing
 
 ## Next
 
-1. Add native issues with ship identities, labels, assignment, and cross-ship references.
-2. Add repository archives and release metadata rooted at tags.
+1. Add webhook delivery redelivery and editable webhook configuration.
+2. Emit issue and pull-request events for every lifecycle mutation, including comments, review resolution, close, reopen, and merge.
+3. Add release assets as LFS-backed objects alongside the deterministic source archive.
 
 ## Storage direction
 

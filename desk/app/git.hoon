@@ -1,7 +1,7 @@
 ::  Native Git object database and Smart HTTP endpoint.
 ::
 /-  git, git-peer
-/+  dbug, default-agent, git-blame, git-clay, git-clay-history, git-codec, git-github, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, server
+/+  dbug, default-agent, git-archive, git-blame, git-clay, git-clay-history, git-codec, git-github, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
 |%
 +$  card  card:agent:gall
 +$  lfs-spec  [oid=@t size=@ud]
@@ -51,6 +51,7 @@
       objects=(map oid:git object:git)
   ==
 +$  peer-result  [status=? message=@t repository=@t]
++$  webhook-flight  [repository=@t hook=@ud delivery=@uv]
 +$  peer-discovery
   $:  peer=ship
       active=?
@@ -292,14 +293,100 @@
       ['resolved' b+resolved.comment]
   ==
 ::
+++  issue-comment-json
+  |=  comment=issue-comment:git
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' n+(decimal id.comment)]
+      ['author' s+(scot %p author.comment)]
+      ['body' s+body.comment]
+      ['created' s+(scot %da created.comment)]
+  ==
+::
+++  native-issue-json
+  |=  [issue=native-issue:git include-comments=?]
+  ^-  json
+  =/  labels-json=(list json)
+    (turn ~(tap in labels.issue) |=(label=@t s+label))
+  =/  assignees-json=(list json)
+    (turn ~(tap in assignees.issue) |=(assignee=@p s+(scot %p assignee)))
+  %-  pairs:enjs:format
+  :~  ['number' n+(decimal number.issue)]
+      ['author' s+(scot %p author.issue)]
+      ['title' s+title.issue]
+      ['body' s+?:(include-comments body.issue '')]
+      ['state' s+state.issue]
+      ['labels' [%a labels-json]]
+      ['assignees' [%a assignees-json]]
+      ['created' s+(scot %da created.issue)]
+      ['updated' s+(scot %da updated.issue)]
+      ['commentCount' n+(decimal (lent comments.issue))]
+      ['comments' [%a ?:(include-comments (turn comments.issue issue-comment-json) ~)]]
+  ==
+::
+++  release-json
+  |=  [release=release:git include-notes=?]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['tag' s+tag.release]
+      ['title' s+title.release]
+      ['notes' s+?:(include-notes notes.release '')]
+      ['author' s+(scot %p author.release)]
+      ['created' s+(scot %da created.release)]
+  ==
+::
+++  webhook-json
+  |=  hook=webhook:git
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' n+(decimal id.hook)]
+      ['url' s+url.hook]
+      ['enabled' b+enabled.hook]
+      ['events' [%a (turn ~(tap in events.hook) |=(event=webhook-event:git s+event))]]
+  ==
+::
+++  webhook-delivery-json
+  |=  delivery=webhook-delivery:git
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+(scot %uv id.delivery)]
+      ['hook' n+(decimal hook.delivery)]
+      ['event' s+event.delivery]
+      ['status' s+status.delivery]
+      ['statusCode' n+(decimal status-code.delivery)]
+      ['message' s+message.delivery]
+      ['created' s+(scot %da created.delivery)]
+  ==
+::
+++  upstream-update-json
+  |=  update=upstream-update:git
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+(scot %uv id.update)]
+      ['source' s+source.update]
+      ['ref' s+ref.update]
+      ['before' s+before.update]
+      ['after' s+after.update]
+      ['received' s+(scot %da received.update)]
+  ==
+::
 ++  repository-json
   |=  [name=@t repo=repository:git]
   ^-  json
   =/  refs-json=(list json)
     %+  turn  ~(tap by refs.repo)
     |=  [ref=@t oid=oid:git]
+    =/  peeled=(unit oid:git)  (peeled-tag:git-protocol objects.repo oid)
+    =/  target=oid:git  ?~(peeled oid u.peeled)
+    =/  mapped=(unit clay-link:git)
+      ?~  binding.repo  ~
+      (clay-link-for-commit target history.u.binding.repo)
     %-  pairs:enjs:format
-    ~[['name' s+ref] ['oid' s+(oid-text:git-codec oid)]]
+    :~  ['name' s+ref]
+        ['oid' s+(oid-text:git-codec oid)]
+        ['targetOid' s+(oid-text:git-codec target)]
+        ['clayRevision' n+(decimal ?~(mapped 0 clay-revision.u.mapped))]
+    ==
   =/  writers-json=(list json)
     (turn ~(tap in writers.repo) |=(writer=@p s+(scot %p writer)))
   =/  protected-json=(list json)
@@ -333,6 +420,10 @@
         ['author' s+author.item]
         ['draft' b+draft.item]
     ==
+  =/  releases-json=(list json)
+    %+  turn  ~(tap by releases.repo)
+    |=  entry=[@t release:git]
+    (release-json +.entry %.n)
   %-  pairs:enjs:format
   :~  ['name' s+name]
       ['owner' s+(scot %p owner.repo)]
@@ -351,6 +442,12 @@
       ['writeTokenSet' b+?=(^ write-token-hash.repo)]
       ['writers' [%a writers-json]]
       ['pullRequests' [%a pulls-json]]
+      ['nativeIssues' [%a (turn native-issues.repo |=(issue=native-issue:git (native-issue-json issue %.n)))]]
+      ['releases' [%a releases-json]]
+      ['webhooks' [%a (turn ~(tap by webhooks.repo) |=(entry=[@ud webhook:git] (webhook-json +.entry)))]]
+      ['incomingHookConfigured' b+?=(^ incoming-hook.repo)]
+      ['webhookDeliveries' [%a (turn (scag 100 webhook-deliveries.repo) webhook-delivery-json)]]
+      ['upstreamUpdates' [%a (turn upstream-updates.repo upstream-update-json)]]
       ['githubIssues' [%a (turn github-issues.repo github-item-json)]]
       ['githubPulls' [%a (turn github-pulls.repo github-item-json)]]
       ['binding' (binding-json binding.repo)]
@@ -379,6 +476,10 @@
   =.  fields  (~(del by fields) 'writers')
   =.  fields  (~(del by fields) 'binding')
   =.  fields  (~(del by fields) 'peerOrigin')
+  =.  fields  (~(del by fields) 'webhooks')
+  =.  fields  (~(del by fields) 'incomingHookConfigured')
+  =.  fields  (~(del by fields) 'webhookDeliveries')
+  =.  fields  (~(del by fields) 'upstreamUpdates')
   [%o fields]
 ::
 ++  repository-files-at-json
@@ -481,11 +582,23 @@
   ^-  (unit oid:git)
   =/  named=(unit oid:git)  (~(get by refs.repo) revision)
   ?^  named  named
-  ?.  =(40 (met 3 revision))  ~
-  =/  parsed=(unit oid:git)  (oid-at:git-protocol [40 revision] 0)
-  ?~  parsed  ~
-  ?.  (~(has by objects.repo) u.parsed)  ~
-  parsed
+  =/  width=@ud  (met 3 revision)
+  ?:  =(40 width)
+    =/  parsed=(unit oid:git)  (oid-at:git-protocol [40 revision] 0)
+    ?~  parsed  ~
+    ?.  (~(has by objects.repo) u.parsed)  ~
+    parsed
+  ?.  ?&((gte width 4) (lth width 40))  ~
+  =/  remaining=(list [oid:git object:git])  ~(tap by objects.repo)
+  =/  match=(unit oid:git)  ~
+  |-
+  ?~  remaining  match
+  =/  candidate=oid:git  -.i.remaining
+  =/  candidate-text=@t  (oid-text:git-codec candidate)
+  ?.  (starts-with:git-protocol [(met 3 candidate-text) candidate-text] revision)
+    $(remaining t.remaining)
+  ?^  match  ~
+  $(remaining t.remaining, match `candidate)
 ::
 ++  repository-file-at
   |=  [repo=repository:git ref=@t file-path=path]
@@ -634,6 +747,68 @@
   ?~  links  ~
   ?:  =(number clay-revision.i.links)  `i.links
   $(links t.links)
+::
+++  clay-link-for-commit
+  |=  [commit-oid=oid:git links=(list clay-link:git)]
+  ^-  (unit clay-link:git)
+  ?~  links  ~
+  ?:  =(commit-oid commit.i.links)  `i.links
+  $(links t.links)
+::
+++  clay-files-at-revision
+  |=  [who=@p desk-name=desk number=@ud now=@da]
+  ^-  (unit (map path octs))
+  =/  domo=(unit domo:clay)
+    (desk-domo:git-clay-history who desk-name now)
+  ?~  domo  ~
+  ?:  |(=(number 0) (gth number let.u.domo))  ~
+  =/  revision=(unit revision:git-clay-history)
+    (revision-meta:git-clay-history who desk-name number u.domo)
+  ?~  revision  ~
+  =/  yaki=(unit yaki:clay)
+    (revision-yaki:git-clay-history who desk-name number tako.u.revision)
+  ?~  yaki  ~
+  =/  remaining=(list [path lobe:clay])  ~(tap by q.u.yaki)
+  =/  result=(map path octs)  ~
+  |-
+  ?~  remaining  `result
+  =/  data=(unit octs)
+    (clay-file-octs who desk-name number +.i.remaining now)
+  ?~  data  ~
+  $(remaining t.remaining, result (~(put by result) -.i.remaining u.data))
+::
+++  materialize-clay-revision
+  |=  [repo=repository:git number=@ud who=@p now=@da]
+  ^-  (unit [repo=repository:git commit=oid:git])
+  ?~  binding.repo  ~
+  =/  existing=(unit clay-link:git)
+    (clay-link-for-revision number history.u.binding.repo)
+  ?^  existing
+    =/  object=(unit object:git)  (~(get by objects.repo) commit.u.existing)
+    ?:  ?&(?=(^ object) =(%commit kind.u.object))
+      `[repo commit.u.existing]
+    ~
+  =/  domo=(unit domo:clay)
+    (desk-domo:git-clay-history who desk-name.u.binding.repo now)
+  ?~  domo  ~
+  =/  revision=(unit revision:git-clay-history)
+    (revision-meta:git-clay-history who desk-name.u.binding.repo number u.domo)
+  ?~  revision  ~
+  =/  files=(unit (map path octs))
+    (clay-files-at-revision who desk-name.u.binding.repo number now)
+  ?~  files  ~
+  =/  message=@t
+    (rap 3 ~['Clay revision ' (decimal number) ' of %' desk-name.u.binding.repo])
+  =/  snapped=(unit [commit=oid:git objects=(map oid:git object:git)])
+    (snapshot:git-clay u.files objects.repo ~ who timestamp.u.revision message)
+  ?~  snapped  ~
+  =/  link=clay-link:git
+    [number commit.u.snapped %clay-to-git timestamp.u.revision]
+  =/  linked=desk-binding:git
+    u.binding.repo(history [link history.u.binding.repo])
+  =/  updated=repository:git
+    repo(objects objects.u.snapped, binding `linked)
+  `[updated commit.u.snapped]
 ::
 ++  clay-identity-json
   |=  [who=@p desk-name=desk timestamp=@da]
@@ -1322,6 +1497,7 @@
 =/  peer-activities  *(list peer-activity)
 =/  github-in-flight  *(map @uv github-request)
 =/  github-results  *(map @uv github-result)
+=/  webhook-in-flight  *(map @uv webhook-flight)
 ^-  agent:gall
 |_  =bowl:gall
 +*  this  .
@@ -1341,7 +1517,7 @@
   |=  old=vase
   ^-  (quip card _this)
   =/  loaded=state-0:git  !<(state-0:git old)
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-activities ~, github-in-flight ~, github-results ~)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %git]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/git/api] %git]
   ==
@@ -1361,6 +1537,11 @@
   ::
       %git-peer
     (handle-peer !<(packet:git-peer vase))
+  ::
+      %git-webhook-event
+    ?>  =(src.bowl our.bowl)
+    =/  trigger=webhook-trigger:git  !<(webhook-trigger:git vase)
+    (dispatch-webhooks repository.trigger event.trigger data.trigger)
   ==
 ::
 ++  peer-card
@@ -1540,6 +1721,12 @@
           ~
           ~
           `[[source.flight source-repository.flight]]
+          ~
+          ~
+          ~
+          ~
+          ~
+          ~
           ~
           ~
           ~
@@ -1943,6 +2130,12 @@
           ~
           ~
           ~
+          ~
+          ~
+          ~
+          ~
+          ~
+          ~
       ==
     `this(repositories (~(put by repositories) name.act repo))
   ::
@@ -1961,7 +2154,8 @@
     ?~  found  `this
     ?.  (~(has by objects.u.found) oid.act)  `this
     =/  repo=repository:git  u.found(refs (~(put by refs.u.found) ref.act oid.act))
-    `this(repositories (~(put by repositories) repository.act repo))
+    =.  repositories  (~(put by repositories) repository.act repo)
+    (dispatch-webhooks repository.act %push (pairs:enjs:format ~[['ref' s+ref.act] ['after' s+(oid-text:git-codec oid.act)]]))
   ::
       %delete-ref
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)
@@ -2156,6 +2350,60 @@
   ?.  ?=(%b -.u.value)  ~
   `p.u.value
 ::
+++  string-list-at
+  |=  [key=@t jon=json]
+  ^-  (unit (list @t))
+  =/  value=(unit json)  (json-at key jon)
+  ?~  value  ~
+  ?.  ?=(%a -.u.value)  ~
+  =/  items=(list json)  p.u.value
+  =/  out=(list @t)  ~
+  |-
+  ?~  items  `(flop out)
+  ?.  ?=(%s -.i.items)  ~
+  $(items t.items, out [p.i.items out])
+::
+++  webhook-events-at
+  |=  [key=@t jon=json]
+  ^-  (unit (set webhook-event:git))
+  =/  values=(unit (list @t))  (string-list-at key jon)
+  ?~  values  ~
+  =/  remaining=(list @t)  u.values
+  =/  events=(set webhook-event:git)  ~
+  |-
+  ?~  remaining  `events
+  =/  event=(unit webhook-event:git)
+    ?:  =('push' i.remaining)          `%push
+    ?:  =('tag' i.remaining)           `%tag
+    ?:  =('pull-request' i.remaining)  `%pull-request
+    ?:  =('issue' i.remaining)         `%issue
+    ?:  =('release' i.remaining)       `%release
+    ?:  =('clay-sync' i.remaining)     `%clay-sync
+    ~
+  ?~  event  ~
+  $(remaining t.remaining, events (~(put in events) u.event))
+::
+++  ship-list-at
+  |=  [key=@t jon=json]
+  ^-  (unit (list @p))
+  =/  texts=(unit (list @t))  (string-list-at key jon)
+  ?~  texts  ~
+  =/  remaining=(list @t)  u.texts
+  =/  out=(list @p)  ~
+  |-
+  ?~  remaining  `(flop out)
+  =/  parsed=(unit @p)  (slaw %p i.remaining)
+  ?~  parsed  ~
+  $(remaining t.remaining, out [u.parsed out])
+::
+++  native-issue-at
+  |=  [repo=repository:git number=@ud]
+  ^-  (unit native-issue:git)
+  =/  matches=(list native-issue:git)
+    (skim native-issues.repo |=(issue=native-issue:git =(number.issue number)))
+  ?~  matches  ~
+  `i.matches
+::
 ++  valid-lfs-oid
   |=  oid=@t
   ^-  ?
@@ -2278,6 +2526,17 @@
   |=  [eyre-id=@ta status=@ud jon=json]
   ^-  (list card)
   (give-simple-payload:app:server eyre-id (api-json-payload status jon))
+::
+++  api-archive
+  |=  [eyre-id=@ta name=@t data=octs]
+  ^-  (list card)
+  %+  give-simple-payload:app:server  eyre-id
+  :_  `data
+  :-  200
+  :~  ['content-type' 'application/x-tar']
+      ['content-disposition' (rap 3 ~['attachment; filename="' name '.tar"'])]
+      ['cache-control' 'no-store']
+  ==
 ::
 ++  api-body
   |=  req=inbound-request:eyre
@@ -2468,6 +2727,154 @@
   :~  [%pass /github/(scot %uv request-id) %arvo %i %request request *outbound-config:iris]
   ==
 ::
+++  dispatch-webhooks
+  |=  [name=@t event=webhook-event:git data=json]
+  ^-  (quip card _this)
+  =/  found=(unit repository:git)  (~(get by repositories) name)
+  ?~  found  `this
+  =/  hooks=(list [@ud webhook:git])
+    %+  skim  ~(tap by webhooks.u.found)
+    |=  entry=[@ud webhook:git]
+    ?&  enabled.+.entry
+        (~(has in events.+.entry) event)
+    ==
+  ?~  hooks  `this
+  =/  payload=json
+    %-  pairs:enjs:format
+    :~  ['event' s+event]
+        ['repository' s+name]
+        ['owner' s+(scot %p owner.u.found)]
+        ['sentAt' s+(scot %da now.bowl)]
+        ['data' data]
+    ==
+  =/  body=octs  (json-to-octs:server payload)
+  =/  remaining=(list [@ud webhook:git])  hooks
+  =/  cards=(list card)  ~
+  =/  flights=(map @uv webhook-flight)  webhook-in-flight
+  =/  deliveries=(list webhook-delivery:git)  ~
+  =/  count=@ud  request-count
+  =/  result=[cards=(list card) flights=(map @uv webhook-flight) deliveries=(list webhook-delivery:git) count=@ud]
+    |-
+    ?~  remaining  [cards flights deliveries count]
+    =/  hook=webhook:git  +.i.remaining
+    =/  delivery-id=@uv
+      `@uv`(shas %git-webhook (cat 3 eny.bowl count))
+    =/  signature=@t  (signature:git-webhook secret.hook body)
+    =/  headers=(list [@t @t])
+      :~  ['content-type' 'application/json']
+          ['user-agent' 'urbit-git-webhook/1']
+          ['x-git-event' event]
+          ['x-git-delivery' (scot %uv delivery-id)]
+          ['x-hub-signature-256' signature]
+      ==
+    =/  card=card
+      [%pass /webhook/(scot %uv delivery-id) %arvo %i %request [%'POST' url.hook headers `body] *outbound-config:iris]
+    =/  delivery=webhook-delivery:git
+      [delivery-id id.hook event %pending 0 'delivery queued' now.bowl]
+    $(remaining t.remaining, cards [card cards], flights (~(put by flights) delivery-id [name id.hook delivery-id]), deliveries [delivery deliveries], count +(count))
+  =.  request-count  count.result
+  =.  webhook-in-flight  flights.result
+  =/  updated=repository:git
+    u.found(webhook-deliveries (scag 100 (weld deliveries.result webhook-deliveries.u.found)))
+  =.  repositories  (~(put by repositories) name updated)
+  [(flop cards.result) this]
+::
+++  push-event-json
+  |=  commands=(list receive-command:git)
+  ^-  json
+  =/  entries=(list json)
+    %+  turn  commands
+    |=  command=receive-command:git
+    %-  pairs:enjs:format
+    :~  ['ref' s+ref.command]
+        ['before' s+?~(old.command '' (oid-text:git-codec u.old.command))]
+        ['after' s+?~(new.command '' (oid-text:git-codec u.new.command))]
+        ['deleted' b+?=(~ new.command)]
+    ==
+  (pairs:enjs:format ~[['updates' [%a entries]]])
+::
+++  accept-receive
+  |=  $:  eyre-id=@ta
+          name=@t
+          commands=(list receive-command:git)
+          applied=repository:git
+          clay=(unit [desk-name=desk commit=oid:git])
+      ==
+  ^-  (quip card _this)
+  =.  repositories  (~(put by repositories) name applied)
+  =^  push-cards  this
+    (dispatch-webhooks name %push (push-event-json commands))
+  ?~  clay
+    :_  this
+    %+  weld  push-cards
+    %+  give-simple-payload:app:server  eyre-id
+    (receive-payload 'ok' (receive-results commands %.y ''))
+  =/  data=json
+    (pairs:enjs:format ~[['desk' s+desk-name.u.clay] ['commit' s+(oid-text:git-codec commit.u.clay)]])
+  =^  sync-cards  this
+    (dispatch-webhooks name %clay-sync data)
+  :_  this
+  %+  weld  (weld push-cards sync-cards)
+  %+  give-simple-payload:app:server  eyre-id
+  (receive-payload 'ok' (receive-results commands %.y ''))
+::
+++  handle-incoming-hook
+  |=  [eyre-id=@ta req=inbound-request:eyre name=@t]
+  ^-  (quip card _this)
+  ?.  =(%'POST' method.request.req)
+    :_  this
+    (api-error eyre-id 405 'webhook endpoint requires POST')
+  =/  found=(unit repository:git)  (~(get by repositories) name)
+  ?~  found
+    :_  this
+    (api-error eyre-id 404 'webhook endpoint not found')
+  ?~  incoming-hook.u.found
+    :_  this
+    (api-error eyre-id 404 'webhook endpoint not found')
+  ?.  enabled.u.incoming-hook.u.found
+    :_  this
+    (api-error eyre-id 404 'webhook endpoint not found')
+  ?~  body.request.req
+    :_  this
+    (api-error eyre-id 400 'webhook body is required')
+  =/  raw=@  q.u.body.request.req
+  =/  body=octs  [(met 3 raw) raw]
+  ?:  (gth p.body 1.048.576)
+    :_  this
+    (api-error eyre-id 413 'webhook body exceeds 1 MiB')
+  =/  supplied=(unit @t)
+    (get-header:http 'x-hub-signature-256' header-list.request.req)
+  ?.  ?&  ?=(^ supplied)
+          (verify:git-webhook secret.u.incoming-hook.u.found body u.supplied)
+      ==
+    :_  this
+    (api-error eyre-id 401 'webhook signature is invalid')
+  =/  event=(unit @t)  (get-header:http 'x-github-event' header-list.request.req)
+  ?:  ?&(?=(^ event) =('ping' u.event))
+    :_  this
+    (api-ok eyre-id 200)
+  ?.  ?&(?=(^ event) =('push' u.event))
+    :_  this
+    (api-error eyre-id 422 'only GitHub push webhooks are actionable')
+  =/  jon=(unit json)  (de:json:html q.body)
+  ?~  jon
+    :_  this
+    (api-error eyre-id 400 'webhook body is not valid JSON')
+  =/  notice=(unit push-notice:git-webhook)  (github-push:git-webhook u.jon)
+  ?~  notice
+    :_  this
+    (api-error eyre-id 422 'push webhook is missing ref, before, or after')
+  =/  update-id=@uv
+    `@uv`(shas %git-upstream-update (cat 3 eny.bowl request-count))
+  =.  request-count  +(request-count)
+  =/  update=upstream-update:git
+    [update-id source.u.notice ref.u.notice before.u.notice after.u.notice now.bowl]
+  =/  updated=repository:git
+    u.found(upstream-updates (scag 50 (weld ~[update] upstream-updates.u.found)))
+  =.  repositories  (~(put by repositories) name updated)
+  :_  this
+  (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['update' s+(scot %uv update-id)]]))
+::
 ++  handle-public-api
   |=  [eyre-id=@ta req=inbound-request:eyre line=request-line:server]
   ^-  (quip card _this)
@@ -2484,6 +2891,60 @@
       (api-error eyre-id 404 'public repository not found')
     :_  this
     (api-json eyre-id 200 (public-repository-json name u.found))
+  ?:  ?=([%apps %git %api %public %repository @ %issues @ ~] site)
+    =/  name=@t  i.t.t.t.t.t.site
+    =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.t.site)
+    ?~  number
+      :_  this
+      (api-error eyre-id 422 'issue number is invalid')
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?.  ?&(?=(^ found) public-read.u.found)
+      :_  this
+      (api-error eyre-id 404 'public repository not found')
+    =/  issue=(unit native-issue:git)  (native-issue-at u.found u.number)
+    ?~  issue
+      :_  this
+      (api-error eyre-id 404 'issue not found')
+    :_  this
+    (api-json eyre-id 200 (native-issue-json u.issue %.y))
+  ?:  ?=([%apps %git %api %public %repository @ %releases ~] site)
+    =/  name=@t  i.t.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?.  ?&(?=(^ found) public-read.u.found)
+      :_  this
+      (api-error eyre-id 404 'public repository not found')
+    =/  tag=(unit @t)  (query-value 'tag' args.line)
+    ?~  tag
+      :_  this
+      (api-error eyre-id 422 'tag is required')
+    =/  release=(unit release:git)  (~(get by releases.u.found) u.tag)
+    ?~  release
+      :_  this
+      (api-error eyre-id 404 'release not found')
+    :_  this
+    (api-json eyre-id 200 (release-json u.release %.y))
+  ?:  ?=([%apps %git %api %public %repository @ %archive ~] site)
+    =/  name=@t  i.t.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?.  ?&(?=(^ found) public-read.u.found)
+      :_  this
+      (api-error eyre-id 404 'public repository not found')
+    =/  ref=(unit @t)  (query-value 'ref' args.line)
+    ?~  ref
+      :_  this
+      (api-error eyre-id 422 'ref is required')
+    =/  target=(unit oid:git)  (revision-oid u.found u.ref)
+    ?~  target
+      :_  this
+      (api-error eyre-id 404 'ref not found')
+    =/  peeled=(unit oid:git)  (peeled-tag:git-protocol objects.u.found u.target)
+    =/  commit=oid:git  ?~(peeled u.target u.peeled)
+    =/  archive=(unit octs)  (archive:git-archive objects.u.found commit)
+    ?~  archive
+      :_  this
+      (api-error eyre-id 422 'archive requires a complete commit tree of at most 10,000 files and 64 MiB')
+    :_  this
+    (api-archive eyre-id name u.archive)
   ?:  ?=([%apps %git %api %public %repository @ %files ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -2625,6 +3086,8 @@
   |=  [eyre-id=@ta req=inbound-request:eyre line=request-line:server]
   ^-  (quip card _this)
   =/  site=(list @t)  site.line
+  ?:  ?=([%apps %git %api %hooks @ ~] site)
+    (handle-incoming-hook eyre-id req i.t.t.t.t.site)
   ?:  ?=([%apps %git %api %public *] site)
     (handle-public-api eyre-id req line)
   ?.  authenticated.req
@@ -3272,6 +3735,186 @@
       (api-error eyre-id 404 'repository not found')
     :_  this
     (api-json eyre-id 200 (repository-json name u.found))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %issues ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  title=(unit @t)  (string-at 'title' u.jon)
+    =/  body=(unit @t)  (string-at 'body' u.jon)
+    ?.  ?&  ?=(^ title)
+            ?=(^ body)
+            !=('' u.title)
+            (lte (met 3 u.title) 200)
+            (lte (met 3 u.body) 65.536)
+        ==
+      :_  this
+      (api-error eyre-id 422 'title is required and limited to 200 bytes; body is limited to 64 KiB')
+    =/  number=@ud  (add 1 (lent native-issues.u.found))
+    =/  issue=native-issue:git
+      [number our.bowl u.title u.body %open ~ ~ now.bowl now.bowl ~]
+    =.  repositories
+      (~(put by repositories) name u.found(native-issues [issue native-issues.u.found]))
+    =/  dispatched=(quip card _this)
+      (dispatch-webhooks name %issue (native-issue-json issue %.y))
+    :_  +.dispatched
+    (weld -.dispatched (api-json eyre-id 201 (native-issue-json issue %.y)))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repository @ %issues @ ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
+    ?~  number
+      :_  this
+      (api-error eyre-id 422 'issue number is invalid')
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  issue=(unit native-issue:git)  (native-issue-at u.found u.number)
+    ?~  issue
+      :_  this
+      (api-error eyre-id 404 'issue not found')
+    :_  this
+    (api-json eyre-id 200 (native-issue-json u.issue %.y))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %issues @ %comments ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
+    ?~  number
+      :_  this
+      (api-error eyre-id 422 'issue number is invalid')
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  issue=(unit native-issue:git)  (native-issue-at u.found u.number)
+    ?~  issue
+      :_  this
+      (api-error eyre-id 404 'issue not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  body=(unit @t)  (string-at 'body' u.jon)
+    ?.  ?&(?=(^ body) !=('' u.body) (lte (met 3 u.body) 16.384))
+      :_  this
+      (api-error eyre-id 422 'comment body is required and limited to 16 KiB')
+    =/  comment=issue-comment:git
+      [(add 1 (lent comments.u.issue)) our.bowl u.body now.bowl]
+    =/  issues=(list native-issue:git)
+      %+  turn  native-issues.u.found
+      |=  candidate=native-issue:git
+      ?:  =(number.candidate u.number)
+        candidate(comments (weld comments.candidate ~[comment]), updated now.bowl)
+      candidate
+    =.  repositories  (~(put by repositories) name u.found(native-issues issues))
+    :_  this
+    (api-json eyre-id 201 (issue-comment-json comment))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %issues @ %state ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
+    ?~  number
+      :_  this
+      (api-error eyre-id 422 'issue number is invalid')
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  (native-issue-at u.found u.number)
+      :_  this
+      (api-error eyre-id 404 'issue not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  requested=(unit @t)  (string-at 'state' u.jon)
+    ?.  ?&(?=(^ requested) ?|(=('open' u.requested) =('closed' u.requested)))
+      :_  this
+      (api-error eyre-id 422 'state must be open or closed')
+    =/  next-state=?(%open %closed)  ?:(=('open' u.requested) %open %closed)
+    =/  issues=(list native-issue:git)
+      %+  turn  native-issues.u.found
+      |=  candidate=native-issue:git
+      ?:(=(number.candidate u.number) candidate(state next-state, updated now.bowl) candidate)
+    =.  repositories  (~(put by repositories) name u.found(native-issues issues))
+    :_  this
+    (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['state' s+next-state]]))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %issues @ %labels ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
+    ?~  number
+      :_  this
+      (api-error eyre-id 422 'issue number is invalid')
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  (native-issue-at u.found u.number)
+      :_  this
+      (api-error eyre-id 404 'issue not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  labels=(unit (list @t))  (string-list-at 'labels' u.jon)
+    ?.  ?&  ?=(^ labels)
+            (lte (lent u.labels) 20)
+            (levy u.labels |=(label=@t ?&(!=('' label) (lte (met 3 label) 64))))
+        ==
+      :_  this
+      (api-error eyre-id 422 'labels must be an array of at most 20 non-empty strings, each at most 64 bytes')
+    =/  next-labels=(set @t)  (silt u.labels)
+    =/  issues=(list native-issue:git)
+      %+  turn  native-issues.u.found
+      |=  candidate=native-issue:git
+      ?:(=(number.candidate u.number) candidate(labels next-labels, updated now.bowl) candidate)
+    =.  repositories  (~(put by repositories) name u.found(native-issues issues))
+    :_  this
+    (api-ok eyre-id 200)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %issues @ %assignees ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
+    ?~  number
+      :_  this
+      (api-error eyre-id 422 'issue number is invalid')
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  (native-issue-at u.found u.number)
+      :_  this
+      (api-error eyre-id 404 'issue not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  assignees=(unit (list @p))  (ship-list-at 'assignees' u.jon)
+    ?.  ?&(?=(^ assignees) (lte (lent u.assignees) 20))
+      :_  this
+      (api-error eyre-id 422 'assignees must be an array of at most 20 valid ship names')
+    =/  next-assignees=(set @p)  (silt u.assignees)
+    =/  issues=(list native-issue:git)
+      %+  turn  native-issues.u.found
+      |=  candidate=native-issue:git
+      ?:(=(number.candidate u.number) candidate(assignees next-assignees, updated now.bowl) candidate)
+    =.  repositories  (~(put by repositories) name u.found(native-issues issues))
+    :_  this
+    (api-ok eyre-id 200)
   ?:  ?&  =(%'GET' method)
           ?=([%apps %git %api %repository @ %clay %status ~] site)
       ==
@@ -3758,6 +4401,239 @@
       (api-error eyre-id 404 'branch not found')
     (api-with-action eyre-id 200 [%set-head name branch-ref])
   ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %webhooks ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  url=(unit @t)  (string-at 'url' u.jon)
+    =/  secret=(unit @t)  (string-at 'secret' u.jon)
+    =/  events=(unit (set webhook-event:git))  (webhook-events-at 'events' u.jon)
+    ?.  ?&  ?=(^ url)
+            ?=(^ secret)
+            ?=(^ events)
+            ?=(^ ~(tap in u.events))
+            |((starts-with 'https://' u.url) (starts-with 'http://' u.url))
+            (lte (met 3 u.url) 2.048)
+            !=('' u.secret)
+            (lte (met 3 u.secret) 256)
+        ==
+      :_  this
+      (api-error eyre-id 422 'url, secret, and at least one valid event are required')
+    =/  entries=(list [@ud webhook:git])  ~(tap by webhooks.u.found)
+    =/  next-id=@ud  1
+    =.  next-id
+      |-
+      ?~  entries  next-id
+      $(entries t.entries, next-id (max next-id +(id.+.i.entries)))
+    =/  hook=webhook:git  [next-id u.url u.secret u.events %.y]
+    =/  updated=repository:git
+      u.found(webhooks (~(put by webhooks.u.found) next-id hook))
+    =.  repositories  (~(put by repositories) name updated)
+    :_  this
+    (api-json eyre-id 201 (webhook-json hook))
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %git %api %repository @ %webhooks ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  id=(unit @ud)  (nat-at 'id' u.jon)
+    ?.  ?&(?=(^ id) (~(has by webhooks.u.found) u.id))
+      :_  this
+      (api-error eyre-id 404 'webhook not found')
+    =.  repositories
+      (~(put by repositories) name u.found(webhooks (~(del by webhooks.u.found) u.id)))
+    :_  this
+    (api-ok eyre-id 200)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %webhooks @ %test ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  id=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?.  ?&(?=(^ id) ?=(^ found) (~(has by webhooks.u.found) u.id))
+      :_  this
+      (api-error eyre-id 404 'webhook not found')
+    =/  hook=webhook:git  (~(got by webhooks.u.found) u.id)
+    =/  test-repo=repository:git
+      u.found(webhooks (~(put by webhooks.u.found) u.id hook(events (silt ~[%push]))))
+    =.  repositories  (~(put by repositories) name test-repo)
+    =/  result=(quip card _this)
+      (dispatch-webhooks name %push (pairs:enjs:format ~[['test' b+%.y]]))
+    =/  restored=(unit repository:git)  (~(get by repositories.+.result) name)
+    =/  next=_this
+      ?~  restored  +.result
+      +.result(repositories (~(put by repositories.+.result) name u.restored(webhooks (~(put by webhooks.u.restored) u.id hook))))
+    :_  next
+    (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y]])))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %incoming-hook ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  secret=(unit @t)  (string-at 'secret' u.jon)
+    ?.  ?&(?=(^ secret) !=('' u.secret) (lte (met 3 u.secret) 256))
+      :_  this
+      (api-error eyre-id 422 'a non-empty secret up to 256 bytes is required')
+    =.  repositories
+      (~(put by repositories) name u.found(incoming-hook `[[u.secret %.y]]))
+    :_  this
+    (api-ok eyre-id 200)
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %git %api %repository @ %incoming-hook ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =.  repositories  (~(put by repositories) name u.found(incoming-hook ~))
+    :_  this
+    (api-ok eyre-id 200)
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %git %api %repository @ %upstream-updates ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  id-text=(unit @t)  (string-at 'id' u.jon)
+    =/  id=(unit @uv)  ?~(id-text ~ (slaw %uv u.id-text))
+    ?~  id
+      :_  this
+      (api-error eyre-id 422 'valid update id required')
+    =/  updates=(list upstream-update:git)
+      (skim upstream-updates.u.found |=(update=upstream-update:git !=(id.update u.id)))
+    =.  repositories  (~(put by repositories) name u.found(upstream-updates updates))
+    :_  this
+    (api-ok eyre-id 200)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %releases ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  tag=(unit @t)  (string-at 'tag' u.jon)
+    =/  title=(unit @t)  (string-at 'title' u.jon)
+    =/  notes=(unit @t)  (string-at 'notes' u.jon)
+    ?.  ?&  ?=(^ tag)
+            ?=(^ title)
+            ?=(^ notes)
+            !=('' u.tag)
+            !=('' u.title)
+            (lte (met 3 u.title) 200)
+            (lte (met 3 u.notes) 65.536)
+        ==
+      :_  this
+      (api-error eyre-id 422 'tag and title are required; notes are limited to 64 KiB')
+    =/  tag-ref=@t  (rap 3 ~['refs/tags/' u.tag])
+    ?.  (~(has by refs.u.found) tag-ref)
+      :_  this
+      (api-error eyre-id 404 'tag not found')
+    ?:  (~(has by releases.u.found) u.tag)
+      :_  this
+      (api-error eyre-id 409 'release already exists for this tag')
+    =/  release=release:git  [u.tag u.title u.notes our.bowl now.bowl]
+    =.  repositories
+      (~(put by repositories) name u.found(releases (~(put by releases.u.found) u.tag release)))
+    =/  dispatched=(quip card _this)
+      (dispatch-webhooks name %release (release-json release %.y))
+    :_  +.dispatched
+    (weld -.dispatched (api-json eyre-id 201 (release-json release %.y)))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repository @ %releases ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  tag=(unit @t)  (query-value 'tag' args.line)
+    ?~  tag
+      :_  this
+      (api-error eyre-id 422 'tag is required')
+    =/  release=(unit release:git)  (~(get by releases.u.found) u.tag)
+    ?~  release
+      :_  this
+      (api-error eyre-id 404 'release not found')
+    :_  this
+    (api-json eyre-id 200 (release-json u.release %.y))
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %git %api %repository @ %releases ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  tag=(unit @t)  (string-at 'tag' u.jon)
+    ?.  ?&(?=(^ tag) (~(has by releases.u.found) u.tag))
+      :_  this
+      (api-error eyre-id 404 'release not found')
+    =.  repositories
+      (~(put by repositories) name u.found(releases (~(del by releases.u.found) u.tag)))
+    :_  this
+    (api-ok eyre-id 200)
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repository @ %archive ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  ref=(unit @t)  (query-value 'ref' args.line)
+    ?~  ref
+      :_  this
+      (api-error eyre-id 422 'ref is required')
+    =/  target=(unit oid:git)  (revision-oid u.found u.ref)
+    ?~  target
+      :_  this
+      (api-error eyre-id 404 'ref not found')
+    =/  peeled=(unit oid:git)  (peeled-tag:git-protocol objects.u.found u.target)
+    =/  commit=oid:git  ?~(peeled u.target u.peeled)
+    =/  archive=(unit octs)  (archive:git-archive objects.u.found commit)
+    ?~  archive
+      :_  this
+      (api-error eyre-id 422 'archive requires a complete commit tree of at most 10,000 files and 64 MiB')
+    :_  this
+    (api-archive eyre-id name u.archive)
+  ?:  ?&  =(%'POST' method)
           ?=([%apps %git %api %repository @ %tags ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
@@ -3782,21 +4658,35 @@
     ?:  (~(has by refs.u.found) tag-ref)
       :_  this
       (api-error eyre-id 409 'tag already exists')
-    =/  target=(unit oid:git)  (revision-oid u.found u.target-name)
-    ?~  target
+    =/  clay-number=(unit @ud)  (clay-revision-number u.target-name)
+    =/  prepared=(unit [repo=repository:git target=oid:git])
+      ?~  clay-number
+        =/  target=(unit oid:git)  (revision-oid u.found u.target-name)
+        ?~  target  ~
+        `[u.found u.target]
+      (materialize-clay-revision u.found u.clay-number our.bowl now.bowl)
+    ?~  prepared
       :_  this
       (api-error eyre-id 404 'tag target not found')
     =/  applied=repository:git
       ?:  =('' u.message)
-        u.found(refs (~(put by refs.u.found) tag-ref u.target))
+        repo.u.prepared(refs (~(put by refs.repo.u.prepared) tag-ref target.u.prepared))
       =/  tagged=(unit [tag=oid:git objects=(map oid:git object:git)])
-        (annotated-tag:git-tree objects.u.found u.target u.tag-name our.bowl now.bowl u.message)
-      ?~  tagged  u.found
-      u.found(objects objects.u.tagged, refs (~(put by refs.u.found) tag-ref tag.u.tagged))
+        (annotated-tag:git-tree objects.repo.u.prepared target.u.prepared u.tag-name our.bowl now.bowl u.message)
+      ?~  tagged  repo.u.prepared
+      repo.u.prepared(objects objects.u.tagged, refs (~(put by refs.repo.u.prepared) tag-ref tag.u.tagged))
     =.  repositories  (~(put by repositories) name applied)
     =/  tag-oid=oid:git  (need (~(get by refs.applied) tag-ref))
-    :_  this
-    (api-json eyre-id 201 (pairs:enjs:format ~[['ok' b+%.y] ['ref' s+tag-ref] ['oid' s+(oid-text:git-codec tag-oid)]]))
+    =/  event-data=json
+      %-  pairs:enjs:format
+      :~  ['ref' s+tag-ref]
+          ['oid' s+(oid-text:git-codec tag-oid)]
+          ['target' s+(oid-text:git-codec target.u.prepared)]
+          ['clayRevision' n+(decimal ?~(clay-number 0 u.clay-number))]
+      ==
+    =/  dispatched=(quip card _this)  (dispatch-webhooks name %tag event-data)
+    :_  +.dispatched
+    (weld -.dispatched (api-json eyre-id 201 (pairs:enjs:format ~[['ok' b+%.y] ['ref' s+tag-ref] ['oid' s+(oid-text:git-codec tag-oid)]])))
   ?:  ?&  =(%'DELETE' method)
           ?=([%apps %git %api %repository @ %tags ~] site)
       ==
@@ -3862,8 +4752,12 @@
       [number our.bowl name u.title %open u.incoming u.base ~]
     =.  repositories
       (~(put by repositories) name u.found(native-pulls [pull native-pulls.u.found]))
-    :_  this
-    (api-json eyre-id 201 (pairs:enjs:format ~[['ok' b+%.y] ['number' n+(decimal number)]]))
+    =/  event-data=json
+      (pairs:enjs:format ~[['number' n+(decimal number)] ['title' s+u.title] ['branch' s+u.branch] ['state' s+'open']])
+    =/  dispatched=(quip card _this)
+      (dispatch-webhooks name %pull-request event-data)
+    :_  +.dispatched
+    (weld -.dispatched (api-json eyre-id 201 (pairs:enjs:format ~[['ok' b+%.y] ['number' n+(decimal number)]])))
   ?:  ?&  =(%'GET' method)
           ?=([%apps %git %api %repository @ %pulls @ ~] site)
       ==
@@ -4782,7 +5676,7 @@
     (give-http eyre-id 403 ~[['content-type' 'text/plain']] `(text:git-codec 'service disabled\0a'))
   =/  authorized=?
     ?:  =('git-upload-pack' u.service)
-      |(public-read.u.found authenticated.req)
+      ?|(public-read.u.found authenticated.req (write-authorized u.found req))
     (write-authorized u.found req)
   ?.  authorized
     :_  this
@@ -4820,7 +5714,7 @@
   ?~  found
     :_  this
     (give-http eyre-id 404 ~[['content-type' 'text/plain']] `(text:git-codec 'repository not found\0a'))
-  ?.  |(public-read.u.found authenticated.req)
+  ?.  ?|(public-read.u.found authenticated.req (write-authorized u.found req))
     :_  this
     (give-http eyre-id 403 ~[['content-type' 'text/plain']] `(text:git-codec 'repository is private\0a'))
   ?~  body.request.req
@@ -5084,10 +5978,7 @@
     =/  linked-command=(unit receive-command:git)
       (command-for-ref commands.u.parsed branch.u.binding.u.applied)
     ?~  linked-command
-      =.  repositories  (~(put by repositories) repo-name u.applied)
-      :_  this
-      %+  give-simple-payload:app:server  eyre-id
-      (receive-payload 'ok' (receive-results commands.u.parsed %.y ''))
+      (accept-receive eyre-id repo-name commands.u.parsed u.applied ~)
     =/  maybe-pending=(unit clay-push)  pending-clay
     ?^  maybe-pending
       :_  this
@@ -5115,10 +6006,9 @@
       (receive-payload 'ok' (receive-results commands.u.parsed %.n 'unable to read linked Clay desk'))
     ?>  ?=(%& -.u.delta)
     ?:  =(~ p.u.delta)
-      =.  repositories  (~(put by repositories) repo-name u.applied)
-      :_  this
-      %+  give-simple-payload:app:server  eyre-id
-      (receive-payload 'ok' (receive-results commands.u.parsed %.y ''))
+      =/  clay=[desk-name=desk commit=oid:git]
+        [desk-name.u.binding.u.applied u.new.u.linked-command]
+      (accept-receive eyre-id repo-name commands.u.parsed u.applied `clay)
     =/  pending=clay-push
       =/  start-at=@da  (add now.bowl ~s1)
       =/  timeout-at=@da  (add now.bowl ~s15)
@@ -5141,10 +6031,7 @@
     :~  [%pass /clay-start %arvo %b %wait start-at.pending]
         [%pass /clay-timeout %arvo %b %wait timeout-at.pending]
     ==
-  =.  repositories  (~(put by repositories) repo-name u.applied)
-  :_  this
-  %+  give-simple-payload:app:server  eyre-id
-  (receive-payload 'ok' (receive-results commands.u.parsed %.y ''))
+  (accept-receive eyre-id repo-name commands.u.parsed u.applied ~)
 ::
 ++  handle-lfs-locks
   |=  [eyre-id=@ta req=inbound-request:eyre line=request-line:server repo-name=@t]
@@ -5835,6 +6722,21 @@
       =/  applied=repository:git
         (update-binding-success applied.pending new-oid.pending clay-revision now.bowl)
       (~(put by repositories) repository.pending applied)
+    =/  webhook-cards=(list card)
+      ?.  ok.result  ~
+      =/  push-data=json
+        %-  pairs:enjs:format
+        :~  :-  'updates'
+            [%a ~[(pairs:enjs:format ~[['ref' s+branch.pending] ['before' s+''] ['after' s+(oid-text:git-codec new-oid.pending)] ['deleted' b+%.n]])]]
+        ==
+      =/  clay-data=json
+        %-  pairs:enjs:format
+        :~  ['desk' s+desk-name.pending]
+            ['commit' s+(oid-text:git-codec new-oid.pending)]
+        ==
+      :~  [%pass /webhook/push %agent [our.bowl %git] %poke %git-webhook-event !>([repository.pending %push push-data])]
+          [%pass /webhook/clay-sync %agent [our.bowl %git] %poke %git-webhook-event !>([repository.pending %clay-sync clay-data])]
+      ==
     =.  pending-clay  ~
     =.  peer-activities
       ?~  peer-response.pending  peer-activities
@@ -5846,17 +6748,46 @@
     ?^  peer-response.pending
       =/  packet=packet:git-peer
         [%result transfer.u.peer-response.pending ok.result message.result]
-      :~  [%pass /peer/result/(scot %uv transfer.u.peer-response.pending) %agent [ship.u.peer-response.pending %git] %poke %git-peer !>(packet)]
-      ==
+      =/  response-cards=(list card)
+        ~[[%pass /peer/result/(scot %uv transfer.u.peer-response.pending) %agent [ship.u.peer-response.pending %git] %poke %git-peer !>(packet)]]
+      (weld webhook-cards response-cards)
     ?:  api-response.pending
       =/  jon=json
         ?:  ok.result
           (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec new-oid.pending)]])
         (pairs:enjs:format ~[['error' s+message.result]])
+      %+  weld  webhook-cards
       %+  give-simple-payload:app:server  eyre-id.pending
       [[?:(ok.result 200 422) ~[['content-type' 'application/json; charset=utf-8'] ['cache-control' 'no-store']]] `(json-to-octs:server jon)]
+    %+  weld  webhook-cards
     %+  give-simple-payload:app:server  eyre-id.pending
     (receive-payload 'ok' (receive-results commands.pending ok.result message.result))
+  ::
+      [%webhook @ ~]
+    =/  delivery-id=(unit @uv)  (slaw %uv i.t.wire)
+    ?~  delivery-id  `this
+    =/  context=(unit webhook-flight)  (~(get by webhook-in-flight) u.delivery-id)
+    ?~  context  `this
+    =.  webhook-in-flight  (~(del by webhook-in-flight) u.delivery-id)
+    =/  found=(unit repository:git)
+      (~(get by repositories) repository.u.context)
+    ?~  found  `this
+    =/  status-code=@ud
+      ?.  ?=([%iris %http-response *] sign-arvo)  0
+      =/  response=client-response:iris  client-response.sign-arvo
+      ?.  ?=(%finished -.response)  0
+      status-code.response-header.response
+    =/  ok=?  &((gte status-code 200) (lth status-code 300))
+    =/  message=@t
+      ?:  ok  'delivered'
+      ?:(=(status-code 0) 'request failed' (rap 3 ~['HTTP ' (decimal status-code)]))
+    =/  deliveries=(list webhook-delivery:git)
+      %+  turn  webhook-deliveries.u.found
+      |=  delivery=webhook-delivery:git
+      ?:  !=(id.delivery u.delivery-id)  delivery
+      delivery(status ?:(ok %success %failure), status-code status-code, message message)
+    =/  updated=repository:git  u.found(webhook-deliveries deliveries)
+    `this(repositories (~(put by repositories) repository.u.context updated))
   ::
       [%github @ ~]
     =/  request-id=(unit @uv)  (slaw %uv i.t.wire)
@@ -6072,6 +7003,12 @@
               ~
               ~
               `origin
+              ~
+              ~
+              ~
+              ~
+              ~
+              ~
               ~
               ~
               ~

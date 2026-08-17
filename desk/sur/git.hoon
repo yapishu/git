@@ -108,6 +108,75 @@
       comments=(list review-comment)
   ==
 ::
++$  issue-comment
+  $:  id=@ud
+      author=ship
+      body=@t
+      created=@da
+  ==
+::
++$  native-issue
+  $:  number=@ud
+      author=ship
+      title=@t
+      body=@t
+      state=?(%open %closed)
+      labels=(set @t)
+      assignees=(set @p)
+      created=@da
+      updated=@da
+      comments=(list issue-comment)
+  ==
+::
++$  release
+  $:  tag=@t
+      title=@t
+      notes=@t
+      author=ship
+      created=@da
+  ==
+::
++$  webhook-event
+  ?(%push %tag %pull-request %issue %release %clay-sync)
+::
++$  webhook
+  $:  id=@ud
+      url=@t
+      secret=@t
+      events=(set webhook-event)
+      enabled=?
+  ==
+::
++$  webhook-delivery
+  $:  id=@uv
+      hook=@ud
+      event=webhook-event
+      status=?(%pending %success %failure)
+      status-code=@ud
+      message=@t
+      created=@da
+  ==
+::
++$  incoming-hook
+  $:  secret=@t
+      enabled=?
+  ==
+::
++$  upstream-update
+  $:  id=@uv
+      source=@t
+      ref=@t
+      before=@t
+      after=@t
+      received=@da
+  ==
+::
++$  webhook-trigger
+  $:  repository=@t
+      event=webhook-event
+      data=json
+  ==
+::
 +$  clay-apply
   $:  desk-name=desk
       delta=nori:clay
@@ -132,6 +201,12 @@
       github-issues=(list forge-item)
       github-pulls=(list forge-item)
       native-pulls=(list native-pull)
+      native-issues=(list native-issue)
+      releases=(map @t release)
+      webhooks=(map @ud webhook)
+      incoming-hook=(unit incoming-hook)
+      webhook-deliveries=(list webhook-delivery)
+      upstream-updates=(list upstream-update)
   ==
 ::
 +$  state-0

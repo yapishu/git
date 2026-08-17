@@ -31,6 +31,7 @@ const publicFileRoute = (name, path) => {
 
 export const publicApi = {
   repository: (name) => request(`/public/repository/${encodeURIComponent(name)}`),
+  issue: (name, number) => request(`/public/repository/${encodeURIComponent(name)}/issues/${number}`),
   files: (name, ref) => request(atRef(`/public/repository/${encodeURIComponent(name)}/files`, ref)),
   file: (name, path, ref) => request(atRef(publicFileRoute(name, path), ref)),
   fileHistory: (name, path, ref) => request(atRef(publicFileRoute(name, path).replace('/file/', '/file-history/'), ref)),
@@ -39,6 +40,8 @@ export const publicApi = {
   compare: (name, base, head) => request(`/public/repository/${encodeURIComponent(name)}/compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`),
   commit: (name, oid) => request(`/public/repository/${encodeURIComponent(name)}/commit/${encodeURIComponent(oid)}`),
   search: (name, query, ref) => request(`/public/repository/${encodeURIComponent(name)}/search?q=${encodeURIComponent(query)}${ref ? `&ref=${encodeURIComponent(ref)}` : ''}`),
+  release: (name, tag) => request(`/public/repository/${encodeURIComponent(name)}/releases?tag=${encodeURIComponent(tag)}`),
+  archiveUrl: (name, ref) => `${BASE}/public/repository/${encodeURIComponent(name)}/archive?ref=${encodeURIComponent(ref)}`,
 }
 
 export const api = {
@@ -145,6 +148,36 @@ export const api = {
       method: 'DELETE',
       body: JSON.stringify({ name: tag }),
     }),
+  createRelease: (name, tag, title, notes) =>
+    request(`/repository/${encodeURIComponent(name)}/releases`, {
+      method: 'POST', body: JSON.stringify({ tag, title, notes }),
+    }),
+  release: (name, tag) => request(`/repository/${encodeURIComponent(name)}/releases?tag=${encodeURIComponent(tag)}`),
+  deleteRelease: (name, tag) =>
+    request(`/repository/${encodeURIComponent(name)}/releases`, {
+      method: 'DELETE', body: JSON.stringify({ tag }),
+    }),
+  archiveUrl: (name, ref) => `${BASE}/repository/${encodeURIComponent(name)}/archive?ref=${encodeURIComponent(ref)}`,
+  createWebhook: (name, url, secret, events) =>
+    request(`/repository/${encodeURIComponent(name)}/webhooks`, {
+      method: 'POST', body: JSON.stringify({ url, secret, events }),
+    }),
+  deleteWebhook: (name, id) =>
+    request(`/repository/${encodeURIComponent(name)}/webhooks`, {
+      method: 'DELETE', body: JSON.stringify({ id }),
+    }),
+  testWebhook: (name, id) =>
+    request(`/repository/${encodeURIComponent(name)}/webhooks/${id}/test`, { method: 'POST', body: '{}' }),
+  setIncomingHook: (name, secret) =>
+    request(`/repository/${encodeURIComponent(name)}/incoming-hook`, {
+      method: 'POST', body: JSON.stringify({ secret }),
+    }),
+  clearIncomingHook: (name) =>
+    request(`/repository/${encodeURIComponent(name)}/incoming-hook`, { method: 'DELETE', body: '{}' }),
+  dismissUpstreamUpdate: (name, id) =>
+    request(`/repository/${encodeURIComponent(name)}/upstream-updates`, {
+      method: 'DELETE', body: JSON.stringify({ id }),
+    }),
   createPull: (name, title, branch) =>
     request(`/repository/${encodeURIComponent(name)}/pulls`, {
       method: 'POST', body: JSON.stringify({ title, branch }),
@@ -163,6 +196,27 @@ export const api = {
       method: 'POST', body: JSON.stringify({ state }),
     }),
   mergePull: (name, number) => request(`/repository/${encodeURIComponent(name)}/pulls/${number}/merge`, { method: 'POST', body: '{}' }),
+  createIssue: (name, title, body) =>
+    request(`/repository/${encodeURIComponent(name)}/issues`, {
+      method: 'POST', body: JSON.stringify({ title, body }),
+    }),
+  issue: (name, number) => request(`/repository/${encodeURIComponent(name)}/issues/${number}`),
+  addIssueComment: (name, number, body) =>
+    request(`/repository/${encodeURIComponent(name)}/issues/${number}/comments`, {
+      method: 'POST', body: JSON.stringify({ body }),
+    }),
+  setIssueState: (name, number, state) =>
+    request(`/repository/${encodeURIComponent(name)}/issues/${number}/state`, {
+      method: 'POST', body: JSON.stringify({ state }),
+    }),
+  setIssueLabels: (name, number, labels) =>
+    request(`/repository/${encodeURIComponent(name)}/issues/${number}/labels`, {
+      method: 'POST', body: JSON.stringify({ labels }),
+    }),
+  setIssueAssignees: (name, number, assignees) =>
+    request(`/repository/${encodeURIComponent(name)}/issues/${number}/assignees`, {
+      method: 'POST', body: JSON.stringify({ assignees }),
+    }),
   setToken: (name, token) =>
     request(`/repository/${encodeURIComponent(name)}/token`, {
       method: 'POST',

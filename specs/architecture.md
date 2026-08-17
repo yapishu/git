@@ -46,6 +46,14 @@ GitHub
   |- fast-forward pull and receive-pack push
   |- issue and pull-request metadata cache
   `- authenticated fork and pull-request actions
+
+external automation
+  |
+  | signed HTTPS JSON
+  v
+%git webhooks
+  |- outgoing repository events + delivery history
+  `- incoming GitHub push notices + explicit pull prompts
 ```
 
 Git HTTP is stateless. Discovery and service requests carry everything needed for each exchange, which maps cleanly to Eyre request pokes and Gall responses.
@@ -61,6 +69,8 @@ An object is stored as its Git type plus its exact content bytes. Its OID is der
 Protocol v0/v1 shares one advertisement model across `ls-remote`, fetch, and push. Protocol v2 is selected by the standard `Git-Protocol: version=2` header and advertises command-based `ls-refs` and `fetch`. Its ref responses carry symbolic-head and peeled-tag attributes, while fetch uses section headers, delimiter packets, and mandatory sideband pack framing. Both generations reuse the same pkt-line, ref, object, reachability, and pack layers; receive-pack remains v0/v1 because protocol v2 does not define a push command.
 
 Annotated tags are stored as canonical Git tag objects and advertised with the immediately following peeled `^{}` ref required by protocol v0/v1. Lightweight tags point directly at their target. Both forms use ordinary `refs/tags/*` refs, so tags created in the web interface and tags pushed by Git clients are interchangeable.
+
+A tag on a bound repository may name `r<number>`. `%git` reads that historical Clay yaki, renders its files, and materializes only that revision as a canonical Git commit. The commit is added to the repository object database and revision-to-commit map without rewriting the bound branch. This keeps Clay history native and cheap to list while making selected revisions usable by tags, archives, Git clients, and commit diffs.
 
 Fetch packs contain full objects without deltas. Wants must be reachable from advertised refs, which permits a partial-clone client to retrieve a promised object while preventing arbitrary unreachable-object reads. Commit headers, raw tree entries, and annotated-tag targets are traversed from those wants; unrelated objects are excluded. During incremental fetch, only `have` objects reachable from advertised refs are accepted as common, the server ACKs a common object, and their complete reachable closure is subtracted before the pack is encoded. Requests ending in a flush receive negotiation status only; a pack begins after `done`.
 
@@ -106,13 +116,15 @@ A fork records its source ship and repository. Refresh repeats the same incremen
 
 Forks without write access can open native pull requests from the repository's Pull requests tab. The composer identifies the source fork and native origin, reports the Ames/Fine transfer state, and links back to the origin after creation. A repository can also open a review from any non-default local branch without an Ames transfer. The origin verifies and stores the proposed object graph but does not move a branch. Pull-request detail compares the stored base and proposed head trees and returns bounded file contents for a red/green textual diff. Review comments are persisted with the pull request, may address the whole review or a specific base/head line, and can be resolved or reopened. A merge rechecks that the current destination is an ancestor of the proposed head, then advances atomically. Desk-bound merges are committed only after Clay accepts the projected desk. Remote repository browsing exposes the origin's pull-request list without granting mutation authority.
 
+Native issues live in repository state independently of Git objects and Clay revisions. Each issue records its author as an Urbit ship, title, bounded body, open or closed state, a deduplicated set of labels, a deduplicated set of ship assignees, creation and update times, and append-only ship-authored comments. Repository summaries include issue metadata and counts but omit bodies and comments; opening an issue reads its complete detail. Labels are limited to 20 values of 64 bytes, assignees to 20 ships, issue bodies to 64 KiB, and comments to 16 KiB. Discussion text recognizes `~ship/repository#number` references and links to the peer repository without requiring a global issue index.
+
 Peer operations also write a bounded, transient activity ledger. Incoming snapshot reads and outgoing forks, pushes, and pull requests move from active to success or failure without changing persisted state. The authenticated activity API and top-bar panel expose the peer, repository, direction, time, and terminal message; clearing the ledger has no effect on repositories or transfers.
 
 ## Web interface
 
 `%git-fileserver` serves the built React application from `/web` at `/apps/git`. It watches Clay for frontend changes, clears Eyre's static-response cache when the tree changes, and unconditionally replaces its binding on load. Extensionless routes fall back to the application shell.
 
-The main `%git` agent owns `/apps/git/api`. Administrative and mutation requests require an authenticated Urbit web session; Git Basic credentials are deliberately limited to Git and LFS operations. Read routes expose repository counts, branch trees, Git commits or native Clay revisions, per-file history, branch-aware code search, revision and commit diffs, Clay links and bridge status, peer bookmarks, remote overviews, and pull-request diffs. Mutation routes create and delete repositories, change public access, rotate the hashed write token, manage ship writers and desk bindings, synchronize either side of a Clay binding, edit files, start native forks or updates, and manage pull requests. Mutations reuse the same state transitions as native `%git-action` pokes or the Clay-gated HTTP transaction.
+The main `%git` agent owns `/apps/git/api`. Administrative and mutation requests require an authenticated Urbit web session; Git Basic credentials are deliberately limited to Git and LFS operations. Read routes expose repository counts, branch trees, Git commits or native Clay revisions, per-file history, branch-aware code search, revision and commit diffs, Clay links and bridge status, peer bookmarks, remote overviews, native issue detail, and pull-request diffs. Mutation routes create and delete repositories, change public access, rotate the hashed write token, manage ship writers and desk bindings, synchronize either side of a Clay binding, edit files, start native forks or updates, manage native issues, and manage pull requests. Mutations reuse the same state transitions as native `%git-action` pokes or the Clay-gated HTTP transaction.
 
 Pull requests record the destination tip that was current when they opened. Integration fast-forwards when possible, recognizes a head already contained by the destination, and otherwise performs a three-way merge against that recorded common base. The merge compares path presence, canonical blob identity, and Git file mode across both sides. Non-overlapping additions, edits, deletions, executable changes, and symlink changes produce a canonical two-parent commit; overlapping changes or structural path collisions return HTTP 409 without advancing the target. A desk-bound target submits the resulting merge tree to Clay before either the ref or pull-request state becomes authoritative.
 
@@ -122,7 +134,15 @@ Branch comparison resolves two refs through the same repository object database 
 
 Web file mutations rewrite only the affected Git tree path on the selected branch. Creating a file constructs missing subtrees, deleting the last file under a directory removes the empty subtree, and editing retains the existing blob mode. Every rewritten tree is sorted by Git's directory-aware byte order before hashing. Each mutation produces an ordinary parented commit; when the selected branch is desk-bound, creation, editing, and deletion all wait for the same Clay validation transaction before the ref advances. Branches can be created from any resolvable revision and selected as the default. The default, protected, and Clay-bound branches cannot be deleted through the web API.
 
-Public repositories additionally expose a narrow unauthenticated API under `/apps/git/api/public/repository/<name>`. It returns a sanitized repository view, branches, files, first-parent history, per-file history and blame, branch comparisons, and commit diffs while omitting write-token state, writer ACLs, Clay bindings, and native origin metadata. `%git-fileserver` permits the application shell and immutable frontend assets without a login at `/apps/git/public/<name>`. The React application detects that route and renders only read operations; private and nonexistent repositories both return 404.
+Public repositories additionally expose a narrow unauthenticated API under `/apps/git/api/public/repository/<name>`. It returns a sanitized repository view, branches, files, first-parent history, per-file history and blame, branch comparisons, commit diffs, and native issue discussion while omitting write-token state, writer ACLs, Clay bindings, and native origin metadata. `%git-fileserver` permits the application shell and immutable frontend assets without a login at `/apps/git/public/<name>`. The React application detects that route and renders only read operations; private and nonexistent repositories both return 404.
+
+Releases are metadata records rooted at existing `refs/tags/*` refs. Each records a title, bounded notes, ship author, and creation time. Authenticated and public repository pages can download the referenced commit as a deterministic ustar archive. Archive construction is bounded to 10,000 files and 64 MiB, rejects incomplete trees, and never includes unreachable objects.
+
+## Automation webhooks
+
+Outgoing webhooks subscribe per repository to `push`, `tag`, `pull-request`, `issue`, `release`, and `clay-sync`. `%git` sends JSON through Iris with `X-Git-Event`, a unique `X-Git-Delivery`, and `X-Hub-Signature-256: sha256=<hmac>` computed over the exact request bytes using the configured secret. Delivery attempts enter the repository ledger as pending and become success or failure when Iris returns; the most recent 100 are retained. Smart HTTP emits push events only after its ref transaction succeeds. A desk-bound update emits push and Clay-sync events only after Clay accepts the projected desk, so rejected Ford builds cannot start external CI.
+
+Each repository can also expose `/apps/git/api/hooks/<repository>` as a signed incoming endpoint. It accepts GitHub `ping` and `push` events, limits bodies to 1 MiB, and validates the same SHA-256 HMAC header before parsing JSON. A push stores a bounded upstream notice containing the source repository, ref, before OID, and after OID. The web interface prompts the user to pull or dismiss it; receipt alone never changes refs or imports objects. Pull remains explicit so protected branches, fast-forward policy, and Clay validation stay authoritative.
 
 ## GitHub integration
 

@@ -187,7 +187,32 @@ p { color: var(--muted); line-height: 1.55; }
 .commit-summary code { color: var(--muted); font-size: 10px; word-break: break-all; }
 .clay-revision-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .clay-revision-meta code { padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
-.clay-revision-meta .tako { flex-basis: 100%; width: fit-content; max-width: 100%; }
+.clay-revision-meta .tako { display: inline-block; max-width: min(34ch, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.commit-links { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.commit-tag-action { margin-right: 5px; white-space: nowrap; }
+.commit-summary.with-actions { grid-template-columns: 38px minmax(0, 1fr) auto; align-items: start; }
+.commit-detail-tag { align-self: start; white-space: nowrap; }
+.mapped-commit { border: 1px solid var(--line); background: var(--soft); }
+.clay-revision-meta .mapped-commit { padding: 0; }
+.tag-table .table-row > span:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.upstream-banner { width: 100%; margin: 18px 0 -8px; padding: 11px 14px; display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; gap: 11px; align-items: center; text-align: left; color: var(--text); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 8px; background: var(--accent-soft); cursor: pointer; }
+.upstream-banner span strong, .upstream-banner span small { display: block; }
+.upstream-banner span small { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.upstream-banner > b { color: var(--accent); font-size: 11px; }
+.automation-view { display: grid; gap: 14px; }
+.automation-section { display: grid; gap: 14px; }
+.automation-section .section-title p { margin: 4px 0 0; }
+.webhook-form { padding-top: 2px; display: grid; gap: 4px; }
+.event-grid { margin-top: 12px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.event-grid .check-row { align-items: center; }
+.webhook-list, .delivery-list { margin: 2px -22px -22px; display: grid; }
+.webhook-row, .delivery-row { min-height: 58px; padding: 9px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; border-top: 1px solid var(--line); }
+.delivery-row { grid-template-columns: 9px minmax(0, 1fr) auto; }
+.webhook-row strong, .webhook-row small, .delivery-row strong, .delivery-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.webhook-row strong { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.webhook-row small, .delivery-row small { margin-top: 4px; color: var(--muted); font-size: 10px; }
+.row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+@media (max-width: 680px) { .event-grid { grid-template-columns: 1fr 1fr; } .webhook-row, .delivery-row { grid-template-columns: 1fr; } .delivery-row > .activity-dot { display: none; } .row-actions { justify-content: flex-start; } .upstream-banner { grid-template-columns: 9px 1fr; } .upstream-banner > b { grid-column: 2; } }
 .commit-message { margin: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .diff-summary { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 11px; }
 .diff-summary b { color: var(--text); }
@@ -353,9 +378,12 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .tag-table .table-head, .tag-table .table-row { grid-template-columns: minmax(0, 1fr) auto 64px; }
 .tag-table .text-button { padding: 0; color: var(--danger); text-align: right; }
 .tag-composer { margin-bottom: 14px; }
+.tag-target-field { display: grid; grid-template-columns: minmax(130px, .35fr) minmax(220px, 1fr); gap: 12px; }
+.tag-target-field label { margin: 0; }
 .tag-composer textarea { width: 100%; min-height: 110px; resize: vertical; border: 1px solid var(--line); border-radius: 7px; padding: 10px 11px; background: var(--bg); color: var(--text); font: inherit; outline: none; }
 .tag-composer textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent); }
 .tags-view .forge-toolbar p { margin: 4px 0 0; }
+@media (max-width: 680px) { .tag-target-field { grid-template-columns: 1fr; } .commit-summary.with-actions { grid-template-columns: 38px minmax(0, 1fr); } .commit-detail-tag { grid-column: 2; justify-self: start; } .commit-tag-action { display: none; } }
 .default-label { padding: 2px 6px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 500; }
 .subsection { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
 .subsection h3 { margin: 0; font-size: 13px; }
@@ -379,6 +407,22 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .issue-row p { margin: 5px 0 0; font-size: 11px; }
 .issue-icon { color: var(--muted); font-size: 17px; line-height: 1; }
 .issue-icon.open { color: #1a7f37; }
+.issue-composer { display: grid; gap: 14px; margin-bottom: 16px; padding: 18px; }
+.issue-composer label { display: grid; gap: 6px; font-size: 11px; font-weight: 650; }
+.issue-composer textarea { min-height: 150px; resize: vertical; }
+.issue-detail { display: grid; gap: 14px; }
+.issue-layout { display: grid; grid-template-columns: minmax(0, 1fr) 220px; align-items: start; gap: 18px; }
+.issue-thread { display: grid; gap: 12px; }
+.issue-sidebar { display: grid; gap: 16px; }
+.issue-sidebar section { display: grid; gap: 8px; padding-bottom: 15px; border-bottom: 1px solid var(--line); }
+.issue-sidebar section > strong { color: var(--muted); font-size: 11px; }
+.issue-sidebar input { width: 100%; min-width: 0; }
+.issue-sidebar .text-button { justify-self: start; padding: 0; color: var(--accent); }
+.issue-sidebar code { display: block; margin: 3px 0; font-size: 11px; }
+.issue-labels { display: flex; flex-wrap: wrap; gap: 5px; }
+.issue-labels.inline { margin-top: 7px; }
+.issue-labels span { padding: 2px 7px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--accent) 9%, var(--panel)); color: var(--text); font-size: 9px; font-weight: 650; }
+.issue-reference { color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); text-underline-offset: 2px; }
 .github-detail { display: grid; gap: 14px; }
 .github-detail-stats { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--soft); color: var(--muted); font-size: 11px; }
 .github-detail-stats .added { color: #1a7f37; }.github-detail-stats .deleted { color: #cf222e; }
@@ -460,6 +504,13 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .job-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
 .job-dot.active { background: #bf8700; box-shadow: 0 0 0 3px color-mix(in srgb, #bf8700 15%, transparent); }
 .job-dot.ok { background: #1a7f37; }
+.release-list { display: grid; gap: 12px; }
+.release-card { margin: 0; }
+.release-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.release-card h2 { margin: 0 0 5px; font-size: 17px; }
+.release-card header p { margin: 0; color: var(--muted); font-size: 12px; }
+.release-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.release-notes { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--line); white-space: pre-wrap; line-height: 1.5; }
 
 @media (max-width: 760px) {
   .with-blame .line { padding-left: 150px; }
@@ -492,4 +543,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
   .pr-compare > b { transform: rotate(90deg); text-align: center; }
   .pr-composer .form-actions.split { align-items: stretch; flex-direction: column; }
   .pr-actions { justify-content: flex-end; }
+  .issue-layout { grid-template-columns: 1fr; }
+  .release-card > header { flex-direction: column; }
+  .release-actions { width: 100%; justify-content: space-between; }
 }

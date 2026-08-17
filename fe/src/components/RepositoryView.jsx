@@ -18,7 +18,7 @@ const githubDate = (value) => {
   const date = value ? new Date(value) : null
   return date && Number.isFinite(date.getTime()) ? date.toLocaleString() : ''
 }
-const validTabs = new Set(['code', 'issues', 'pulls', 'branches', 'tags', 'commits', 'settings'])
+const validTabs = new Set(['code', 'issues', 'pulls', 'branches', 'tags', 'releases', 'commits', 'webhooks', 'settings'])
 
 function parseLineRange(value) {
   const match = /^(\d+)(?:-(\d+))?$/.exec(value || '')
@@ -43,6 +43,8 @@ function routeForRepository(repo) {
     searchQuery: name === repo.name && tab === 'code' ? params.get('search') || '' : '',
     ...lines,
     commitOid: name === repo.name && tab === 'commits' ? params.get('commit') || '' : '',
+    tagTarget: name === repo.name && tab === 'tags' ? params.get('target') || '' : '',
+    tagKind: name === repo.name && tab === 'tags' ? params.get('targetKind') || '' : '',
   }
 }
 
@@ -54,6 +56,8 @@ function repositoryHash(repo, route) {
   if (route.searchQuery) params.set('search', route.searchQuery)
   if (route.filePath && route.lineStart) params.set('line', route.lineEnd && route.lineEnd !== route.lineStart ? `${route.lineStart}-${route.lineEnd}` : String(route.lineStart))
   if (route.commitOid) params.set('commit', route.commitOid)
+  if (route.tab === 'tags' && route.tagTarget) params.set('target', route.tagTarget)
+  if (route.tab === 'tags' && route.tagKind) params.set('targetKind', route.tagKind)
   const query = params.toString()
   return `#/${encodeURIComponent(repo.name)}${query ? `?${query}` : ''}`
 }
@@ -365,20 +369,49 @@ function Branches({ repo, publicMode, onBrowse, onMutate, client = api }) {
   </div>
 }
 
-function Tags({ repo, publicMode, onMutate }) {
+function Tags({ repo, publicMode, onMutate, initialTarget = '', initialKind = '', onTargetConsumed }) {
   const tags = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/tags/'))
   const branches = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/'))
-  const [creating, setCreating] = useState(false)
+  const defaultKind = repo.binding?.bound ? 'revision' : 'commit'
+  const [creating, setCreating] = useState(Boolean(initialTarget))
   const [name, setName] = useState('')
-  const [target, setTarget] = useState(repo.head || branches[0]?.name || '')
+  const [targetKind, setTargetKind] = useState(initialKind || defaultKind)
+  const [target, setTarget] = useState(initialTarget)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    if (!initialTarget) return
+    setTarget(initialTarget)
+    setTargetKind(initialKind || defaultKind)
+    setCreating(true)
+    onTargetConsumed?.()
+  }, [initialTarget, initialKind])
+
+  function chooseTargetKind(kind) {
+    setTargetKind(kind)
+    setTarget(kind === 'branch' ? branches[0]?.name || '' : kind === 'tag' ? tags[0]?.name || '' : '')
+  }
+
+  function toggleComposer() {
+    if (creating) { setCreating(false); return }
+    setName(''); setMessage(''); setError('')
+    chooseTargetKind(defaultKind)
+    setCreating(true)
+  }
+
+  const normalizedTarget = (() => {
+    const value = target.trim()
+    if (!value) return ''
+    if (targetKind === 'revision') return /^r\d+$/.test(value) ? value : /^\d+$/.test(value) ? `r${value}` : value
+    return value
+  })()
+
   async function create() {
     setBusy('create'); setError('')
     try {
-      await api.createTag(repo.name, name.trim(), target, message.trim())
+      await api.createTag(repo.name, name.trim(), normalizedTarget, message.trim())
       setName(''); setMessage(''); setCreating(false)
       await onMutate?.()
     } catch (cause) { setError(cause.message) } finally { setBusy('') }
@@ -391,19 +424,144 @@ function Tags({ repo, publicMode, onMutate }) {
   }
 
   return <div className="tags-view">
-    {!publicMode && <div className="forge-toolbar"><div><strong>Tags</strong><p className="quiet">Mark a commit with a lightweight tag or add a message for an annotated tag.</p></div><button className="button primary" disabled={!branches.length} onClick={() => setCreating(!creating)}>{creating ? 'Cancel' : 'New tag'}</button></div>}
+    {!publicMode && <div className="forge-toolbar"><div><strong>Tags</strong><p className="quiet">Mark a commit or Clay revision with a lightweight tag, or add an annotation.</p></div><button className="button primary" disabled={!branches.length && !repo.binding?.bound && !tags.length} onClick={toggleComposer}>{creating ? 'Cancel' : 'New tag'}</button></div>}
     {creating && <section className="panel tag-composer">
       <label><span>Tag name</span><input autoFocus value={name} maxLength="200" onChange={(event) => setName(event.target.value)} placeholder="v1.0.0" /></label>
-      <label><span>Target</span><select value={target} onChange={(event) => setTarget(event.target.value)}>{branches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name.replace('refs/heads/', '')} · {shortOid(branch.oid)}</option>)}</select></label>
+      <div className="tag-target-field"><label><span>Target type</span><select value={targetKind} onChange={(event) => chooseTargetKind(event.target.value)}><option value="commit">Commit</option>{repo.binding?.bound && <option value="revision">Clay revision</option>}<option value="branch">Branch</option>{tags.length > 0 && <option value="tag">Tag</option>}</select></label><label><span>{targetKind === 'revision' ? 'Revision number' : targetKind === 'commit' ? 'Commit hash' : targetKind === 'branch' ? 'Branch' : 'Tag'}</span>{targetKind === 'branch' ? <select value={target} onChange={(event) => setTarget(event.target.value)}>{branches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name.replace('refs/heads/', '')} · {shortOid(branch.oid)}</option>)}</select> : targetKind === 'tag' ? <select value={target} onChange={(event) => setTarget(event.target.value)}>{tags.map((tag) => <option key={tag.name} value={tag.name}>{tag.name.replace('refs/tags/', '')} · {shortOid(tag.targetOid || tag.oid)}</option>)}</select> : <input value={target} maxLength={40} onChange={(event) => setTarget(event.target.value.trim())} placeholder={targetKind === 'revision' ? '160 or r160' : '1a2b3c4d'} />}</label></div>
       <label><span>Annotation <small>(optional)</small></span><textarea value={message} maxLength="4000" onChange={(event) => setMessage(event.target.value)} placeholder="Release notes" /></label>
       {error && <div className="inline-error">{error}</div>}
-      <div className="form-actions"><button className="button primary" disabled={busy || !name.trim() || !target} onClick={create}>{busy ? 'Creating…' : 'Create tag'}</button></div>
+      <div className="form-actions"><button className="button primary" disabled={busy || !name.trim() || !normalizedTarget} onClick={create}>{busy ? 'Creating…' : 'Create tag'}</button></div>
     </section>}
     {error && !creating && <div className="inline-error">{error}</div>}
     {!tags.length ? <div className="empty">No tags yet.</div> : <div className="table branch-table tag-table">
       <div className="table-head"><span>Tag</span><span>Object</span><span /></div>
-      {tags.map((tag) => { const label = tag.name.replace('refs/tags/', ''); return <div className="table-row" key={tag.name}><span><strong>{label}</strong></span><code title={tag.oid}>{shortOid(tag.oid)}</code>{!publicMode ? <button className="text-button danger" disabled={busy === label} onClick={() => remove(label)}>{busy === label ? 'Deleting…' : 'Delete'}</button> : <span />}</div> })}
+      {tags.map((tag) => { const label = tag.name.replace('refs/tags/', ''); return <div className="table-row" key={tag.name}><span><strong>{label}</strong>{tag.clayRevision > 0 && <small className="default-label">r{tag.clayRevision}</small>}</span><code title={tag.targetOid || tag.oid}>{shortOid(tag.targetOid || tag.oid)}</code>{!publicMode ? <button className="text-button danger" disabled={busy === label} onClick={() => remove(label)}>{busy === label ? 'Deleting…' : 'Delete'}</button> : <span />}</div> })}
     </div>}
+  </div>
+}
+
+function Releases({ repo, publicMode, onMutate, client = api }) {
+  const tags = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/tags/')).map((ref) => ref.name.replace('refs/tags/', ''))
+  const used = new Set((repo.releases || []).map((release) => release.tag))
+  const available = tags.filter((tag) => !used.has(tag))
+  const [details, setDetails] = useState({})
+  const [creating, setCreating] = useState(false)
+  const [tag, setTag] = useState(available[0] || '')
+  const [title, setTitle] = useState('')
+  const [notes, setNotes] = useState('')
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    Promise.all((repo.releases || []).map(async (release) => {
+      try { return [release.tag, await client.release(repo.name, release.tag)] } catch { return [release.tag, release] }
+    })).then((entries) => { if (active) setDetails(Object.fromEntries(entries)) })
+    return () => { active = false }
+  }, [client, repo.name, repo.releases])
+
+  async function create() {
+    setBusy('create'); setError('')
+    try {
+      await api.createRelease(repo.name, tag, title.trim(), notes.trim())
+      setCreating(false); setTitle(''); setNotes('')
+      await onMutate?.()
+    } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function remove(releaseTag) {
+    if (!confirm(`Delete release ${releaseTag}? The Git tag will remain.`)) return
+    setBusy(releaseTag); setError('')
+    try { await api.deleteRelease(repo.name, releaseTag); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  return <div className="releases-view">
+    {!publicMode && <div className="forge-toolbar"><div><strong>Releases</strong><p className="quiet">Publish notes and a deterministic source archive from an existing tag.</p></div><button className="button primary" disabled={!available.length} onClick={() => { setTag(available[0] || ''); setCreating(!creating) }}>{creating ? 'Cancel' : 'New release'}</button></div>}
+    {creating && <section className="panel tag-composer">
+      <label><span>Tag</span><select value={tag} onChange={(event) => setTag(event.target.value)}>{available.map((item) => <option key={item}>{item}</option>)}</select></label>
+      <label><span>Title</span><input autoFocus value={title} maxLength="200" onChange={(event) => setTitle(event.target.value)} placeholder={tag || 'Release title'} /></label>
+      <label><span>Notes</span><textarea value={notes} maxLength="65536" onChange={(event) => setNotes(event.target.value)} placeholder="What changed?" /></label>
+      {error && <div className="inline-error">{error}</div>}
+      <div className="form-actions"><button className="button primary" disabled={busy || !tag || !title.trim()} onClick={create}>{busy ? 'Publishing…' : 'Publish release'}</button></div>
+    </section>}
+    {error && !creating && <div className="inline-error">{error}</div>}
+    {!(repo.releases || []).length ? <div className="empty">No releases yet.</div> : <div className="release-list">{(repo.releases || []).map((summary) => { const release = details[summary.tag] || summary; return <article className="panel release-card" key={release.tag}><header><div><h2>{release.title}</h2><p><code>{release.tag}</code> · {release.author} · <span title={release.created}>{release.created}</span></p></div><div className="release-actions"><a className="button link-button" href={client.archiveUrl(repo.name, `refs/tags/${release.tag}`)}>Download source</a>{!publicMode && <button className="text-button danger" disabled={busy === release.tag} onClick={() => remove(release.tag)}>{busy === release.tag ? 'Deleting…' : 'Delete release'}</button>}</div></header>{release.notes && <p className="release-notes">{release.notes}</p>}</article> })}</div>}
+  </div>
+}
+
+const webhookEvents = [
+  ['push', 'Push'], ['tag', 'Tag'], ['pull-request', 'Pull request'],
+  ['issue', 'Issue'], ['release', 'Release'], ['clay-sync', 'Clay sync'],
+]
+
+function Webhooks({ repo, onMutate }) {
+  const [url, setUrl] = useState('')
+  const [secret, setSecret] = useState('')
+  const [events, setEvents] = useState(new Set(['push', 'tag', 'clay-sync']))
+  const [incomingSecret, setIncomingSecret] = useState('')
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [status, setStatus] = useState('')
+  const incomingUrl = `${window.location.origin}/apps/git/api/hooks/${encodeURIComponent(repo.name)}`
+
+  function toggleEvent(event) {
+    setEvents((current) => {
+      const next = new Set(current)
+      if (next.has(event)) next.delete(event); else next.add(event)
+      return next
+    })
+  }
+
+  async function create() {
+    setBusy('create'); setError(''); setStatus('')
+    try {
+      await api.createWebhook(repo.name, url.trim(), secret, [...events])
+      setUrl(''); setSecret(''); setStatus('Webhook added.'); await onMutate?.()
+    } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function remove(id) {
+    setBusy(`delete-${id}`); setError('')
+    try { await api.deleteWebhook(repo.name, id); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function test(id) {
+    setBusy(`test-${id}`); setError(''); setStatus('')
+    try { await api.testWebhook(repo.name, id); setStatus('Test delivery queued.'); setTimeout(() => onMutate?.(), 900) } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function saveIncoming() {
+    setBusy('incoming'); setError(''); setStatus('')
+    try { await api.setIncomingHook(repo.name, incomingSecret); setIncomingSecret(''); setStatus('Incoming hook enabled.'); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function clearIncoming() {
+    setBusy('incoming'); setError('')
+    try { await api.clearIncomingHook(repo.name); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function syncUpstream(update) {
+    setBusy(`sync-${update.id}`); setError(''); setStatus('')
+    try {
+      if (!repo.githubOrigin) throw new Error('This repository has no GitHub origin configured')
+      await api.githubImport(repo.githubOrigin.owner, repo.githubOrigin.repository, repo.name, repo.publicRead)
+      setStatus('Upstream sync started. The repository will refresh when the import completes.')
+      await api.dismissUpstreamUpdate(repo.name, update.id)
+      await onMutate?.()
+    } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function dismiss(update) {
+    setBusy(`dismiss-${update.id}`); setError('')
+    try { await api.dismissUpstreamUpdate(repo.name, update.id); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  return <div className="automation-view">
+    {error && <div className="inline-error">{error}</div>}{status && <div className="transfer-status success">{status}</div>}
+    {(repo.upstreamUpdates || []).length > 0 && <section className="panel automation-section"><div className="section-title"><div><h2>Upstream updates</h2><p>Signed push notifications waiting for review.</p></div><span className="status">{repo.upstreamUpdates.length} pending</span></div><div className="delivery-list">{repo.upstreamUpdates.map((update) => <div className="delivery-row" key={update.id}><div><strong>{update.source}</strong><small>{update.ref} · {shortOid(update.before)} → {shortOid(update.after)}</small></div><div className="row-actions">{repo.githubOrigin && <button className="button primary" disabled={busy} onClick={() => syncUpstream(update)}>{busy === `sync-${update.id}` ? 'Starting…' : 'Pull upstream'}</button>}<button className="text-button" disabled={busy} onClick={() => dismiss(update)}>Dismiss</button></div></div>)}</div></section>}
+    <section className="panel automation-section"><div className="section-title"><div><h2>Incoming webhook</h2><p>Receive GitHub-compatible signed push events and turn them into upstream pull prompts.</p></div><span className={`status ${repo.incomingHookConfigured ? 'good' : ''}`}>{repo.incomingHookConfigured ? 'enabled' : 'off'}</span></div><label><span>Payload URL</span><div className="inline-field"><input readOnly value={incomingUrl} /><button className="button" onClick={() => navigator.clipboard.writeText(incomingUrl)}>Copy</button></div></label><label><span>{repo.incomingHookConfigured ? 'Rotate secret' : 'Secret'}</span><input type="password" value={incomingSecret} maxLength="256" onChange={(event) => setIncomingSecret(event.target.value)} placeholder="Use the same secret in GitHub" /></label><p className="field-note">Content type: application/json. Events: push. Signature: X-Hub-Signature-256.</p><div className="form-actions split">{repo.incomingHookConfigured ? <button className="button danger" disabled={busy} onClick={clearIncoming}>Disable</button> : <span />}{<button className="button primary" disabled={busy || !incomingSecret} onClick={saveIncoming}>{busy === 'incoming' ? 'Saving…' : repo.incomingHookConfigured ? 'Rotate secret' : 'Enable incoming hook'}</button>}</div></section>
+    <section className="panel automation-section"><div className="section-title"><div><h2>Outgoing webhooks</h2><p>POST signed repository events to external CI, deployment, or automation endpoints.</p></div></div><div className="webhook-form"><label><span>Payload URL</span><input value={url} maxLength="2048" onChange={(event) => setUrl(event.target.value)} placeholder="https://ci.example/hooks/git" /></label><label><span>Secret</span><input type="password" value={secret} maxLength="256" onChange={(event) => setSecret(event.target.value)} /></label><div className="event-grid">{webhookEvents.map(([event, label]) => <label className="check-row compact" key={event}><input type="checkbox" checked={events.has(event)} onChange={() => toggleEvent(event)} /><span>{label}</span></label>)}</div><div className="form-actions"><button className="button primary" disabled={busy || !url.trim() || !secret || events.size === 0} onClick={create}>{busy === 'create' ? 'Adding…' : 'Add webhook'}</button></div></div>{!(repo.webhooks || []).length ? <div className="empty compact">No outgoing webhooks.</div> : <div className="webhook-list">{repo.webhooks.map((hook) => <div className="webhook-row" key={hook.id}><div><strong>{hook.url}</strong><small>{hook.events.join(' · ')}</small></div><div className="row-actions"><button className="button" disabled={busy} onClick={() => test(hook.id)}>{busy === `test-${hook.id}` ? 'Sending…' : 'Test'}</button><button className="text-button danger" disabled={busy} onClick={() => remove(hook.id)}>Delete</button></div></div>)}</div>}</section>
+    <section className="panel automation-section"><div className="section-title"><div><h2>Recent deliveries</h2><p>The latest 100 attempts are retained.</p></div></div>{!(repo.webhookDeliveries || []).length ? <div className="empty compact">No deliveries yet.</div> : <div className="delivery-list">{repo.webhookDeliveries.map((delivery) => <div className="delivery-row" key={delivery.id}><span className={`activity-dot ${delivery.status === 'success' ? 'success' : delivery.status === 'failure' ? 'failure' : 'active'}`} /><div><strong>{delivery.event}</strong><small title={delivery.created}>hook #{delivery.hook} · {delivery.message}{delivery.statusCode ? ` · HTTP ${delivery.statusCode}` : ''}</small></div><span className={`status ${delivery.status === 'success' ? 'good' : ''}`}>{delivery.status}</span></div>)}</div>}</section>
   </div>
 }
 
@@ -577,7 +735,52 @@ function FileDiff({ change, onCommentTarget }) {
   return <section className="file-diff"><header><code>{change.path}</code><span>{change.status} · {change.oldSize} → {change.newSize} B</span></header><div className="hunk-head">@@ -{prefix + 1} +{prefix + 1} @@</div><pre>{rows.map((row, index) => { const side = row.type === 'delete' ? 'base' : 'head'; const line = side === 'base' ? row.old : row.next; return <span className={`diff-line ${row.type} ${onCommentTarget && line ? 'commentable' : ''}`} key={index} onClick={() => line && onCommentTarget?.({ path: change.path, line, side })}><i>{row.old}</i><i>{row.next}</i><b>{row.type === 'add' ? '+' : row.type === 'delete' ? '-' : ' '}</b><code>{row.line}</code></span> })}</pre></section>
 }
 
-function Issues({ repo, onMutate }) {
+function IssueText({ text = '' }) {
+  const parts = text.split(/(~[a-z0-9-]+\/[A-Za-z0-9._-]+#\d+)/g)
+  return <>{parts.map((part, index) => {
+    const match = /^(~[a-z0-9-]+)\/([A-Za-z0-9._-]+)#(\d+)$/.exec(part)
+    return match ? <a key={index} className="issue-reference" href={`/apps/git/#/peer/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}`} title={`Issue #${match[3]} on ${match[1]}/${match[2]}`}>{part}</a> : part
+  })}</>
+}
+
+function NativeIssueDetail({ repo, issue: initialIssue, publicMode, client, onBack, onMutate }) {
+  const [issue, setIssue] = useState(initialIssue)
+  const [comment, setComment] = useState('')
+  const [labels, setLabels] = useState((initialIssue.labels || []).join(', '))
+  const [assignees, setAssignees] = useState((initialIssue.assignees || []).join(', '))
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  async function reload() {
+    const next = await client.issue(repo.name, issue.number)
+    setIssue(next); setLabels((next.labels || []).join(', ')); setAssignees((next.assignees || []).join(', '))
+  }
+  async function act(kind, operation) {
+    setBusy(kind); setError('')
+    try { await operation(); await reload(); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+  async function addComment() {
+    const body = comment.trim()
+    if (!body) return
+    await act('comment', () => api.addIssueComment(repo.name, issue.number, body))
+    setComment('')
+  }
+  const parseList = (value) => [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))]
+  return <div className="issue-detail">
+    <button className="text-button file-back" onClick={onBack}>← Issues</button>
+    <header className="pull-detail-header"><div><h2>#{issue.number} {issue.title}</h2><p><span className={`status ${issue.state === 'open' ? 'good' : ''}`}>{issue.state}</span> opened by <strong>{issue.author}</strong> <span title={issue.created}>· {issue.created}</span></p></div>{!publicMode && <button className="button" disabled={busy} onClick={() => act('state', () => api.setIssueState(repo.name, issue.number, issue.state === 'open' ? 'closed' : 'open'))}>{busy === 'state' ? 'Saving…' : issue.state === 'open' ? 'Close issue' : 'Reopen issue'}</button>}</header>
+    {error && <div className="inline-error">{error}</div>}
+    <div className="issue-layout"><div className="issue-thread">
+      <article className="review-comment"><header><strong>{issue.author}</strong><span title={issue.created}>{issue.created}</span></header><p><IssueText text={issue.body || 'No description provided.'} /></p></article>
+      {(issue.comments || []).map((entry) => <article className="review-comment" key={entry.id}><header><strong>{entry.author}</strong><span title={entry.created}>{entry.created}</span></header><p><IssueText text={entry.body} /></p></article>)}
+      {!publicMode && <div className="review-composer"><textarea value={comment} maxLength="16384" onChange={(event) => setComment(event.target.value)} placeholder="Add a comment…" /><div className="form-actions"><button className="button primary" disabled={busy || !comment.trim()} onClick={addComment}>{busy === 'comment' ? 'Commenting…' : 'Comment'}</button></div></div>}
+    </div><aside className="issue-sidebar">
+      <section><strong>Labels</strong>{!publicMode ? <><input value={labels} maxLength="1300" onChange={(event) => setLabels(event.target.value)} placeholder="bug, help wanted" /><button className="text-button" disabled={busy} onClick={() => act('labels', () => api.setIssueLabels(repo.name, issue.number, parseList(labels)))}>Save labels</button></> : null}<div className="issue-labels">{(issue.labels || []).map((label) => <span key={label}>{label}</span>)}{!(issue.labels || []).length && <small>None</small>}</div></section>
+      <section><strong>Assignees</strong>{!publicMode ? <><input value={assignees} maxLength="600" onChange={(event) => setAssignees(event.target.value)} placeholder="~sampel-palnet" /><button className="text-button" disabled={busy} onClick={() => act('assignees', () => api.setIssueAssignees(repo.name, issue.number, parseList(assignees)))}>Save assignees</button></> : null}<div>{(issue.assignees || []).map((ship) => <code key={ship}>{ship}</code>)}{!(issue.assignees || []).length && <small>Unassigned</small>}</div></section>
+    </aside></div>
+  </div>
+}
+
+function Issues({ repo, onMutate, publicMode = false, client = api }) {
   const [filter, setFilter] = useState('open')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -585,8 +788,12 @@ function Issues({ repo, onMutate }) {
   const [error, setError] = useState('')
   const [selected, setSelected] = useState(null)
   const [detail, setDetail] = useState(null)
-  const issues = repo.githubIssues || []
-  if (!repo.githubOrigin) return <div className="empty">Connect a GitHub origin to synchronize issues.</div>
+  const [creating, setCreating] = useState(false)
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const nativeIssues = repo.nativeIssues || []
+  const githubIssues = repo.githubIssues || []
+  const issues = [...nativeIssues.map((issue) => ({ ...issue, source: 'native' })), ...githubIssues.map((issue) => ({ ...issue, source: 'github' }))]
   const visible = issues.filter((issue) => (filter === 'all' || issue.state === filter) && (!query.trim() || issue.title.toLowerCase().includes(query.trim().toLowerCase())))
   async function sync(targetPage) {
     setBusy(true); setError('')
@@ -594,10 +801,22 @@ function Issues({ repo, onMutate }) {
   }
   async function inspect(issue) {
     setSelected(issue); setDetail(null); setError('')
-    try { setDetail(await api.githubIssue(repo.name, issue.number)) } catch (cause) { setError(cause.message) }
+    if (issue.source === 'github') {
+      if (publicMode && issue.url) { window.open(issue.url, '_blank', 'noopener,noreferrer'); setSelected(null); return }
+      try { setDetail(await api.githubIssue(repo.name, issue.number)) } catch (cause) { setError(cause.message) }
+      return
+    }
+    try { setDetail(await client.issue(repo.name, issue.number)) } catch (cause) { setError(cause.message) }
   }
-  if (selected) return <GithubDetail detail={detail} fallback={selected} kind="Issue" error={error} onBack={() => { setSelected(null); setDetail(null); setError('') }} />
-  return <><div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><div className="forge-toolbar-actions"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter issues…" /><button className="button" disabled={busy} onClick={() => sync(1)}>{busy ? 'Syncing…' : 'Refresh'}</button>{page < 5 && <button className="button" disabled={busy} onClick={() => sync(page + 1)}>{busy ? 'Loading…' : `GitHub page ${page + 1}`}</button>}</div></div>{error && <div className="inline-error">{error}</div>}{!issues.length ? <div className="empty compact">No synchronized GitHub issues.</div> : !visible.length ? <div className="empty compact">No issues match this filter.</div> : <div className="issue-list">{visible.map((issue) => <button className="issue-row forge-link row-button" key={issue.number} onClick={() => inspect(issue)}><span className={`issue-icon ${issue.state}`}>◉</span><div><h3>{issue.title}</h3><p>#{issue.number} · {issue.state} · {issue.author}</p></div><span className="external-arrow">›</span></button>)}</div>}</>
+  if (selected?.source === 'github') return <GithubDetail detail={detail} fallback={selected} kind="Issue" error={error} onBack={() => { setSelected(null); setDetail(null); setError('') }} />
+  if (selected) return detail ? <NativeIssueDetail repo={repo} issue={detail} publicMode={publicMode} client={client} onMutate={onMutate} onBack={() => { setSelected(null); setDetail(null); setError('') }} /> : <div className="empty">{error || 'Loading issue…'}</div>
+  async function createIssue() {
+    if (!title.trim()) return
+    setBusy(true); setError('')
+    try { const created = await api.createIssue(repo.name, title.trim(), body.trim()); setCreating(false); setTitle(''); setBody(''); await onMutate?.(); await inspect({ ...created, source: 'native' }) } catch (cause) { setError(cause.message) } finally { setBusy(false) }
+  }
+  return <>{!publicMode && creating && <section className="panel issue-composer"><div className="section-title"><div><h2>New issue</h2><p className="quiet">Open an issue under your ship identity.</p></div><button className="text-button" onClick={() => setCreating(false)}>Cancel</button></div><label><span>Title</span><input autoFocus value={title} maxLength="200" onChange={(event) => setTitle(event.target.value)} /></label><label><span>Description</span><textarea value={body} maxLength="65536" onChange={(event) => setBody(event.target.value)} placeholder="Describe the problem or proposal…" /></label><div className="form-actions"><button className="button primary" disabled={busy || !title.trim()} onClick={createIssue}>{busy ? 'Opening…' : 'Open issue'}</button></div></section>}
+    <div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><div className="forge-toolbar-actions"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter issues…" />{!publicMode && repo.githubOrigin && <button className="button" disabled={busy} onClick={() => sync(1)}>{busy ? 'Syncing…' : 'Sync GitHub'}</button>}{!publicMode && repo.githubOrigin && page < 5 && <button className="button" disabled={busy} onClick={() => sync(page + 1)}>Page {page + 1}</button>}{!publicMode && <button className="button primary" onClick={() => setCreating(!creating)}>New issue</button>}</div></div>{error && <div className="inline-error">{error}</div>}{!issues.length ? <div className="empty compact">No issues.</div> : !visible.length ? <div className="empty compact">No issues match this filter.</div> : <div className="issue-list">{visible.map((issue) => <button className="issue-row forge-link row-button" key={`${issue.source}-${issue.number}`} onClick={() => inspect(issue)}><span className={`issue-icon ${issue.state}`}>◉</span><div><h3>{issue.title}</h3><p>#{issue.number} · {issue.state} · {issue.author}{issue.source === 'github' ? ' · GitHub' : ` · ${issue.commentCount || 0} comments`}</p><div className="issue-labels inline">{(issue.labels || []).map((label) => <span key={label}>{label}</span>)}</div></div><span className="external-arrow">{issue.source === 'github' ? '↗' : '›'}</span></button>)}</div>}</>
 }
 
 function GithubDetail({ detail, fallback, kind, error, onBack }) {
@@ -614,7 +833,7 @@ function GithubDetail({ detail, fallback, kind, error, onBack }) {
   </div>
 }
 
-function Commits({ data, loading, onSelect }) {
+function Commits({ data, loading, onSelect, onCreateTag }) {
   if (loading) return <div className="empty">Loading history…</div>
   if (!data?.commits?.length) return <div className="empty">No history yet.</div>
   return (
@@ -624,20 +843,20 @@ function Commits({ data, loading, onSelect }) {
         return <div className="commit-row" key={commit.oid}>
           <span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span>
           <div><strong>{clay ? `Revision ${commit.revision}` : commit.subject || 'Untitled commit'}</strong><small>{commit.author ? identityLabel(commit.author) : (commit.parent ? `parent ${shortOid(commit.parent)}` : 'root commit')}{dateLabel(commit.committer || commit.author) ? ` · ${dateLabel(commit.committer || commit.author)}` : ''}{clay && commit.gitCommit ? ` · Git ${shortOid(commit.gitCommit)}` : ''}</small></div>
-          <button className="commit-hash" title={`View ${commit.oid}`} onClick={() => onSelect?.(commit)} disabled={!onSelect}><code>{historyId(commit)}</code></button>
+          <span className="commit-links">{onCreateTag && <button className="text-button commit-tag-action" onClick={() => onCreateTag(commit)}>Create tag</button>}{clay && commit.gitCommit && <button className="commit-hash mapped-commit" title={`View mapped Git commit ${commit.gitCommit}`} onClick={() => onSelect?.({ oid: commit.gitCommit })}><code>{shortOid(commit.gitCommit)}</code></button>}<button className="commit-hash" title={`View ${commit.oid}`} onClick={() => onSelect?.(commit)} disabled={!onSelect}><code>{historyId(commit)}</code></button></span>
         </div>
       })}
     </div>
   )
 }
 
-function CommitDetail({ data, onBack }) {
+function CommitDetail({ data, onBack, onOpenGit, onCreateTag }) {
   if (!data) return <div className="empty">Loading commit…</div>
   const commit = data.commit
   const clay = data.historyKind === 'clay' || commit.kind === 'clay'
   return <div className="commit-detail">
     <button className="text-button file-back" onClick={onBack}>← {clay ? 'Revision history' : 'Commit history'}</button>
-    <section className="panel commit-summary"><div className="commit-avatar large">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</div><div><h2>{clay ? `Revision ${commit.revision}` : commit.subject || 'Untitled commit'}</h2><p>{identityLabel(commit.author)} {clay ? 'committed this Clay revision' : `authored · ${identityLabel(commit.committer)} committed`} <span title={dateLabel(commit.committer)}>{dateLabel(commit.committer)}</span></p>{clay ? <div className="clay-revision-meta"><code title="Clay revision">r{commit.revision}</code><code title="Canonical Clay timestamp">{commit.timestampCase}</code><code className="tako" title="Clay commit hash">{commit.tako}</code>{commit.gitCommit && <code title="Mapped Git commit">Git {commit.gitCommit}</code>}</div> : <code>{commit.oid}</code>}</div></section>
+    <section className="panel commit-summary with-actions"><div className="commit-avatar large">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</div><div><h2>{clay ? `Revision ${commit.revision}` : commit.subject || 'Untitled commit'}</h2><p>{identityLabel(commit.author)} {clay ? 'committed this Clay revision' : `authored · ${identityLabel(commit.committer)} committed`} <span title={dateLabel(commit.committer)}>{dateLabel(commit.committer)}</span></p>{clay ? <div className="clay-revision-meta"><code title="Clay revision">r{commit.revision}</code><code title="Canonical Clay timestamp">{commit.timestampCase}</code><code className="tako" title={commit.tako}>{commit.tako}</code>{commit.gitCommit && <button className="commit-hash mapped-commit" title={commit.gitCommit} onClick={() => onOpenGit?.(commit.gitCommit)}><code>Git {shortOid(commit.gitCommit)}</code></button>}</div> : <code>{commit.oid}</code>}</div>{onCreateTag && <button className="button commit-detail-tag" onClick={() => onCreateTag(commit)}>Create tag</button>}</section>
     {!clay && data.message && data.message !== commit.subject && <pre className="commit-message">{data.message}</pre>}
     <DiffView diff={{ changedCount: data.changedCount, base: commit.parent, head: commit.oid, changes: data.changes || [] }} />
   </div>
@@ -867,6 +1086,8 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   const [lineEnd, setLineEnd] = useState(initialRoute.lineEnd)
   const [branch, setBranch] = useState(initialRoute.branch)
   const [commitOid, setCommitOid] = useState(initialRoute.commitOid)
+  const [tagTarget, setTagTarget] = useState(initialRoute.tagTarget)
+  const [tagKind, setTagKind] = useState(initialRoute.tagKind)
   const [searchQuery, setSearchQuery] = useState(initialRoute.searchQuery)
   const [searchDraft, setSearchDraft] = useState(initialRoute.searchQuery)
   const [searchData, setSearchData] = useState(null)
@@ -889,16 +1110,19 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
     setLineStart(route.lineStart)
     setLineEnd(route.lineEnd)
     setCommitOid(route.commitOid)
+    setTagTarget(route.tagTarget)
+    setTagKind(route.tagKind)
     setSearchQuery(route.searchQuery)
     setSearchDraft(route.searchQuery)
   }
 
   function navigate(changes, replace = false) {
-    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, searchQuery, ...changes }
+    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, tagTarget, tagKind, searchQuery, ...changes }
     if (Object.hasOwn(changes, 'filePath') && changes.filePath !== filePath && !Object.hasOwn(changes, 'lineStart')) { route.lineStart = null; route.lineEnd = null }
     if (route.tab !== 'code') { route.filePath = ''; route.lineStart = null; route.lineEnd = null; route.searchQuery = '' }
     if (!route.filePath) { route.lineStart = null; route.lineEnd = null }
     if (route.tab !== 'commits') route.commitOid = ''
+    if (route.tab !== 'tags') { route.tagTarget = ''; route.tagKind = '' }
     history[replace ? 'replaceState' : 'pushState']({}, '', repositoryHash(repo, route))
     applyRoute(route)
   }
@@ -961,6 +1185,11 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
     navigate({ tab: 'commits', filePath: '', commitOid: commit.oid })
   }
 
+  function createTagFrom(commit) {
+    const clay = commit.kind === 'clay' || Number(commit.revision) > 0
+    navigate({ tab: 'tags', filePath: '', commitOid: '', tagKind: clay ? 'revision' : 'commit', tagTarget: clay ? `r${commit.revision}` : commit.oid })
+  }
+
   async function mutate() {
     await onRefresh?.(repo.name)
   }
@@ -975,8 +1204,9 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
         <span><b>{repo.fileCount || 0}</b> files</span>{clayHistory ? <span><b>{revisionCount ?? '—'}</b> revisions</span> : <span><b>{repo.commitCount || 0}</b> commits</span>}<span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span><span title="Large file payloads in ship object storage"><b>{repo.lfsObjectCount || 0}</b> LFS files</span>
         {repo.binding?.bound && <span className="clay-chip">Clay · {repo.binding.desk}</span>}
       </div>
+      {!publicMode && (repo.upstreamUpdates || []).length > 0 && <button className="upstream-banner" onClick={() => navigate({ tab: 'webhooks', filePath: '', commitOid: '' })}><span className="activity-dot active" /><span><strong>Upstream has new commits</strong><small>{repo.upstreamUpdates[0].source} pushed {repo.upstreamUpdates[0].ref}</small></span><b>Review and pull →</b></button>}
       <nav className="tabs">
-        {(publicMode ? [['code', 'Code'], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['commits', clayHistory ? 'Revisions' : 'Commits']] : [['code', 'Code'], ['issues', 'Issues', repo.githubIssues?.length], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['commits', clayHistory ? 'Revisions' : 'Commits'], ['settings', 'Settings']]).map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => navigate({ tab: name, filePath: '', commitOid: '' })}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
+        {(publicMode ? [['code', 'Code'], ['issues', 'Issues', repo.nativeIssues?.length], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['releases', 'Releases', repo.releases?.length], ['commits', clayHistory ? 'Revisions' : 'Commits']] : [['code', 'Code'], ['issues', 'Issues', (repo.nativeIssues?.length || 0) + (repo.githubIssues?.length || 0)], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['releases', 'Releases', repo.releases?.length], ['commits', clayHistory ? 'Revisions' : 'Commits'], ['webhooks', 'Webhooks', (repo.upstreamUpdates?.length || 0)], ['settings', 'Settings']]).map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => navigate({ tab: name, filePath: '', commitOid: '' })}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
       </nav>
       <section className="repo-body">
         {tab === 'code' && <div className="branch-context"><select value={branch} onChange={(event) => browseBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option key={ref.name} value={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select><span>{detail?.files?.files?.length || 0} files</span>{branch !== repo.head && <button className="text-button" onClick={() => browseBranch(repo.head)}>Default branch</button>}{!publicMode && !filePath && !creatingFile && <button className="button new-file-button" onClick={() => { setCreatingFile(true); navigate({ searchQuery: '' }, true) }}>New file</button>}<form className="code-search" onSubmit={(event) => { event.preventDefault(); const query = searchDraft.trim(); if (!query || query.length >= 2) { setCreatingFile(false); navigate({ filePath: '', lineStart: null, lineEnd: null, searchQuery: query }) } }}><input value={searchDraft} maxLength={200} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Search code" aria-label="Search repository code" />{searchQuery && <button type="button" className="text-button" onClick={() => navigate({ searchQuery: '', filePath: '' })}>Clear</button>}</form></div>}
@@ -986,11 +1216,13 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
           ? <FileView repository={repo.name} path={filePath} branch={branch} githubOrigin={!publicMode ? repo.githubOrigin : null} lineStart={lineStart} lineEnd={lineEnd} onSelectLine={(selected, extend, dragAnchor) => { const anchor = extend ? (dragAnchor || lineStart || selected) : selected; navigate({ lineStart: Math.min(anchor, selected), lineEnd: Math.max(anchor, selected) }) }} onOpenCommit={(commit) => commit && navigate({ tab: 'commits', filePath: '', commitOid: commit.oid })} editable={!publicMode} onBack={() => navigate({ filePath: '' })} onSaved={mutate} onDeleted={async () => { await mutate(); navigate({ filePath: '', lineStart: null, lineEnd: null }) }} client={client} />
           : searchQuery ? <SearchResults data={searchData} query={searchQuery} loading={searchLoading} error={searchError} onOpen={(result) => navigate({ tab: 'code', filePath: result.path, lineStart: result.line, lineEnd: result.line, commitOid: '' })} />
             : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} />)}
-        {tab === 'issues' && <Issues repo={repo} onMutate={mutate} />}
+        {tab === 'issues' && <Issues repo={repo} publicMode={publicMode} client={client} onMutate={mutate} />}
         {tab === 'branches' && <Branches repo={repo} publicMode={publicMode} onBrowse={browseBranch} onMutate={mutate} client={client} />}
-        {tab === 'tags' && <Tags repo={repo} publicMode={publicMode} onMutate={mutate} />}
-        {tab === 'commits' && (commitOid ? commitLoading || !commitDetail ? <div className="empty">Loading commit…</div> : <CommitDetail data={commitDetail} onBack={() => navigate({ commitOid: '' })} /> : <Commits data={detail} loading={loading} onSelect={openCommit} />)}
+        {tab === 'tags' && <Tags repo={repo} publicMode={publicMode} onMutate={mutate} initialTarget={tagTarget} initialKind={tagKind} onTargetConsumed={() => navigate({ tagTarget: '', tagKind: '' }, true)} />}
+        {tab === 'releases' && <Releases repo={repo} publicMode={publicMode} onMutate={mutate} client={client} />}
+        {tab === 'commits' && (commitOid ? commitLoading || !commitDetail ? <div className="empty">Loading commit…</div> : <CommitDetail data={commitDetail} onBack={() => navigate({ commitOid: '' })} onOpenGit={(oid) => navigate({ commitOid: oid })} onCreateTag={!publicMode ? createTagFrom : null} /> : <Commits data={detail} loading={loading} onSelect={openCommit} onCreateTag={!publicMode ? createTagFrom : null} />)}
         {tab === 'pulls' && <PullRequests repo={repo} onMutate={mutate} onOpenOrigin={onOpenOrigin} />}
+        {tab === 'webhooks' && <Webhooks repo={repo} onMutate={mutate} />}
         {tab === 'settings' && <Settings repo={repo} onMutate={mutate} />}
       </section>
     </main>
