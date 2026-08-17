@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
+import { exactBytes, formatBytes } from '../format'
 import { CopyIcon } from './Icons'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
@@ -43,7 +44,7 @@ function Files({ data, commit, loading, onOpen }) {
       {data.files.map((file) => (
         <button className="table-row file-row" key={file.path} onClick={() => onOpen(file.path)}>
           <span className="file-path"><i />{file.path}</span>
-          <span className="quiet">{Number(file.size).toLocaleString()} B</span>
+          <span className="quiet" title={exactBytes(file.size)}>{formatBytes(file.size)}</span>
         </button>
       ))}
     </div>
@@ -131,7 +132,7 @@ function FileView({ repository, path, branch, editable, onBack, onSaved, client 
       ) : file?.text !== null ? (
         <pre className="code-view"><code>{file?.text}</code></pre>
       ) : file ? (
-        <div className="empty">Binary file · {Number(file.size).toLocaleString()} bytes</div>
+        <div className="empty" title={exactBytes(file.size)}>Binary file · {formatBytes(file.size)}</div>
       ) : null}
     </div>
   )
