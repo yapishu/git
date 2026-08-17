@@ -34,8 +34,11 @@ export const publicApi = {
   files: (name, ref) => request(atRef(`/public/repository/${encodeURIComponent(name)}/files`, ref)),
   file: (name, path, ref) => request(atRef(publicFileRoute(name, path), ref)),
   fileHistory: (name, path, ref) => request(atRef(publicFileRoute(name, path).replace('/file/', '/file-history/'), ref)),
+  fileBlame: (name, path, ref) => request(atRef(publicFileRoute(name, path).replace('/file/', '/file-blame/'), ref)),
   commits: (name, ref) => request(atRef(`/public/repository/${encodeURIComponent(name)}/commits`, ref)),
+  compare: (name, base, head) => request(`/public/repository/${encodeURIComponent(name)}/compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`),
   commit: (name, oid) => request(`/public/repository/${encodeURIComponent(name)}/commit/${encodeURIComponent(oid)}`),
+  search: (name, query, ref) => request(`/public/repository/${encodeURIComponent(name)}/search?q=${encodeURIComponent(query)}${ref ? `&ref=${encodeURIComponent(ref)}` : ''}`),
 }
 
 export const api = {
@@ -66,7 +69,10 @@ export const api = {
   githubPush: (name, branch) => request(`/repository/${encodeURIComponent(name)}/github/push`, {
     method: 'POST', body: JSON.stringify({ branch }),
   }),
-  githubMetadata: (name, kind) => request(`/repository/${encodeURIComponent(name)}/github/metadata`, { method: 'POST', body: JSON.stringify({ kind }) }),
+  githubMetadata: (name, kind, page = 1) => request(`/repository/${encodeURIComponent(name)}/github/metadata`, { method: 'POST', body: JSON.stringify({ kind, page }) }),
+  githubIssue: (name, number) => request(`/repository/${encodeURIComponent(name)}/github/issues/${number}`),
+  githubPullDetail: (name, number) => request(`/repository/${encodeURIComponent(name)}/github/pulls/${number}`),
+  githubFile: (name, path, ref) => request(atRef(fileRoute(name, path).replace('/file/', '/github/file/'), ref)),
   githubFork: (name) => request(`/repository/${encodeURIComponent(name)}/github/fork`, { method: 'POST', body: '{}' }),
   githubPull: (name, title, head, base, body) =>
     request(`/repository/${encodeURIComponent(name)}/github/pull`, {
@@ -76,13 +82,21 @@ export const api = {
   files: (name, ref) => request(atRef(`/repository/${encodeURIComponent(name)}/files`, ref)),
   file: (name, path, ref) => request(atRef(fileRoute(name, path), ref)),
   fileHistory: (name, path, ref) => request(atRef(fileRoute(name, path).replace('/file/', '/file-history/'), ref)),
-  saveFile: (name, path, content, message) =>
+  fileBlame: (name, path, ref) => request(atRef(fileRoute(name, path).replace('/file/', '/file-blame/'), ref)),
+  saveFile: (name, path, content, message, ref = '') =>
     request(fileRoute(name, path), {
       method: 'POST',
-      body: JSON.stringify({ content, message }),
+      body: JSON.stringify({ content, message, ...(ref ? { ref } : {}) }),
+    }),
+  deleteFile: (name, path, message, ref = '') =>
+    request(fileRoute(name, path), {
+      method: 'DELETE',
+      body: JSON.stringify({ message, ...(ref ? { ref } : {}) }),
     }),
   commits: (name, ref) => request(atRef(`/repository/${encodeURIComponent(name)}/commits`, ref)),
+  compare: (name, base, head) => request(`/repository/${encodeURIComponent(name)}/compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`),
   commit: (name, oid) => request(`/repository/${encodeURIComponent(name)}/commit/${encodeURIComponent(oid)}`),
+  search: (name, query, ref) => request(`/repository/${encodeURIComponent(name)}/search?q=${encodeURIComponent(query)}${ref ? `&ref=${encodeURIComponent(ref)}` : ''}`),
   create: (name, publicRead) =>
     request('/repositories', { method: 'POST', body: JSON.stringify({ name, publicRead }) }),
   remove: (name) => request(`/repository/${encodeURIComponent(name)}`, { method: 'DELETE' }),
@@ -96,6 +110,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ description }),
     }),
+  createBranch: (name, branch, source) =>
+    request(`/repository/${encodeURIComponent(name)}/branches`, {
+      method: 'POST',
+      body: JSON.stringify({ name: branch, source }),
+    }),
+  deleteBranch: (name, branch) =>
+    request(`/repository/${encodeURIComponent(name)}/branches`, {
+      method: 'DELETE',
+      body: JSON.stringify({ name: branch }),
+    }),
+  setDefaultBranch: (name, branch) =>
+    request(`/repository/${encodeURIComponent(name)}/branches/default`, {
+      method: 'POST',
+      body: JSON.stringify({ name: branch }),
+    }),
   setWriter: (name, ship, allowed) =>
     request(`/repository/${encodeURIComponent(name)}/writers`, {
       method: 'POST',
@@ -106,7 +135,33 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ref, protected: protectedBranch }),
     }),
+  createTag: (name, tag, target, message) =>
+    request(`/repository/${encodeURIComponent(name)}/tags`, {
+      method: 'POST',
+      body: JSON.stringify({ name: tag, target, message }),
+    }),
+  deleteTag: (name, tag) =>
+    request(`/repository/${encodeURIComponent(name)}/tags`, {
+      method: 'DELETE',
+      body: JSON.stringify({ name: tag }),
+    }),
+  createPull: (name, title, branch) =>
+    request(`/repository/${encodeURIComponent(name)}/pulls`, {
+      method: 'POST', body: JSON.stringify({ title, branch }),
+    }),
   pull: (name, number) => request(`/repository/${encodeURIComponent(name)}/pulls/${number}`),
+  addPullComment: (name, number, body, path = '', line = 0, side = '') =>
+    request(`/repository/${encodeURIComponent(name)}/pulls/${number}/comments`, {
+      method: 'POST', body: JSON.stringify({ body, path, line, side }),
+    }),
+  resolvePullComment: (name, number, comment, resolved) =>
+    request(`/repository/${encodeURIComponent(name)}/pulls/${number}/comments/${comment}/resolve`, {
+      method: 'POST', body: JSON.stringify({ resolved }),
+    }),
+  setPullState: (name, number, state) =>
+    request(`/repository/${encodeURIComponent(name)}/pulls/${number}/state`, {
+      method: 'POST', body: JSON.stringify({ state }),
+    }),
   mergePull: (name, number) => request(`/repository/${encodeURIComponent(name)}/pulls/${number}/merge`, { method: 'POST', body: '{}' }),
   setToken: (name, token) =>
     request(`/repository/${encodeURIComponent(name)}/token`, {
@@ -126,5 +181,16 @@ export const api = {
     request(`/repository/${encodeURIComponent(name)}/publish`, {
       method: 'POST',
       body: JSON.stringify({ message }),
+    }),
+  clayStatus: (name) =>
+    request(`/repository/${encodeURIComponent(name)}/clay/status`),
+  lfsGcPreview: (name) => request(`/repository/${encodeURIComponent(name)}/lfs/gc`),
+  lfsGc: (name) => request(`/repository/${encodeURIComponent(name)}/lfs/gc`, {
+    method: 'POST', body: '{}',
+  }),
+  applyToClay: (name) =>
+    request(`/repository/${encodeURIComponent(name)}/clay/apply`, {
+      method: 'POST',
+      body: '{}',
     }),
 }

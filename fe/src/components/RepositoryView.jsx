@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { exactBytes, formatBytes } from '../format'
+import { comparisonPatch } from '../patch'
 import FileTree from './FileTree'
 import { HighlightedCode, HighlightedEditor } from './HighlightedCode'
 import { CopyIcon } from './Icons'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
+const historyId = (commit) => commit?.kind === 'clay' ? `r${commit.revision}` : shortOid(commit?.oid)
 const identityLabel = (identity) => identity?.name || identity?.email || 'Unknown author'
 const commitDate = (identity) => {
   const value = Number(identity?.timestamp) * 1000
   return Number.isFinite(value) && value > 0 ? new Date(value) : null
 }
 const dateLabel = (identity) => commitDate(identity)?.toLocaleString() || ''
-const validTabs = new Set(['code', 'issues', 'pulls', 'branches', 'commits', 'settings'])
+const githubDate = (value) => {
+  const date = value ? new Date(value) : null
+  return date && Number.isFinite(date.getTime()) ? date.toLocaleString() : ''
+}
+const validTabs = new Set(['code', 'issues', 'pulls', 'branches', 'tags', 'commits', 'settings'])
 
 function parseLineRange(value) {
   const match = /^(\d+)(?:-(\d+))?$/.exec(value || '')
@@ -34,6 +40,7 @@ function routeForRepository(repo) {
     tab,
     branch: name === repo.name && params.get('branch') ? params.get('branch') : repo.head,
     filePath: name === repo.name && tab === 'code' ? params.get('file') || '' : '',
+    searchQuery: name === repo.name && tab === 'code' ? params.get('search') || '' : '',
     ...lines,
     commitOid: name === repo.name && tab === 'commits' ? params.get('commit') || '' : '',
   }
@@ -44,6 +51,7 @@ function repositoryHash(repo, route) {
   if (route.tab !== 'code') params.set('tab', route.tab)
   if (route.branch && route.branch !== repo.head) params.set('branch', route.branch)
   if (route.filePath) params.set('file', route.filePath)
+  if (route.searchQuery) params.set('search', route.searchQuery)
   if (route.filePath && route.lineStart) params.set('line', route.lineEnd && route.lineEnd !== route.lineStart ? `${route.lineStart}-${route.lineEnd}` : String(route.lineStart))
   if (route.commitOid) params.set('commit', route.commitOid)
   const query = params.toString()
@@ -67,6 +75,22 @@ const encodeBase64 = (text) => {
   return btoa(raw)
 }
 
+async function syncGithubMetadata(repository, kind, page) {
+  const before = await api.githubStatus()
+  const prior = new Set((before.jobs || []).map((job) => job.job))
+  await api.githubMetadata(repository, kind, page)
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    const status = await api.githubStatus()
+    const matching = (status.jobs || []).filter((job) => !prior.has(job.job) && job.repository === repository && job.kind === kind)
+    if (!matching.length || matching.some((job) => job.active)) continue
+    const failed = matching.find((job) => !job.ok)
+    if (failed) throw new Error(failed.message)
+    return matching[0]
+  }
+  throw new Error('GitHub metadata sync did not finish in time')
+}
+
 const imageType = (path) => {
   const leaf = path.split('/').filter(Boolean).pop() || ''
   const extension = (leaf.includes('.') ? leaf.split('.').pop() : leaf).toLowerCase()
@@ -80,7 +104,24 @@ function Files({ data, commit, loading, onOpen }) {
   return <FileTree files={data.files} header={header} onOpen={onOpen} />
 }
 
-function FileView({ repository, path, branch, lineStart, lineEnd, onSelectLine, editable, onBack, onSaved, client = api }) {
+function SearchResults({ data, query, loading, error, onOpen }) {
+  if (loading) return <div className="empty">Searching repository…</div>
+  if (error) return <div className="inline-error">{error}</div>
+  if (!data) return null
+  if (!data.results?.length) return <div className="empty">No matches for <code>{query}</code> on this branch.</div>
+  return <div className="code-search-results">
+    <div className="search-summary"><span><b>{data.matchCount}</b> matches in {data.filesScanned} files</span>{data.truncated && <span>Showing the first 100 matches</span>}</div>
+    {data.results.map((result, index) => {
+      const hit = result.preview.indexOf(query)
+      return <button key={`${result.path}-${result.line}-${index}`} className="code-search-result" onClick={() => onOpen(result)}>
+        <span><strong>{result.path}</strong><small>Line {result.line}, column {result.column}</small></span>
+        <code>{hit < 0 ? result.preview : <>{result.preview.slice(0, hit)}<mark>{result.preview.slice(hit, hit + query.length)}</mark>{result.preview.slice(hit + query.length)}</>}</code>
+      </button>
+    })}
+  </div>
+}
+
+function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, onSelectLine, onOpenCommit, editable, onBack, onSaved, onDeleted, client = api }) {
   const [file, setFile] = useState(null)
   const [history, setHistory] = useState(null)
   const [view, setView] = useState('file')
@@ -91,8 +132,13 @@ function FileView({ repository, path, branch, lineStart, lineEnd, onSelectLine, 
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(branch)
+  const [upstream, setUpstream] = useState(null)
+  const [upstreamBusy, setUpstreamBusy] = useState(false)
+  const [blame, setBlame] = useState(null)
+  const [blameBusy, setBlameBusy] = useState(false)
 
-  useEffect(() => { setRevision(branch); setHistory(null); setView('file') }, [branch, path])
+  useEffect(() => { setRevision(branch); setHistory(null); setUpstream(null); setView('file') }, [branch, path])
+  useEffect(() => { setBlame(null) }, [revision, path])
 
   useEffect(() => {
     let active = true
@@ -117,7 +163,7 @@ function FileView({ repository, path, branch, lineStart, lineEnd, onSelectLine, 
     setBusy(true)
     setError('')
     try {
-      await api.saveFile(repository, path, encodeBase64(text), message.trim())
+      await api.saveFile(repository, path, encodeBase64(text), message.trim(), branch)
       setOriginal(text)
       setEditing(false)
       await onSaved()
@@ -127,6 +173,45 @@ function FileView({ repository, path, branch, lineStart, lineEnd, onSelectLine, 
       setBusy(false)
     }
   }
+
+  async function remove() {
+    if (!window.confirm(`Delete ${path}?`)) return
+    setBusy(true)
+    setError('')
+    try {
+      await api.deleteFile(repository, path, `Delete ${path}`, branch)
+      await onDeleted()
+    } catch (cause) {
+      setError(cause.message)
+      setBusy(false)
+    }
+  }
+
+  async function showUpstream() {
+    if (view === 'upstream') { setView('file'); return }
+    setView('upstream')
+    if (upstream) return
+    setUpstreamBusy(true)
+    setError('')
+    try {
+      const ref = branch.replace(/^refs\/heads\//, '')
+      const data = await api.githubFile(repository, path, ref)
+      setUpstream({ ...data, ...decodeBase64(data.content) })
+    } catch (cause) { setError(cause.message) } finally { setUpstreamBusy(false) }
+  }
+
+  async function showBlame() {
+    if (view === 'blame') { setView('file'); return }
+    setView('blame')
+    if (blame?.head === revision) return
+    setBlameBusy(true)
+    setError('')
+    try {
+      setBlame(await client.fileBlame(repository, path, revision))
+    } catch (cause) { setError(cause.message) } finally { setBlameBusy(false) }
+  }
+
+  const blamedLines = useMemo(() => blame?.lines?.map((line) => blame.sources?.[line.source]) || null, [blame])
 
   const mime = imageType(path)
   const objectUrl = file && mime ? `data:${mime};base64,${file.content}` : null
@@ -138,16 +223,22 @@ function FileView({ repository, path, branch, lineStart, lineEnd, onSelectLine, 
         <button className="text-button file-back" onClick={onBack}>← Files</button>
         <code>{path} · {revision === branch ? branch.replace('refs/heads/', '') : shortOid(revision)}</code>
         <div className="file-actions">
-          {file?.text !== null && view === 'file' && <button className="button" onClick={() => navigator.clipboard.writeText(location.href)}>{lineStart ? lineEnd !== lineStart ? `Copy lines ${lineStart}–${lineEnd} link` : `Copy line ${lineStart} link` : 'Copy file link'}</button>}
           {downloadUrl && <a className="button link-button" href={downloadUrl} download={path.split('/').pop()}>Download</a>}
+          {githubOrigin && revision === branch && !editing && <button className={view === 'upstream' ? 'button active' : 'button'} onClick={showUpstream}>{view === 'upstream' ? 'Local file' : 'Upstream'}</button>}
+          {file?.text !== null && !editing && <button className={view === 'blame' ? 'button active' : 'button'} onClick={showBlame}>{view === 'blame' ? 'View file' : 'Blame'}</button>}
           <button className={view === 'history' ? 'button active' : 'button'} onClick={() => setView(view === 'history' ? 'file' : 'history')}>{view === 'history' ? 'View file' : 'History'}</button>
           {revision !== branch && <button className="button" onClick={() => { setRevision(branch); setView('file') }}>Latest</button>}
           {editable && revision === branch && file && file.text !== null && !editing && view === 'file' && <button className="button" onClick={() => setEditing(true)}>Edit</button>}
+          {editable && revision === branch && file && !editing && view === 'file' && <button className="button danger-text" disabled={busy} onClick={remove}>Delete</button>}
         </div>
       </div>
       {error && <div className="inline-error">{error}</div>}
       {view === 'history' ? (
         !history ? <div className="empty">Loading file history…</div> : !history.commits?.length ? <div className="empty">No changes found for this file.</div> : <Commits data={history} loading={false} onSelect={(commit) => { if (commit.present) { setRevision(commit.oid); setView('file') } }} />
+      ) : view === 'blame' ? (
+        blameBusy ? <div className="empty">Tracing line history…</div> : blame && file?.text !== null ? <><div className="blame-summary"><span>{blame.sourceCount} {blame.historyKind === 'clay' ? 'revisions' : 'commits'} traced across {blame.lineCount} lines</span>{blame.truncated && <span>Attribution stops after 200 snapshots</span>}</div><HighlightedCode code={file.text} path={path} selectedStart={lineStart} selectedEnd={lineEnd} onSelectLine={onSelectLine} blame={blamedLines} onSelectBlame={onOpenCommit} /></> : null
+      ) : view === 'upstream' ? (
+        upstreamBusy ? <div className="empty">Reading file from GitHub…</div> : upstream ? <><div className="upstream-file-meta"><span>GitHub · <code>{shortOid(upstream.sha)}</code> · {formatBytes(upstream.size)}</span>{upstream.url && <a href={upstream.url} target="_blank" rel="noreferrer">Open on GitHub ↗</a>}</div>{upstream.text !== null ? <HighlightedCode code={upstream.text} path={path} selectedStart={lineStart} selectedEnd={lineEnd} onSelectLine={onSelectLine} /> : <div className="empty" title={exactBytes(upstream.size)}>Binary file · {formatBytes(upstream.size)}</div>}</> : null
       ) : busy && !file ? <div className="empty">Loading file…</div> : editing ? (
         <div className="editor-panel">
           <HighlightedEditor value={text} path={path} onChange={(event) => setText(event.target.value)} />
@@ -168,20 +259,152 @@ function FileView({ repository, path, branch, lineStart, lineEnd, onSelectLine, 
   )
 }
 
-function Branches({ repo, selected, onBrowse }) {
+function NewFile({ repository, branch, onCancel, onCreated }) {
+  const [path, setPath] = useState('')
+  const [content, setContent] = useState('')
+  const [message, setMessage] = useState('Create file')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const normalized = `/${path.trim().replace(/^\/+/, '')}`
+  async function create() {
+    setBusy(true); setError('')
+    try {
+      await api.saveFile(repository, normalized, encodeBase64(content), message.trim(), branch)
+      await onCreated(normalized)
+    } catch (cause) { setError(cause.message); setBusy(false) }
+  }
+  return <div className="new-file-panel">
+    <div className="file-toolbar"><button className="text-button file-back" onClick={onCancel}>← Files</button><strong>New file</strong></div>
+    {error && <div className="inline-error">{error}</div>}
+    <label><span>Path</span><input autoFocus value={path} onChange={(event) => setPath(event.target.value)} placeholder="lib/example.hoon" /></label>
+    <HighlightedEditor value={content} path={normalized} onChange={(event) => setContent(event.target.value)} />
+    <div className="editor-footer"><input value={message} onChange={(event) => setMessage(event.target.value)} aria-label="Commit message" /><button className="button" onClick={onCancel}>Cancel</button><button className="button primary" disabled={busy || !path.trim() || !message.trim()} onClick={create}>{busy ? 'Committing…' : 'Create file'}</button></div>
+  </div>
+}
+
+function downloadComparison(repo, base, head, patch) {
+  const blob = new Blob([patch], { type: 'text/x-diff;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${repo}-${base.replace('refs/heads/', '')}-to-${head.replace('refs/heads/', '')}.patch`
+  anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+function Branches({ repo, publicMode, onBrowse, onMutate, client = api }) {
   const branches = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/'))
-  if (!branches.length) return <div className="empty">No branches yet.</div>
-  return (
-    <div className="table branch-table">
-      <div className="table-head"><span>Branch</span><span>Commit</span></div>
-      {branches.map((branch) => (
-        <button className="table-row file-row" key={branch.name} onClick={() => onBrowse(branch.name)}>
-          <span><strong>{branch.name.replace('refs/heads/', '')}</strong>{branch.name === repo.head && <small className="default-label">default</small>}</span>
+  const [creating, setCreating] = useState(false)
+  const [name, setName] = useState('')
+  const [source, setSource] = useState(repo.head || branches[0]?.name || '')
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [comparing, setComparing] = useState(false)
+  const [base, setBase] = useState(repo.head || branches[0]?.name || '')
+  const [head, setHead] = useState(branches.find((branch) => branch.name !== (repo.head || branches[0]?.name))?.name || repo.head || '')
+  const [comparison, setComparison] = useState(null)
+
+  async function create() {
+    setBusy('create'); setError('')
+    try {
+      await api.createBranch(repo.name, name.trim(), source)
+      setName(''); setCreating(false)
+      await onMutate?.()
+    } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function remove(branch) {
+    const label = branch.replace('refs/heads/', '')
+    if (!confirm(`Delete branch ${label}?`)) return
+    setBusy(branch); setError('')
+    try { await api.deleteBranch(repo.name, label); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function makeDefault(branch) {
+    const label = branch.replace('refs/heads/', '')
+    setBusy(branch); setError('')
+    try { await api.setDefaultBranch(repo.name, label); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function compare() {
+    if (!base || !head || base === head) return
+    setBusy('compare'); setError(''); setComparison(null)
+    try { setComparison(await client.compare(repo.name, base, head)) } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  const patch = useMemo(() => comparison ? comparisonPatch(comparison) : null, [comparison])
+
+  return <div className="branches-view">
+    <div className="forge-toolbar"><div><strong>Branches</strong><p className="quiet">Browse branch tips and compare their complete trees.</p></div><div className="forge-toolbar-actions">{branches.length > 1 && <button className="button" onClick={() => { setComparing(!comparing); setComparison(null); setError('') }}>{comparing ? 'Close comparison' : 'Compare branches'}</button>}{!publicMode && <button className="button primary" disabled={!branches.length} onClick={() => setCreating(!creating)}>{creating ? 'Cancel' : 'New branch'}</button>}</div></div>
+    {comparing && <section className="panel compare-composer">
+      <div className="compare-controls"><label><span>Base</span><select value={base} onChange={(event) => { setBase(event.target.value); setComparison(null) }}>{branches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name.replace('refs/heads/', '')} · {shortOid(branch.oid)}</option>)}</select></label><b>←</b><label><span>Compare</span><select value={head} onChange={(event) => { setHead(event.target.value); setComparison(null) }}>{branches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name.replace('refs/heads/', '')} · {shortOid(branch.oid)}</option>)}</select></label><button className="button primary" disabled={busy === 'compare' || !base || !head || base === head} onClick={compare}>{busy === 'compare' ? 'Comparing…' : 'Compare'}</button></div>
+      {error && <div className="inline-error">{error}</div>}
+      {comparison && <><div className="compare-result-toolbar"><span><b>{comparison.changedCount}</b> files changed</span>{patch === null ? <span className="quiet">Patch download is unavailable for binary or large files and comparisons over 1,000 paths.</span> : <button className="button" onClick={() => downloadComparison(repo.name, base, head, patch)}>Download patch</button>}</div><DiffView diff={comparison} /></>}
+    </section>}
+    {creating && <section className="panel branch-composer">
+      <label><span>Branch name</span><input autoFocus value={name} maxLength="200" onChange={(event) => setName(event.target.value)} placeholder="feature/name" /></label>
+      <label><span>Source</span><select value={source} onChange={(event) => setSource(event.target.value)}>{branches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name.replace('refs/heads/', '')} · {shortOid(branch.oid)}</option>)}</select></label>
+      {error && <div className="inline-error">{error}</div>}
+      <div className="form-actions"><button className="button primary" disabled={busy || !name.trim() || !source} onClick={create}>{busy ? 'Creating…' : 'Create branch'}</button></div>
+    </section>}
+    {error && !creating && !comparing && <div className="inline-error">{error}</div>}
+    {!branches.length ? <div className="empty">No branches yet. Create a file to make the initial commit.</div> : <div className={`table branch-table branch-management-table${publicMode ? ' public' : ''}`}>
+      <div className="table-head"><span>Branch</span><span>Commit</span>{!publicMode && <span />}</div>
+      {branches.map((branch) => {
+        const label = branch.name.replace('refs/heads/', '')
+        const isDefault = branch.name === repo.head
+        const isProtected = (repo.protectedRefs || []).includes(branch.name)
+        const isBound = repo.binding?.bound && repo.binding.branch === branch.name
+        return <div className="table-row" key={branch.name}>
+          <button className="branch-link" onClick={() => onBrowse(branch.name)}><strong>{label}</strong>{isDefault && <small className="default-label">default</small>}{isProtected && <small className="default-label">protected</small>}{isBound && <small className="default-label">Clay</small>}</button>
           <code title={branch.oid}>{shortOid(branch.oid)}</code>
-        </button>
-      ))}
-    </div>
-  )
+          {!publicMode && <span className="branch-actions">{!isDefault && <button className="text-button" disabled={busy === branch.name} onClick={() => makeDefault(branch.name)}>Make default</button>}<button className="text-button danger" disabled={busy === branch.name || isDefault || isProtected || isBound} title={isDefault ? 'The default branch cannot be deleted' : isProtected ? 'Protected branches cannot be deleted' : isBound ? 'Clay-linked branches cannot be deleted' : 'Delete branch'} onClick={() => remove(branch.name)}>{busy === branch.name ? 'Working…' : 'Delete'}</button></span>}
+        </div>
+      })}
+    </div>}
+  </div>
+}
+
+function Tags({ repo, publicMode, onMutate }) {
+  const tags = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/tags/'))
+  const branches = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/'))
+  const [creating, setCreating] = useState(false)
+  const [name, setName] = useState('')
+  const [target, setTarget] = useState(repo.head || branches[0]?.name || '')
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+
+  async function create() {
+    setBusy('create'); setError('')
+    try {
+      await api.createTag(repo.name, name.trim(), target, message.trim())
+      setName(''); setMessage(''); setCreating(false)
+      await onMutate?.()
+    } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function remove(tag) {
+    if (!confirm(`Delete tag ${tag}?`)) return
+    setBusy(tag); setError('')
+    try { await api.deleteTag(repo.name, tag); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  return <div className="tags-view">
+    {!publicMode && <div className="forge-toolbar"><div><strong>Tags</strong><p className="quiet">Mark a commit with a lightweight tag or add a message for an annotated tag.</p></div><button className="button primary" disabled={!branches.length} onClick={() => setCreating(!creating)}>{creating ? 'Cancel' : 'New tag'}</button></div>}
+    {creating && <section className="panel tag-composer">
+      <label><span>Tag name</span><input autoFocus value={name} maxLength="200" onChange={(event) => setName(event.target.value)} placeholder="v1.0.0" /></label>
+      <label><span>Target</span><select value={target} onChange={(event) => setTarget(event.target.value)}>{branches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name.replace('refs/heads/', '')} · {shortOid(branch.oid)}</option>)}</select></label>
+      <label><span>Annotation <small>(optional)</small></span><textarea value={message} maxLength="4000" onChange={(event) => setMessage(event.target.value)} placeholder="Release notes" /></label>
+      {error && <div className="inline-error">{error}</div>}
+      <div className="form-actions"><button className="button primary" disabled={busy || !name.trim() || !target} onClick={create}>{busy ? 'Creating…' : 'Create tag'}</button></div>
+    </section>}
+    {error && !creating && <div className="inline-error">{error}</div>}
+    {!tags.length ? <div className="empty">No tags yet.</div> : <div className="table branch-table tag-table">
+      <div className="table-head"><span>Tag</span><span>Object</span><span /></div>
+      {tags.map((tag) => { const label = tag.name.replace('refs/tags/', ''); return <div className="table-row" key={tag.name}><span><strong>{label}</strong></span><code title={tag.oid}>{shortOid(tag.oid)}</code>{!publicMode ? <button className="text-button danger" disabled={busy === label} onClick={() => remove(label)}>{busy === label ? 'Deleting…' : 'Delete'}</button> : <span />}</div> })}
+    </div>}
+  </div>
 }
 
 function PullRequests({ repo, onMutate, onOpenOrigin }) {
@@ -195,11 +418,27 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
   const [title, setTitle] = useState('')
   const [submitBusy, setSubmitBusy] = useState(false)
   const [submitStatus, setSubmitStatus] = useState('')
+  const localBranches = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/') && ref.name !== repo.head)
+  const [sourceBranch, setSourceBranch] = useState(localBranches[0]?.name || '')
+  const [commentBody, setCommentBody] = useState('')
+  const [commentTarget, setCommentTarget] = useState(null)
+  const [commentBusy, setCommentBusy] = useState(false)
+  const [githubPage, setGithubPage] = useState(1)
+  const [githubBusy, setGithubBusy] = useState(false)
+  const [githubDetail, setGithubDetail] = useState(null)
   const pulls = repo.pullRequests || []
   async function merge(number) {
     setBusy(number)
     setError('')
     try { await api.mergePull(repo.name, number); await onMutate() } catch (cause) { setError(cause.message) } finally { setBusy(0) }
+  }
+  async function setPullState(number, state) {
+    setBusy(number); setError('')
+    try {
+      await api.setPullState(repo.name, number, state)
+      setSelected((current) => current ? { ...current, state } : current)
+      await onMutate?.()
+    } catch (cause) { setError(cause.message) } finally { setBusy(0) }
   }
   const githubPulls = repo.githubPulls || []
   const entries = useMemo(() => [
@@ -208,9 +447,22 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
   ], [pulls, githubPulls])
   const visible = entries.filter((pull) => (filter === 'all' || pull.state === filter) && (!query.trim() || pull.title.toLowerCase().includes(query.trim().toLowerCase())))
 
+  async function loadMoreGithubPulls() {
+    const page = Math.min(5, githubPage + 1)
+    setGithubBusy(true); setError('')
+    try { await syncGithubMetadata(repo.name, 'pulls', page); setGithubPage(page); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setGithubBusy(false) }
+  }
+
   async function openNativePull() {
-    setSubmitBusy(true); setError(''); setSubmitStatus('Offering changes to the origin…')
+    setSubmitBusy(true); setError(''); setSubmitStatus(repo.peerOrigin ? 'Offering changes to the origin…' : 'Opening pull request…')
     try {
+      if (!repo.peerOrigin) {
+        const opened = await api.createPull(repo.name, title.trim(), sourceBranch)
+        setSubmitStatus(`Pull request #${opened.number} opened`)
+        setTitle(''); setCreating(false)
+        await onMutate?.()
+        return
+      }
       const started = await api.peerPullRequest(repo.name, title.trim())
       for (let attempt = 0; attempt < 120; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 500))
@@ -238,42 +490,77 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
   }
 
   async function inspect(pull) {
-    setSelected(pull); setDiff(null); setError('')
-    try { setDiff(await api.pull(repo.name, pull.number)) } catch (cause) { setError(cause.message) }
+    setSelected(pull); setDiff(null); setGithubDetail(null); setError(''); setCommentBody(''); setCommentTarget(null)
+    try {
+      if (pull.native) setDiff(await api.pull(repo.name, pull.number))
+      else setGithubDetail(await api.githubPullDetail(repo.name, pull.number))
+    } catch (cause) { setError(cause.message) }
   }
-  if (selected) return <div className="pull-detail"><button className="text-button file-back" onClick={() => { setSelected(null); setDiff(null) }}>← Pull requests</button><header className="pull-detail-header"><div><h2>#{selected.number} {selected.title}</h2><p><span className={`status ${selected.state === 'open' ? 'good' : ''}`}>{selected.state}</span> <code>{selected.sourceShip}/{selected.sourceRepository}</code> wants to merge {shortOid(selected.head)} into {shortOid(selected.base)}</p></div>{selected.state === 'open' && <button className="button primary" disabled={busy} onClick={() => merge(selected.number)}>{busy === selected.number ? 'Validating…' : 'Merge pull request'}</button>}</header>{error && <div className="inline-error">{error}</div>}{!diff ? <div className="empty">Loading diff…</div> : <DiffView diff={diff} />}</div>
+  async function addComment() {
+    if (!commentBody.trim()) return
+    setCommentBusy(true); setError('')
+    try {
+      await api.addPullComment(repo.name, selected.number, commentBody.trim(), commentTarget?.path || '', commentTarget?.line || 0, commentTarget?.side || '')
+      setCommentBody(''); setCommentTarget(null)
+      setDiff(await api.pull(repo.name, selected.number))
+      await onMutate?.()
+    } catch (cause) { setError(cause.message) } finally { setCommentBusy(false) }
+  }
+  async function setCommentResolved(comment, resolved) {
+    setCommentBusy(true); setError('')
+    try {
+      await api.resolvePullComment(repo.name, selected.number, comment.id, resolved)
+      setDiff(await api.pull(repo.name, selected.number))
+      await onMutate?.()
+    } catch (cause) { setError(cause.message) } finally { setCommentBusy(false) }
+  }
+  if (selected && !selected.native) return <GithubDetail detail={githubDetail} fallback={selected} kind="Pull request" error={error} onBack={() => { setSelected(null); setGithubDetail(null); setError('') }} />
+  if (selected) return <div className="pull-detail">
+    <button className="text-button file-back" onClick={() => { setSelected(null); setDiff(null); setCommentTarget(null) }}>← Pull requests</button>
+    <header className="pull-detail-header"><div><h2>#{selected.number} {selected.title}</h2><p><span className={`status ${selected.state === 'open' ? 'good' : ''}`}>{selected.state}</span> <code>{selected.sourceShip}/{selected.sourceRepository}</code> wants to merge {shortOid(selected.head)} into {shortOid(selected.base)}</p></div><div className="pr-actions">{selected.state === 'closed' && <button className="button" disabled={busy} onClick={() => setPullState(selected.number, 'open')}>{busy === selected.number ? 'Reopening…' : 'Reopen'}</button>}{selected.state === 'open' && <><button className="button" disabled={busy} onClick={() => setPullState(selected.number, 'closed')}>{busy === selected.number ? 'Closing…' : 'Close'}</button><button className="button primary" disabled={busy} onClick={() => merge(selected.number)}>{busy === selected.number ? 'Validating…' : 'Merge pull request'}</button></>}</div></header>
+    {error && <div className="inline-error">{error}</div>}
+    {!diff ? <div className="empty">Loading diff…</div> : <>
+      <DiffView diff={diff} onCommentTarget={setCommentTarget} />
+      <section className="review-discussion">
+        <h3>Discussion <span>{diff.comments?.length || 0}</span></h3>
+        {(diff.comments || []).map((comment) => <article className={`review-comment ${comment.resolved ? 'resolved' : ''}`} key={comment.id}><header><strong>{comment.author}</strong><span>{comment.path ? <code>{comment.path} · {comment.side === 'base' ? 'base ' : ''}L{comment.line}</code> : 'General review'} · <time title={comment.created}>{comment.created}</time></span><button className="text-button" disabled={commentBusy} onClick={() => setCommentResolved(comment, !comment.resolved)}>{comment.resolved ? 'Reopen' : 'Resolve'}</button></header><p>{comment.body}</p></article>)}
+        {!diff.comments?.length && <div className="empty compact">No review comments yet. Click a changed line to anchor a comment.</div>}
+        <div className="review-composer"><div className="review-target"><strong>{commentTarget ? `${commentTarget.path} · ${commentTarget.side === 'base' ? 'base ' : ''}L${commentTarget.line}` : 'General comment'}</strong>{commentTarget && <button className="text-button" onClick={() => setCommentTarget(null)}>Clear line</button>}</div><textarea value={commentBody} maxLength="16384" onChange={(event) => setCommentBody(event.target.value)} placeholder={commentTarget ? 'Comment on this line…' : 'Leave a review comment…'} /><div className="form-actions"><button className="button primary" disabled={commentBusy || !commentBody.trim()} onClick={addComment}>{commentBusy ? 'Commenting…' : 'Comment'}</button></div></div>
+      </section>
+    </>}
+  </div>
   return <>
-    <div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><div className="forge-toolbar-actions"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter pull requests…" />{repo.peerOrigin && <button className="button primary" onClick={() => { setCreating(true); setSubmitStatus(''); setError('') }}>New pull request</button>}</div></div>
-    {creating && repo.peerOrigin && <section className="panel pr-composer">
-      <div className="section-title"><div><h2>Open a pull request</h2><p>Send this fork’s default branch to its native Urbit origin for review.</p></div><button className="text-button" disabled={submitBusy} onClick={() => { setCreating(false); setSubmitStatus(''); setError('') }}>Cancel</button></div>
+    <div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><div className="forge-toolbar-actions"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter pull requests…" />{repo.githubOrigin && githubPage < 5 && <button className="button" disabled={githubBusy} onClick={loadMoreGithubPulls}>{githubBusy ? 'Loading…' : `GitHub page ${githubPage + 1}`}</button>}{(repo.peerOrigin || localBranches.length > 0) && <button className="button primary" onClick={() => { setSourceBranch(localBranches[0]?.name || ''); setCreating(true); setSubmitStatus(''); setError('') }}>New pull request</button>}</div></div>
+    {creating && <section className="panel pr-composer">
+      <div className="section-title"><div><h2>Open a pull request</h2><p>{repo.peerOrigin ? 'Send this fork’s default branch to its native Urbit origin for review.' : 'Compare a branch with the default branch and start a review.'}</p></div><button className="text-button" disabled={submitBusy} onClick={() => { setCreating(false); setSubmitStatus(''); setError('') }}>Cancel</button></div>
       <div className="pr-compare">
-        <div><span>Source</span><strong>{repo.owner}/{repo.name}</strong><code>{(repo.head || '').replace('refs/heads/', '')} · {shortOid((repo.refs || []).find((ref) => ref.name === repo.head)?.oid)}</code></div>
+        <div><span>Source</span><strong>{repo.owner}/{repo.name}</strong>{repo.peerOrigin ? <code>{(repo.head || '').replace('refs/heads/', '')} · {shortOid((repo.refs || []).find((ref) => ref.name === repo.head)?.oid)}</code> : <select value={sourceBranch} onChange={(event) => setSourceBranch(event.target.value)}>{localBranches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name.replace('refs/heads/', '')} · {shortOid(branch.oid)}</option>)}</select>}</div>
         <b>→</b>
-        <div><span>Target</span><strong>{repo.peerOrigin.ship}/{repo.peerOrigin.repository}</strong><code>{(repo.head || '').replace('refs/heads/', '')}</code></div>
+        <div><span>Target</span><strong>{repo.peerOrigin ? `${repo.peerOrigin.ship}/${repo.peerOrigin.repository}` : `${repo.owner}/${repo.name}`}</strong><code>{(repo.head || '').replace('refs/heads/', '')}</code></div>
       </div>
       <label><span>Title</span><input autoFocus value={title} maxLength="200" onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && title.trim() && !submitBusy) openNativePull() }} placeholder="Summarize the changes" /></label>
       {error && <div className="inline-error">{error}</div>}
       {submitStatus && <div className={`transfer-status ${!submitBusy ? 'success' : ''}`}>{submitBusy && <span className="spinner" />}{submitStatus}</div>}
-      <div className="form-actions split"><small className="quiet">The origin validates every object and records a reviewable diff.</small><div className="pr-actions">{submitStatus && !submitBusy && <button className="button" onClick={() => onOpenOrigin?.(repo.peerOrigin.ship, repo.peerOrigin.repository)}>View origin</button>}<button className="button primary" disabled={submitBusy || !title.trim() || (!!submitStatus && !error)} onClick={openNativePull}>{submitBusy ? 'Opening…' : 'Create pull request'}</button></div></div>
+      <div className="form-actions split"><small className="quiet">{repo.peerOrigin ? 'The origin validates every object and records a reviewable diff.' : 'The branch tips are fixed when the review is opened.'}</small><div className="pr-actions">{repo.peerOrigin && submitStatus && !submitBusy && <button className="button" onClick={() => onOpenOrigin?.(repo.peerOrigin.ship, repo.peerOrigin.repository)}>View origin</button>}<button className="button primary" disabled={submitBusy || !title.trim() || (!repo.peerOrigin && !sourceBranch) || (!!submitStatus && !error)} onClick={openNativePull}>{submitBusy ? 'Opening…' : 'Create pull request'}</button></div></div>
     </section>}
     {!entries.length ? <div className="empty compact">{repo.peerOrigin ? 'No pull requests opened from this repository yet.' : 'No pull requests.'}</div> : !visible.length ? <div className="empty compact">No pull requests match this filter.</div> : <div className="pull-list">
     {error && <div className="inline-error">{error}</div>}
     {visible.map((pull) => pull.native ? <article className="pull-row clickable" key={`native-${pull.number}`} onClick={() => inspect(pull)}>
       <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.state}</span><h3>#{pull.number} {pull.title}</h3><p><code>{pull.sourceShip}/{pull.sourceRepository}</code> proposes <code>{shortOid(pull.head)}</code></p></div>
       {pull.state === 'open' && <button className="button primary" disabled={busy} onClick={(event) => { event.stopPropagation(); merge(pull.number) }}>{busy === pull.number ? 'Validating…' : 'Merge'}</button>}
-    </article> : <a className="pull-row forge-link" key={`github-${pull.number}`} href={pull.url} target="_blank" rel="noreferrer">
+    </article> : <button className="pull-row forge-link clickable row-button" key={`github-${pull.number}`} onClick={() => inspect(pull)}>
       <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.draft ? 'draft' : pull.state}</span><h3>#{pull.number} {pull.title}</h3><p>opened by <strong>{pull.author}</strong> on GitHub</p></div><span className="external-arrow">↗</span>
-    </a>)}
+    </button>)}
     </div>}
   </>
 }
 
-function DiffView({ diff }) {
-  return <div className="diff-view"><div className="diff-overview"><b>{diff.changedCount || 0}</b> files changed <code>{shortOid(diff.base)}..{shortOid(diff.head)}</code></div>{(diff.changes || []).map((change) => <FileDiff key={change.path} change={change} />)}</div>
+function DiffView({ diff, onCommentTarget }) {
+  return <div className="diff-view"><div className="diff-overview"><b>{diff.changedCount || 0}</b> files changed <code>{shortOid(diff.base)}..{shortOid(diff.head)}</code></div>{(diff.changes || []).map((change) => <FileDiff key={change.path} change={change} onCommentTarget={onCommentTarget} />)}</div>
 }
 
-function FileDiff({ change }) {
-  if (change.truncated) return <section className="file-diff"><header><code>{change.path}</code><span>{change.status}</span></header><div className="empty compact">Diff omitted because this file exceeds 256 KiB.</div></section>
+function FileDiff({ change, onCommentTarget }) {
+  if (change.truncated) return <section className="file-diff"><header><code>{change.path}</code><span>{change.status}</span></header><div className="empty compact">{change.oldSize || change.newSize ? 'Diff omitted because this file exceeds 256 KiB.' : 'Diff body omitted from this revision summary.'}</div></section>
   let oldText = '', newText = ''
   try { oldText = change.oldContent ? decodeBase64(change.oldContent).text ?? '' : ''; newText = change.newContent ? decodeBase64(change.newContent).text ?? '' : '' } catch { /* binary */ }
   if ((change.oldContent && !oldText) || (change.newContent && !newText)) return <section className="file-diff"><header><code>{change.path}</code><span>{change.status}</span></header><div className="empty compact">Binary file changed.</div></section>
@@ -287,31 +574,59 @@ function FileDiff({ change }) {
   before.slice(prefix, before.length - suffix).forEach((line, index) => rows.push({ type: 'delete', line, old: prefix + index + 1, next: '' }))
   after.slice(prefix, after.length - suffix).forEach((line, index) => rows.push({ type: 'add', line, old: '', next: prefix + index + 1 }))
   after.slice(after.length - suffix, Math.min(after.length, after.length - suffix + 3)).forEach((line, index) => rows.push({ type: 'context', line, old: before.length - suffix + index + 1, next: after.length - suffix + index + 1 }))
-  return <section className="file-diff"><header><code>{change.path}</code><span>{change.status} · {change.oldSize} → {change.newSize} B</span></header><div className="hunk-head">@@ -{prefix + 1} +{prefix + 1} @@</div><pre>{rows.map((row, index) => <span className={`diff-line ${row.type}`} key={index}><i>{row.old}</i><i>{row.next}</i><b>{row.type === 'add' ? '+' : row.type === 'delete' ? '-' : ' '}</b><code>{row.line}</code></span>)}</pre></section>
+  return <section className="file-diff"><header><code>{change.path}</code><span>{change.status} · {change.oldSize} → {change.newSize} B</span></header><div className="hunk-head">@@ -{prefix + 1} +{prefix + 1} @@</div><pre>{rows.map((row, index) => { const side = row.type === 'delete' ? 'base' : 'head'; const line = side === 'base' ? row.old : row.next; return <span className={`diff-line ${row.type} ${onCommentTarget && line ? 'commentable' : ''}`} key={index} onClick={() => line && onCommentTarget?.({ path: change.path, line, side })}><i>{row.old}</i><i>{row.next}</i><b>{row.type === 'add' ? '+' : row.type === 'delete' ? '-' : ' '}</b><code>{row.line}</code></span> })}</pre></section>
 }
 
-function Issues({ repo }) {
+function Issues({ repo, onMutate }) {
   const [filter, setFilter] = useState('open')
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [selected, setSelected] = useState(null)
+  const [detail, setDetail] = useState(null)
   const issues = repo.githubIssues || []
   if (!repo.githubOrigin) return <div className="empty">Connect a GitHub origin to synchronize issues.</div>
-  if (!issues.length) return <div className="empty">No synchronized GitHub issues.</div>
   const visible = issues.filter((issue) => (filter === 'all' || issue.state === filter) && (!query.trim() || issue.title.toLowerCase().includes(query.trim().toLowerCase())))
-  return <><div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter issues…" /></div>{!visible.length ? <div className="empty compact">No issues match this filter.</div> : <div className="issue-list">{visible.map((issue) => <a className="issue-row forge-link" key={issue.number} href={issue.url} target="_blank" rel="noreferrer"><span className={`issue-icon ${issue.state}`}>◉</span><div><h3>{issue.title}</h3><p>#{issue.number} · {issue.state} · {issue.author}</p></div><span className="external-arrow">↗</span></a>)}</div>}</>
+  async function sync(targetPage) {
+    setBusy(true); setError('')
+    try { await syncGithubMetadata(repo.name, 'issues', targetPage); setPage(targetPage); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy(false) }
+  }
+  async function inspect(issue) {
+    setSelected(issue); setDetail(null); setError('')
+    try { setDetail(await api.githubIssue(repo.name, issue.number)) } catch (cause) { setError(cause.message) }
+  }
+  if (selected) return <GithubDetail detail={detail} fallback={selected} kind="Issue" error={error} onBack={() => { setSelected(null); setDetail(null); setError('') }} />
+  return <><div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><div className="forge-toolbar-actions"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter issues…" /><button className="button" disabled={busy} onClick={() => sync(1)}>{busy ? 'Syncing…' : 'Refresh'}</button>{page < 5 && <button className="button" disabled={busy} onClick={() => sync(page + 1)}>{busy ? 'Loading…' : `GitHub page ${page + 1}`}</button>}</div></div>{error && <div className="inline-error">{error}</div>}{!issues.length ? <div className="empty compact">No synchronized GitHub issues.</div> : !visible.length ? <div className="empty compact">No issues match this filter.</div> : <div className="issue-list">{visible.map((issue) => <button className="issue-row forge-link row-button" key={issue.number} onClick={() => inspect(issue)}><span className={`issue-icon ${issue.state}`}>◉</span><div><h3>{issue.title}</h3><p>#{issue.number} · {issue.state} · {issue.author}</p></div><span className="external-arrow">›</span></button>)}</div>}</>
+}
+
+function GithubDetail({ detail, fallback, kind, error, onBack }) {
+  const item = detail || fallback
+  return <div className="github-detail">
+    <button className="text-button file-back" onClick={onBack}>← {kind === 'Issue' ? 'Issues' : 'Pull requests'}</button>
+    <header className="pull-detail-header"><div><h2>#{item.number} {item.title}</h2><p><span className={`status ${item.state === 'open' ? 'good' : ''}`}>{item.draft ? 'draft' : item.merged ? 'merged' : item.state}</span> opened by <strong>{item.author}</strong>{githubDate(item.created) ? ` · ${githubDate(item.created)}` : ''}</p></div>{item.url && <a className="button" href={item.url} target="_blank" rel="noreferrer">Open on GitHub ↗</a>}</header>
+    {error && <div className="inline-error">{error}</div>}
+    {!detail && !error ? <div className="empty">Loading from GitHub…</div> : detail && <>
+      {detail.pullRequest && <div className="github-detail-stats"><code>{detail.head || 'head'}</code><span>→</span><code>{detail.base || 'base'}</code><b className="added">+{detail.additions}</b><b className="deleted">−{detail.deletions}</b><span>{detail.changedFiles} files</span></div>}
+      <article className="panel github-detail-body"><header><strong>{detail.author}</strong><span>{githubDate(detail.updated) ? `updated ${githubDate(detail.updated)}` : ''}</span></header>{detail.body ? <p>{detail.body}</p> : <div className="empty compact">No description provided.</div>}</article>
+      <p className="quiet github-detail-footer">{detail.comments} comments{detail.pullRequest && detail.mergeableKnown ? ` · ${detail.mergeable ? 'mergeable' : 'not mergeable'}` : ''}</p>
+    </>}
+  </div>
 }
 
 function Commits({ data, loading, onSelect }) {
   if (loading) return <div className="empty">Loading history…</div>
-  if (!data?.commits?.length) return <div className="empty">No commits yet.</div>
+  if (!data?.commits?.length) return <div className="empty">No history yet.</div>
   return (
     <div className="commit-list">
-      {data.commits.map((commit) => (
-        <div className="commit-row" key={commit.oid}>
+      {data.commits.map((commit) => {
+        const clay = commit.kind === 'clay'
+        return <div className="commit-row" key={commit.oid}>
           <span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span>
-          <div><strong>{commit.subject || 'Untitled commit'}</strong><small>{commit.author ? identityLabel(commit.author) : (commit.parent ? `parent ${shortOid(commit.parent)}` : 'root commit')}{dateLabel(commit.committer || commit.author) ? ` committed ${dateLabel(commit.committer || commit.author)}` : ''}</small></div>
-          <button className="commit-hash" title={`View ${commit.oid}`} onClick={() => onSelect?.(commit)} disabled={!onSelect}><code>{shortOid(commit.oid)}</code></button>
+          <div><strong>{clay ? `Revision ${commit.revision}` : commit.subject || 'Untitled commit'}</strong><small>{commit.author ? identityLabel(commit.author) : (commit.parent ? `parent ${shortOid(commit.parent)}` : 'root commit')}{dateLabel(commit.committer || commit.author) ? ` · ${dateLabel(commit.committer || commit.author)}` : ''}{clay && commit.gitCommit ? ` · Git ${shortOid(commit.gitCommit)}` : ''}</small></div>
+          <button className="commit-hash" title={`View ${commit.oid}`} onClick={() => onSelect?.(commit)} disabled={!onSelect}><code>{historyId(commit)}</code></button>
         </div>
-      ))}
+      })}
     </div>
   )
 }
@@ -319,10 +634,11 @@ function Commits({ data, loading, onSelect }) {
 function CommitDetail({ data, onBack }) {
   if (!data) return <div className="empty">Loading commit…</div>
   const commit = data.commit
+  const clay = data.historyKind === 'clay' || commit.kind === 'clay'
   return <div className="commit-detail">
-    <button className="text-button file-back" onClick={onBack}>← Commit history</button>
-    <section className="panel commit-summary"><div className="commit-avatar large">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</div><div><h2>{commit.subject || 'Untitled commit'}</h2><p>{identityLabel(commit.author)} authored · {identityLabel(commit.committer)} committed <span title={dateLabel(commit.committer)}>{dateLabel(commit.committer)}</span></p><code>{commit.oid}</code></div></section>
-    {data.message && data.message !== commit.subject && <pre className="commit-message">{data.message}</pre>}
+    <button className="text-button file-back" onClick={onBack}>← {clay ? 'Revision history' : 'Commit history'}</button>
+    <section className="panel commit-summary"><div className="commit-avatar large">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</div><div><h2>{clay ? `Revision ${commit.revision}` : commit.subject || 'Untitled commit'}</h2><p>{identityLabel(commit.author)} {clay ? 'committed this Clay revision' : `authored · ${identityLabel(commit.committer)} committed`} <span title={dateLabel(commit.committer)}>{dateLabel(commit.committer)}</span></p>{clay ? <div className="clay-revision-meta"><code title="Clay revision">r{commit.revision}</code><code title="Canonical Clay timestamp">{commit.timestampCase}</code><code className="tako" title="Clay commit hash">{commit.tako}</code>{commit.gitCommit && <code title="Mapped Git commit">Git {commit.gitCommit}</code>}</div> : <code>{commit.oid}</code>}</div></section>
+    {!clay && data.message && data.message !== commit.subject && <pre className="commit-message">{data.message}</pre>}
     <DiffView diff={{ changedCount: data.changedCount, base: commit.parent, head: commit.oid, changes: data.changes || [] }} />
   </div>
 }
@@ -342,6 +658,8 @@ function Settings({ repo, onMutate }) {
   const [githubHead, setGithubHead] = useState('')
   const [githubBase, setGithubBase] = useState((repo.head || 'refs/heads/main').replace('refs/heads/', ''))
   const [githubBranch, setGithubBranch] = useState(repo.head || 'refs/heads/main')
+  const [bridgeStatus, setBridgeStatus] = useState(null)
+  const [lfsGc, setLfsGc] = useState(null)
 
   useEffect(() => {
     setDescription(repo.description || '')
@@ -350,12 +668,26 @@ function Settings({ repo, onMutate }) {
     setGithubBranch(repo.head || 'refs/heads/main')
   }, [repo])
 
+  async function loadBridgeStatus() {
+    if (!repo.binding?.bound) { setBridgeStatus(null); return }
+    try {
+      setBridgeStatus(await api.clayStatus(repo.name))
+    } catch {
+      setBridgeStatus(null)
+    }
+  }
+
+  useEffect(() => {
+    loadBridgeStatus()
+  }, [repo.name, repo.binding?.bound, repo.binding?.desk, repo.binding?.branch, repo.binding?.lastClay, repo.binding?.lastGit])
+
   async function act(label, fn) {
     setBusy(label)
     setError('')
     try {
       await fn()
       await onMutate()
+      await loadBridgeStatus()
     } catch (cause) {
       setError(cause.message)
     } finally {
@@ -409,6 +741,27 @@ function Settings({ repo, onMutate }) {
     } catch (cause) { setError(cause.message); setSyncResult('') } finally { setBusy('') }
   }
 
+  async function scanLfs() {
+    setBusy('lfs-scan'); setError('')
+    try { setLfsGc(await api.lfsGcPreview(repo.name)) } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
+  async function collectLfs() {
+    if (!window.confirm(`Delete ${lfsGc?.candidateCount || 0} unreferenced LFS objects from ship storage?`)) return
+    setBusy('lfs-gc'); setError('')
+    try {
+      const started = await api.lfsGc(repo.name)
+      setSyncResult(`${started.scheduled} object deletions scheduled`)
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        const preview = await api.lfsGcPreview(repo.name)
+        setLfsGc(preview)
+        if (preview.candidateCount === 0) break
+      }
+      await onMutate()
+    } catch (cause) { setError(cause.message) } finally { setBusy('') }
+  }
+
   return (
     <div className="settings-grid">
       {error && <div className="inline-error">{error}</div>}
@@ -436,15 +789,23 @@ function Settings({ repo, onMutate }) {
         {syncResult && <div className="transfer-status">{syncResult}</div>}
       </section>}
       <section className="panel">
-        <div className="section-title"><div><h2>Clay bridge</h2><p>Publish a desk as this repository, and apply accepted pushes back into Clay.</p></div><span className={repo.binding?.bound ? 'status good' : 'status'}>{repo.binding?.bound ? 'bound' : 'unbound'}</span></div>
+        <div className="section-title"><div><h2>Clay bridge</h2><p>Keep a Git branch and a Clay desk synchronized in either direction.</p></div><span className={repo.binding?.bound ? 'status good' : 'status'}>{repo.binding?.bound ? 'bound' : 'unbound'}</span></div>
         {repo.binding?.bound ? (
           <>
             <div className="binding-card"><span>Desk</span><code>{repo.binding.desk}</code><span>Branch</span><code>{repo.binding.branch}</code></div>
+            {bridgeStatus && <div className={`bridge-state ${bridgeStatus.relation}`}>
+              <div><span className="bridge-state-label">{({ 'in-sync': 'In sync', 'git-ahead': 'Git ahead', 'clay-ahead': 'Clay ahead', diverged: 'Diverged', unmapped: 'Not synchronized' })[bridgeStatus.relation] || bridgeStatus.relation}</span><small>{bridgeStatus.contentsMatch ? 'The branch and desk contain the same bytes.' : bridgeStatus.canonicalDifference ? 'Synchronized; Clay canonicalized one or more file representations.' : 'The branch and desk contain different files.'}</small></div>
+              <dl><div><dt>Clay</dt><dd><code>r{bridgeStatus.clayRevision}</code></dd></div><div><dt>Git</dt><dd><code title={bridgeStatus.branchCommit}>{bridgeStatus.branchCommit ? shortOid(bridgeStatus.branchCommit) : 'no head'}</code></dd></div></dl>
+            </div>}
             {!!repo.binding.history?.length && <div className="clay-history"><div className="table-head"><span>Clay revision ↔ Git commit</span><span>Direction</span></div>{repo.binding.history.map((link) => <button type="button" className="table-row" key={`${link.clayRevision}-${link.commit}`} title={link.when}><span><b>r{link.clayRevision}</b><code>{shortOid(link.commit)}</code></span><span className="quiet">{link.direction === 'clay-to-git' ? 'Clay → Git' : 'Git → Clay'}</span></button>)}</div>}
             <label><span>Commit message</span><input value={message} onChange={(e) => setMessage(e.target.value)} /></label>
-            <div className="form-actions split">
-              <button className="button ghost danger-text" onClick={() => act('unbind', () => api.unbind(repo.name))}>Unbind</button>
-              <button className="button primary" disabled={busy || !message.trim()} onClick={() => act('publish', () => api.publish(repo.name, message.trim()))}>{busy === 'publish' ? 'Publishing…' : 'Publish desk'}</button>
+            <div className="bridge-actions">
+              <button className="button" disabled={busy || bridgeStatus?.contentsMatch || !bridgeStatus?.canApply} onClick={() => act('apply-clay', () => api.applyToClay(repo.name))}>{busy === 'apply-clay' ? 'Applying…' : 'Apply branch to desk'}</button>
+              <button className="button primary" disabled={busy || !message.trim() || bridgeStatus?.contentsMatch} onClick={() => act('publish', () => api.publish(repo.name, message.trim()))}>{busy === 'publish' ? 'Publishing…' : 'Publish desk to branch'}</button>
+            </div>
+            <div className="form-actions split bridge-footer">
+              <small className="quiet">Clay rejects invalid desk updates and returns the build trace.</small>
+              <button className="button ghost danger-text" disabled={busy} onClick={() => act('unbind', () => api.unbind(repo.name))}>Unbind</button>
             </div>
           </>
         ) : (
@@ -485,6 +846,11 @@ function Settings({ repo, onMutate }) {
           </div>
         </div>
       </section>
+      <section className="panel">
+        <div className="section-title"><div><h2>Git LFS storage</h2><p>Locks protect shared binary paths. Cleanup removes verified payloads that no advertised ref can reach.</p></div><span className="status">{repo.lfsLockCount || 0} locks</span></div>
+        {lfsGc && <div className="binding-card"><span>Unreferenced objects</span><strong>{lfsGc.candidateCount}</strong><span>Bytes eligible</span><strong title={`${lfsGc.candidateBytes} bytes`}>{formatBytes(lfsGc.candidateBytes)}</strong></div>}
+        <div className="form-actions split"><small className="quiet">Cleanup is explicit and deletes at most 100 object-store payloads per run.</small><div><button className="button" disabled={busy} onClick={scanLfs}>{busy === 'lfs-scan' ? 'Scanning…' : 'Scan'}</button>{lfsGc?.candidateCount > 0 && <button className="button danger" disabled={busy} onClick={collectLfs}>{busy === 'lfs-gc' ? 'Deleting…' : 'Delete unreferenced'}</button>}</div></div>
+      </section>
       <section className="panel danger-zone">
         <div><h2>Delete repository</h2><p>Remove refs, Git objects, binding metadata, and LFS pointers held by this repository.</p></div>
         <button className="button danger" onClick={() => { if (window.confirm(`Delete ${repo.name}? This cannot be undone.`)) act('delete', () => api.remove(repo.name)) }}>Delete</button>
@@ -501,11 +867,20 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   const [lineEnd, setLineEnd] = useState(initialRoute.lineEnd)
   const [branch, setBranch] = useState(initialRoute.branch)
   const [commitOid, setCommitOid] = useState(initialRoute.commitOid)
+  const [searchQuery, setSearchQuery] = useState(initialRoute.searchQuery)
+  const [searchDraft, setSearchDraft] = useState(initialRoute.searchQuery)
+  const [searchData, setSearchData] = useState(null)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const [creatingFile, setCreatingFile] = useState(false)
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
   const [commitDetail, setCommitDetail] = useState(null)
   const [commitLoading, setCommitLoading] = useState(false)
   const cloneUrl = `${window.location.origin}/git/${repo.name}.git`
+  const historyData = tab === 'code' ? detail?.commits : tab === 'commits' ? detail : null
+  const clayHistory = historyData?.historyKind === 'clay' || (repo.binding?.bound && branch === repo.binding.branch)
+  const revisionCount = historyData?.revisionCount
 
   function applyRoute(route) {
     setTab(route.tab)
@@ -514,12 +889,14 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
     setLineStart(route.lineStart)
     setLineEnd(route.lineEnd)
     setCommitOid(route.commitOid)
+    setSearchQuery(route.searchQuery)
+    setSearchDraft(route.searchQuery)
   }
 
   function navigate(changes, replace = false) {
-    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, ...changes }
+    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, searchQuery, ...changes }
     if (Object.hasOwn(changes, 'filePath') && changes.filePath !== filePath && !Object.hasOwn(changes, 'lineStart')) { route.lineStart = null; route.lineEnd = null }
-    if (route.tab !== 'code') { route.filePath = ''; route.lineStart = null; route.lineEnd = null }
+    if (route.tab !== 'code') { route.filePath = ''; route.lineStart = null; route.lineEnd = null; route.searchQuery = '' }
     if (!route.filePath) { route.lineStart = null; route.lineEnd = null }
     if (route.tab !== 'commits') route.commitOid = ''
     history[replace ? 'replaceState' : 'pushState']({}, '', repositoryHash(repo, route))
@@ -545,6 +922,19 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   }, [repo.name, repo.refs, tab, branch, client])
 
   useEffect(() => {
+    let active = true
+    setSearchData(null)
+    setSearchError('')
+    if (tab !== 'code' || searchQuery.length < 2) { setSearchLoading(false); return () => { active = false } }
+    setSearchLoading(true)
+    client.search(repo.name, searchQuery, branch)
+      .then((data) => active && setSearchData(data))
+      .catch((cause) => active && setSearchError(cause.message))
+      .finally(() => active && setSearchLoading(false))
+    return () => { active = false }
+  }, [repo.name, tab, branch, searchQuery, client])
+
+  useEffect(() => {
     const restore = () => applyRoute(routeForRepository(repo))
     restore()
     addEventListener('popstate', restore)
@@ -563,6 +953,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   }, [repo.name, tab, commitOid, client])
 
   function browseBranch(ref) {
+    setCreatingFile(false)
     navigate({ branch: ref, filePath: '', tab: 'code', commitOid: '' })
   }
 
@@ -581,19 +972,23 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
         <div className="clone-box"><code>{cloneUrl}</code><button className="icon-button" title="Copy clone URL" onClick={() => navigator.clipboard.writeText(cloneUrl)}><CopyIcon /></button></div>
       </header>
       <div className="repo-meta">
-        <span><b>{repo.fileCount || 0}</b> files</span><span><b>{repo.commitCount || 0}</b> commits</span><span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span><span title="Large file payloads in ship object storage"><b>{repo.lfsObjectCount || 0}</b> LFS files</span>
+        <span><b>{repo.fileCount || 0}</b> files</span>{clayHistory ? <span><b>{revisionCount ?? '—'}</b> revisions</span> : <span><b>{repo.commitCount || 0}</b> commits</span>}<span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span><span title="Large file payloads in ship object storage"><b>{repo.lfsObjectCount || 0}</b> LFS files</span>
         {repo.binding?.bound && <span className="clay-chip">Clay · {repo.binding.desk}</span>}
       </div>
       <nav className="tabs">
-        {(publicMode ? [['code', 'Code'], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['commits', 'Commits']] : [['code', 'Code'], ['issues', 'Issues', repo.githubIssues?.length], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['commits', 'Commits'], ['settings', 'Settings']]).map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => navigate({ tab: name, filePath: '', commitOid: '' })}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
+        {(publicMode ? [['code', 'Code'], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['commits', clayHistory ? 'Revisions' : 'Commits']] : [['code', 'Code'], ['issues', 'Issues', repo.githubIssues?.length], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['commits', clayHistory ? 'Revisions' : 'Commits'], ['settings', 'Settings']]).map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => navigate({ tab: name, filePath: '', commitOid: '' })}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
       </nav>
       <section className="repo-body">
-        {tab === 'code' && <div className="branch-context"><select value={branch} onChange={(event) => browseBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option key={ref.name} value={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select><span>{detail?.files?.files?.length || 0} files</span>{branch !== repo.head && <button className="text-button" onClick={() => browseBranch(repo.head)}>Default branch</button>}</div>}
-        {tab === 'code' && (filePath
-          ? <FileView repository={repo.name} path={filePath} branch={branch} lineStart={lineStart} lineEnd={lineEnd} onSelectLine={(selected, extend) => { const anchor = extend && lineStart ? lineStart : selected; navigate({ lineStart: Math.min(anchor, selected), lineEnd: Math.max(anchor, selected) }) }} editable={!publicMode && branch === repo.head} onBack={() => navigate({ filePath: '' })} onSaved={mutate} client={client} />
-          : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} />)}
-        {tab === 'issues' && <Issues repo={repo} />}
-        {tab === 'branches' && <Branches repo={repo} selected={branch} onBrowse={browseBranch} />}
+        {tab === 'code' && <div className="branch-context"><select value={branch} onChange={(event) => browseBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option key={ref.name} value={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select><span>{detail?.files?.files?.length || 0} files</span>{branch !== repo.head && <button className="text-button" onClick={() => browseBranch(repo.head)}>Default branch</button>}{!publicMode && !filePath && !creatingFile && <button className="button new-file-button" onClick={() => { setCreatingFile(true); navigate({ searchQuery: '' }, true) }}>New file</button>}<form className="code-search" onSubmit={(event) => { event.preventDefault(); const query = searchDraft.trim(); if (!query || query.length >= 2) { setCreatingFile(false); navigate({ filePath: '', lineStart: null, lineEnd: null, searchQuery: query }) } }}><input value={searchDraft} maxLength={200} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Search code" aria-label="Search repository code" />{searchQuery && <button type="button" className="text-button" onClick={() => navigate({ searchQuery: '', filePath: '' })}>Clear</button>}</form></div>}
+        {tab === 'code' && (creatingFile
+          ? <NewFile repository={repo.name} branch={branch} onCancel={() => setCreatingFile(false)} onCreated={async (path) => { setCreatingFile(false); await mutate(); navigate({ filePath: path, searchQuery: '', lineStart: null, lineEnd: null }) }} />
+          : filePath
+          ? <FileView repository={repo.name} path={filePath} branch={branch} githubOrigin={!publicMode ? repo.githubOrigin : null} lineStart={lineStart} lineEnd={lineEnd} onSelectLine={(selected, extend, dragAnchor) => { const anchor = extend ? (dragAnchor || lineStart || selected) : selected; navigate({ lineStart: Math.min(anchor, selected), lineEnd: Math.max(anchor, selected) }) }} onOpenCommit={(commit) => commit && navigate({ tab: 'commits', filePath: '', commitOid: commit.oid })} editable={!publicMode} onBack={() => navigate({ filePath: '' })} onSaved={mutate} onDeleted={async () => { await mutate(); navigate({ filePath: '', lineStart: null, lineEnd: null }) }} client={client} />
+          : searchQuery ? <SearchResults data={searchData} query={searchQuery} loading={searchLoading} error={searchError} onOpen={(result) => navigate({ tab: 'code', filePath: result.path, lineStart: result.line, lineEnd: result.line, commitOid: '' })} />
+            : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} />)}
+        {tab === 'issues' && <Issues repo={repo} onMutate={mutate} />}
+        {tab === 'branches' && <Branches repo={repo} publicMode={publicMode} onBrowse={browseBranch} onMutate={mutate} client={client} />}
+        {tab === 'tags' && <Tags repo={repo} publicMode={publicMode} onMutate={mutate} />}
         {tab === 'commits' && (commitOid ? commitLoading || !commitDetail ? <div className="empty">Loading commit…</div> : <CommitDetail data={commitDetail} onBack={() => navigate({ commitOid: '' })} /> : <Commits data={detail} loading={loading} onSelect={openCommit} />)}
         {tab === 'pulls' && <PullRequests repo={repo} onMutate={mutate} onOpenOrigin={onOpenOrigin} />}
         {tab === 'settings' && <Settings repo={repo} onMutate={mutate} />}

@@ -9,27 +9,37 @@
 - clone, fetch, push, force-update, and delete refs with ordinary Git clients
 - canonical SHA-1 object storage for blobs, trees, commits, and tags
 - native pkt-line parsing and pack v2 encoding/decoding in Hoon
+- Git wire protocols v0/v1 and v2, including command-based `ls-refs` and `fetch`
 - native zlib/DEFLATE plus `REF_DELTA` and `OFS_DELTA` pack ingestion
-- reachability-limited packs that do not expose unreferenced objects
+- reachability-limited packs with native ACK negotiation and incremental closure subtraction
+- shallow clone, relative deepening, and unshallow fetches with stock Git clients
+- partial clone filters for `blob:none` and `blob:limit`, including on-demand promisor blob fetches
 - atomic ref transactions protected by per-repository write credentials
 - per-branch protection with Git-native force-push and deletion rejections
+- authenticated and public branch comparison with complete tree diffs and downloadable `git apply` patches for bounded text changes
 - optional branch-to-desk bindings that apply pushed commits directly to Clay
 - Clay-gated pushes: invalid desks are rejected by Git with the complete Ford stack trace
 - Clay-to-Git publishing that snapshots a bound desk as canonical blobs, trees, and commits
-- GitHub-style web interface for repositories, branches, files, commit details, authorship, per-file history, and repository settings
+- native Clay revision history for bound branches, including revision numbers, canonical timestamps, takos, mapped Git commits, per-file history, and revision diffs
+- bridge status and explicit synchronization controls that compare the live desk with the linked branch and can safely apply either side
+- GitHub-style web interface for repositories, branch creation/defaults/deletion, expandable file trees, deep-linked source lines, branch-aware file creation/editing/deletion, history, line blame, authorship, diffs, and repository settings
+- branch-aware repository code search with line-level results that open directly in the highlighted source view
+- lightweight and annotated tag management with standards-compliant peeled advertisements
 - unauthenticated read-only repository pages for public projects, including branches, files, history, and commit diffs
 - repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
 - one-click publication of any mounted Clay desk as a Git repository
 - verified, incremental native forks: Ames coordinates access and refs while Fine carries only the missing immutable object snapshot
 - persistent ship peers in the sidebar, with on-demand public repository discovery and Fine-backed remote browsing
 - ship write ACLs with fast-forward-only native push-back from authorized forks
-- native pull requests between ships with per-file red/green diffs and Clay-gated merges
+- native pull requests between ships or local branches, with close/reopen lifecycle, per-file red/green diffs, resolvable general and line-anchored review comments, fast-forward or conflict-checked three-way merges, and Clay gating
 - explicit Clay revision-to-commit history for both pushed Git trees and published desk snapshots
 - bidirectional GitHub synchronization through Git Smart HTTP: safe fast-forward pulls and branch-selectable pushes preserving canonical object IDs
 - optional GitHub token support for private imports, GitHub forks, and opening pull requests
-- cached GitHub issues and pull-request status, synchronized through the GitHub REST API
+- paginated, deduplicated GitHub issue and pull-request lists, with full bodies, pull-request change metadata, and upstream file contents fetched on demand
 - JSON scries and HTTP APIs for repository summaries, refs, first-parent history, and file trees
 - Git LFS batch uploads and downloads backed by the ship's configured object storage
+- Git LFS file locking compatible with stock `git lfs lock`, `locks`, and `unlock`
+- explicit reachability-based cleanup of verified LFS payloads no longer referenced by any repository ref
 - direct, short-lived Signature V4 transfer actions so large LFS payloads bypass the loom
 - stable Smart HTTP remotes at:
 
@@ -37,7 +47,7 @@
 https://ship.example/git/<repository>
 ```
 
-LFS lifecycle policy and richer wire negotiation are tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
+Further protocol work is tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
 
 ## Development
 
@@ -60,6 +70,9 @@ Then commit the `%git` desk and run the protocol vectors:
 +git!git-ofs-delta-pack-vector
 +git!git-storage-vector
 +git!git-clay-vector
++git!git-tree-vector
++git!git-shallow-vector
++git!git-blame-vector
 +git!git-github-vector
 ```
 
@@ -71,6 +84,8 @@ A repository branch can be linked to a Clay desk with `%bind-desk`. A push to th
 
 `%publish-desk` snapshots the current bound desk into the linked branch. Clay pages are rendered to their canonical source representation, assembled into ordinary Git blobs and recursively sorted trees, and committed with the ship as author and committer. The existing branch tip becomes the parent.
 
-The web read model is available through `%git` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`.
+The web read model is available through `%git` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`. A desk-bound branch reports Clay's native revision sequence through the history endpoint; ordinary branches report Git commits.
 
-The authenticated web app is served at `/apps/git`. Public repositories also have a read-only page at `/apps/git/public/<repository>` that requires no Urbit login. Its new-repository dialog creates a blank repository, publishes a mounted desk, forks from a ship, or imports from GitHub. The API manages repository policy and Clay bindings, browses and edits local files, keeps peer bookmarks, remotely browses public repositories over Fine, forks and refreshes repositories, and opens or merges native pull requests. GitHub pull and push packs are limited to 64 MiB and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.
+The repository settings page compares the current branch tree with the live bound desk and reports whether they are synchronized, ahead on either side, divergent, or not yet mapped. “Apply branch to desk” uses the same Clay-gated transaction as a linked Git push; “Publish desk to branch” snapshots Clay in the other direction.
+
+The authenticated web app is served at `/apps/git`. Public repositories also have a read-only page at `/apps/git/public/<repository>` that requires no Urbit login. Its new-repository dialog creates a blank repository, publishes a mounted desk, forks from a ship, or imports from GitHub. The API manages repository policy and Clay bindings, browses, searches, compares, and edits local files, keeps peer bookmarks, remotely browses public repositories over Fine, forks and refreshes repositories, and opens or merges native pull requests. GitHub pull and push packs are limited to 64 MiB and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.

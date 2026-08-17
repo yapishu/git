@@ -8,10 +8,19 @@
       data=octs
   ==
 ::
++$  upload-filter
+  $%  [%blob-none]
+      [%blob-limit limit=@ud]
+  ==
+::
 +$  upload-request
   $:  wants=(set oid)
       haves=(set oid)
       done=?
+      depth=(unit @ud)
+      shallow=(set oid)
+      deepen-relative=?
+      filter=(unit upload-filter)
   ==
 ::
 +$  receive-command
@@ -34,6 +43,13 @@
   $:  size=@ud
       object-key=@t
       expires=@da
+  ==
+::
++$  lfs-lock
+  $:  id=@ud
+      path=@t
+      owner=@t
+      locked-at=@da
   ==
 ::
 +$  clay-link
@@ -70,6 +86,17 @@
       draft=?
   ==
 ::
++$  review-comment
+  $:  id=@ud
+      author=ship
+      body=@t
+      created=@da
+      path=(unit @t)
+      line=(unit @ud)
+      side=(unit ?(%base %head))
+      resolved=?
+  ==
+::
 +$  native-pull
   $:  number=@ud
       source-ship=ship
@@ -78,6 +105,7 @@
       state=?(%open %merged %closed)
       head=oid
       base=oid
+      comments=(list review-comment)
   ==
 ::
 +$  clay-apply
@@ -97,6 +125,7 @@
       write-token-hash=(unit @)
       lfs-objects=(map @t lfs-object)
       lfs-uploads=(map @t lfs-upload)
+      lfs-locks=(map @ud lfs-lock)
       binding=(unit desk-binding)
       peer-origin=(unit peer-origin)
       github-origin=(unit github-origin)

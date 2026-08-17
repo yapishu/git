@@ -58,6 +58,98 @@
   ?~  value  ~
   (string-at inner u.value)
 ::
+++  decimal
+  |=  value=@ud
+  ^-  @t
+  (crip ((d-co:co 1) value))
+::
+++  detail-json
+  |=  [jon=json pull=?]
+  ^-  (unit json)
+  =/  number=(unit @ud)  (nat-at 'number' jon)
+  =/  title=(unit @t)  (string-at 'title' jon)
+  =/  state=(unit @t)  (string-at 'state' jon)
+  =/  url=(unit @t)  (string-at 'html_url' jon)
+  =/  author=(unit @t)  (nested-string 'user' 'login' jon)
+  ?.  ?&(?=(^ number) ?=(^ title) ?=(^ state) ?=(^ url) ?=(^ author))
+    ~
+  =/  body=(unit @t)  (string-at 'body' jon)
+  =/  created=(unit @t)  (string-at 'created_at' jon)
+  =/  updated=(unit @t)  (string-at 'updated_at' jon)
+  =/  comments=(unit @ud)  (nat-at 'comments' jon)
+  =/  draft=(unit ?)  (bool-at 'draft' jon)
+  =/  merged=(unit ?)  (bool-at 'merged' jon)
+  =/  mergeable=(unit ?)  (bool-at 'mergeable' jon)
+  =/  additions=(unit @ud)  (nat-at 'additions' jon)
+  =/  deletions=(unit @ud)  (nat-at 'deletions' jon)
+  =/  changed=(unit @ud)  (nat-at 'changed_files' jon)
+  =/  head-ref=(unit @t)  (nested-string 'head' 'ref' jon)
+  =/  base-ref=(unit @t)  (nested-string 'base' 'ref' jon)
+  =/  result=json
+    %-  pairs:enjs:format
+    :~  ['number' n+(decimal u.number)]
+        ['title' s+u.title]
+        ['state' s+u.state]
+        ['url' s+u.url]
+        ['author' s+u.author]
+        ['body' s+?~(body '' u.body)]
+        ['created' s+?~(created '' u.created)]
+        ['updated' s+?~(updated '' u.updated)]
+        ['comments' n+(decimal ?~(comments 0 u.comments))]
+        ['pullRequest' b+pull]
+        ['draft' b+?~(draft %.n u.draft)]
+        ['merged' b+?~(merged %.n u.merged)]
+        ['mergeable' b+?~(mergeable %.n u.mergeable)]
+        ['mergeableKnown' b+?=(^ mergeable)]
+        ['additions' n+(decimal ?~(additions 0 u.additions))]
+        ['deletions' n+(decimal ?~(deletions 0 u.deletions))]
+        ['changedFiles' n+(decimal ?~(changed 0 u.changed))]
+        ['head' s+?~(head-ref '' u.head-ref)]
+        ['base' s+?~(base-ref '' u.base-ref)]
+    ==
+  `result
+::
+++  file-detail-json
+  |=  jon=json
+  ^-  (unit json)
+  =/  kind=(unit @t)  (string-at 'type' jon)
+  =/  encoding=(unit @t)  (string-at 'encoding' jon)
+  =/  content=(unit @t)  (string-at 'content' jon)
+  =/  path=(unit @t)  (string-at 'path' jon)
+  =/  sha=(unit @t)  (string-at 'sha' jon)
+  =/  size=(unit @ud)  (nat-at 'size' jon)
+  =/  url=(unit @t)  (string-at 'html_url' jon)
+  ?.  ?&  ?=(^ kind)  =('file' u.kind)
+          ?=(^ encoding)  =('base64' u.encoding)
+          ?=(^ content)  ?=(^ path)  ?=(^ sha)  ?=(^ size)
+          (lte u.size 1.048.576)
+      ==
+    ~
+  =/  strip-whitespace
+    |=  [remaining=tape out=tape]
+    ^-  @t
+    ?~  remaining  (crip out)
+    ?:  ?|  =(9 i.remaining)
+            =(10 i.remaining)
+            =(13 i.remaining)
+            =(32 i.remaining)
+        ==
+      $(remaining t.remaining)
+    $(remaining t.remaining, out (snoc out i.remaining))
+  =/  clean=@t  (strip-whitespace (trip u.content) ~)
+  =/  decoded=(unit octs)  (de:base64:mimes:html clean)
+  ?~  decoded  ~
+  ?.  =(p.u.decoded u.size)  ~
+  =/  result=json
+    %-  pairs:enjs:format
+    :~  ['path' s+u.path]
+        ['sha' s+u.sha]
+        ['size' n+(decimal u.size)]
+        ['url' s+?~(url '' u.url)]
+        ['content' s+(en:base64:mimes:html u.decoded)]
+    ==
+  `result
+::
 ++  api-headers
   |=  token=(unit @t)
   ^-  (list [@t @t])
