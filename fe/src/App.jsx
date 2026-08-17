@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import CreateRepository from './components/CreateRepository'
 import ForkPeer from './components/ForkPeer'
 import GitHubImport from './components/GitHubImport'
 import GitHubSettings from './components/GitHubSettings'
@@ -8,13 +7,18 @@ import { ActivityIcon, RefreshIcon } from './components/Icons'
 import PeerActivity from './components/PeerActivity'
 import PublishDesk from './components/PublishDesk'
 import RepositoryView from './components/RepositoryView'
+import NewRepositoryModal from './components/NewRepositoryModal'
+import RemoteRepositoryView from './components/RemoteRepositoryView'
 import Sidebar from './components/Sidebar'
 
 const repoFromHash = () => decodeURIComponent(location.hash.replace(/^#\/?/, ''))
 
 export default function App() {
   const [repositories, setRepositories] = useState([])
+  const [peers, setPeers] = useState([])
   const [selected, setSelected] = useState(repoFromHash())
+  const [remoteSelected, setRemoteSelected] = useState(null)
+  const [remoteData, setRemoteData] = useState(null)
   const [creating, setCreating] = useState(false)
   const [publishingDesk, setPublishingDesk] = useState(false)
   const [forkingPeer, setForkingPeer] = useState(false)
@@ -53,6 +57,10 @@ export default function App() {
   }, [selected])
 
   useEffect(() => { refresh() }, [])
+  const refreshPeers = useCallback(async () => {
+    try { const data = await api.peers(); setPeers(data.peers || []) } catch (cause) { setError(cause.message) }
+  }, [])
+  useEffect(() => { refreshPeers() }, [refreshPeers])
   const refreshActivity = useCallback(async () => {
     try {
       const data = await api.peerActivity()
@@ -78,8 +86,48 @@ export default function App() {
     setForkingPeer(false)
     setImportingGitHub(false)
     setGithubSettings(false)
+    setRemoteSelected(null)
+    setRemoteData(null)
     setSelected(name)
     history.pushState({}, '', `#/${encodeURIComponent(name)}`)
+  }
+
+  async function chooseRemote(ship, name) {
+    setError(''); setRemoteSelected({ ship, name }); setRemoteData(null); setSelected('')
+    setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false)
+    history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(name)}`)
+    try {
+      const started = await api.peerBrowse(ship, name)
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        const status = await api.peerBrowses()
+        const found = status.browses?.find((item) => item.request === started.request)
+        if (found && !found.active) {
+          await api.peerDeleteBrowse(started.request).catch(() => {})
+          if (!found.ok) throw new Error(found.message)
+          setRemoteData(found.result); return
+        }
+      }
+      throw new Error('peer repository did not load in time')
+    } catch (cause) { setError(cause.message) }
+  }
+
+  async function forkRemote(ship, repository) {
+    setError('')
+    try {
+      const started = await api.peerFork(ship, repository, repository, true)
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        const status = await api.peerTransfers()
+        const found = status.transfers?.find((item) => item.transfer === started.transfer)
+        if (found && !found.active && found.message !== 'transferring') {
+          await api.peerDeleteTransfer(started.transfer).catch(() => {})
+          if (!found.ok) throw new Error(found.message)
+          await refresh(repository); choose(repository); return
+        }
+      }
+      throw new Error('fork did not complete in time')
+    } catch (cause) { setError(cause.message) }
   }
 
   async function published(name) {
@@ -113,7 +161,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar repositories={repositories} selected={selected} onSelect={choose} onCreate={() => { setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false); setCreating(true) }} onPublishDesk={() => { setCreating(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false); setPublishingDesk(true) }} onForkPeer={() => { setCreating(false); setPublishingDesk(false); setImportingGitHub(false); setGithubSettings(false); setForkingPeer(true) }} onImportGitHub={() => { setCreating(false); setPublishingDesk(false); setForkingPeer(false); setGithubSettings(false); setImportingGitHub(true) }} onGitHubSettings={() => { setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setGithubSettings(true) }} />
+      <Sidebar repositories={repositories} peers={peers} selected={selected} remoteSelected={remoteSelected} onSelect={choose} onSelectRemote={chooseRemote} onCreate={() => setCreating(true)} onPeersChanged={refreshPeers} onGitHubSettings={() => { setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setRemoteSelected(null); setGithubSettings(true) }} />
       <div className="workspace">
         <div className="topbar">
           <span className="topbar-label">{repo ? repo.owner : 'Repositories'}</span>
@@ -135,8 +183,8 @@ export default function App() {
           <ForkPeer repositories={repositories} onComplete={published} onCancel={() => setForkingPeer(false)} />
         ) : publishingDesk ? (
           <PublishDesk repositories={repositories} onComplete={published} onCancel={() => setPublishingDesk(false)} />
-        ) : creating ? (
-          <CreateRepository onCreate={create} onCancel={() => setCreating(false)} />
+        ) : remoteSelected ? (
+          remoteData ? <RemoteRepositoryView ship={remoteSelected.ship} data={remoteData} onFork={forkRemote} /> : <main className="content"><div className="empty">Remotely scrying {remoteSelected.ship}/{remoteSelected.name}...</div></main>
         ) : repo ? (
           <RepositoryView repo={repo} onRefresh={refresh} />
         ) : (
@@ -146,6 +194,7 @@ export default function App() {
           </main>
         )}
       </div>
+      {creating && <NewRepositoryModal onCreate={create} onClose={() => setCreating(false)} onPublishDesk={() => { setForkingPeer(false); setImportingGitHub(false); setGithubSettings(false); setPublishingDesk(true) }} onForkPeer={() => { setPublishingDesk(false); setImportingGitHub(false); setGithubSettings(false); setForkingPeer(true) }} onImportGitHub={() => { setPublishingDesk(false); setForkingPeer(false); setGithubSettings(false); setImportingGitHub(true) }} />}
     </div>
   )
 }

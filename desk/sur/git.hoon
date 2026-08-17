@@ -36,11 +36,19 @@
       expires=@da
   ==
 ::
++$  clay-link
+  $:  clay-revision=@ud
+      commit=oid
+      direction=?(%clay-to-git %git-to-clay)
+      when=@da
+  ==
+::
 +$  desk-binding
   $:  desk-name=desk
       branch=@t
       last-clay=(unit @ud)
       last-git=(unit oid)
+      history=(list clay-link)
   ==
 ::
 +$  peer-origin
@@ -99,6 +107,7 @@
 +$  state-0
   $:  %0
       repositories=(map @t repository)
+      peers=(set @p)
       github-token=(unit @t)
   ==
 ::
@@ -118,5 +127,7 @@
       [%bind-desk repository=@t desk-name=desk branch=@t]
       [%unbind-desk repository=@t]
       [%publish-desk repository=@t message=@t]
+      [%add-peer peer=@p]
+      [%remove-peer peer=@p]
   ==
 --

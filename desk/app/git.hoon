@@ -25,6 +25,7 @@
   $:  repository=@t
       desk-name=desk
       branch=@t
+      clay-revision=(unit @ud)
       message=@t
       paths=(list path)
       files=(map path octs)
@@ -56,6 +57,15 @@
       message=@t
       repositories=(list catalog-repository:git-peer)
   ==
++$  peer-browse
+  $:  peer=ship
+      repository=@t
+      view=?(%overview %file)
+      active=?
+      ok=?
+      message=@t
+      result=(unit json)
+  ==
 +$  peer-activity-kind  ?(%fork %serve %push %pull-request)
 +$  peer-activity-status  ?(%active %success %failure)
 +$  peer-activity
@@ -86,17 +96,24 @@
       repository=@t
       message=@t
   ==
++$  commit-identity
+  $:  name=@t
+      email=@t
+      timestamp=@t
+      timezone=@t
+  ==
 ::
 ++  update-binding-success
-  |=  [repo=repository:git new-oid=oid:git riot=riot:clay]
+  |=  [repo=repository:git new-oid=oid:git clay-revision=(unit @ud) when=@da]
   ^-  repository:git
   ?~  binding.repo  repo
-  =/  clay-revision=(unit @ud)
-    ?~  riot  ~
-    ?.  ?=([%ud @] q.p.u.riot)  ~
-    `p.q.p.u.riot
   =/  linked=desk-binding:git
-    u.binding.repo(last-clay clay-revision, last-git `new-oid)
+    =/  links=(list clay-link:git)
+      ?~  clay-revision  history.u.binding.repo
+      =/  link=clay-link:git  [u.clay-revision new-oid %git-to-clay when]
+      =/  old-links=(list clay-link:git)  history.u.binding.repo
+      [link old-links]
+    u.binding.repo(last-clay clay-revision, last-git `new-oid, history links)
   repo(binding `linked)
 ::
 ++  receive-results
@@ -177,8 +194,13 @@
   =/  snapped=(unit [commit=oid:git objects=(map oid:git object:git)])
     (snapshot:git-clay files.job objects.repo parent author now message.job)
   ?~  snapped  ~
+  =/  links=(list clay-link:git)
+    ?~  clay-revision.job  history.u.binding.repo
+    =/  link=clay-link:git  [u.clay-revision.job commit.u.snapped %clay-to-git now]
+    =/  old-links=(list clay-link:git)  history.u.binding.repo
+    [link old-links]
   =/  linked=desk-binding:git
-    u.binding.repo(last-git `commit.u.snapped)
+    u.binding.repo(last-clay clay-revision.job, last-git `commit.u.snapped, history links)
   =/  published=repository:git
     %_  repo
       objects  objects.u.snapped
@@ -199,6 +221,16 @@
       ['branch' s+branch.u.binding]
       ['lastClay' s+?~(last-clay.u.binding '' (scot %ud u.last-clay.u.binding))]
       ['lastGit' s+?~(last-git.u.binding '' (oid-text:git-codec u.last-git.u.binding))]
+      :-  'history'
+      :-  %a
+      %+  turn  history.u.binding
+      |=  link=clay-link:git
+      %-  pairs:enjs:format
+      :~  ['clayRevision' n+(decimal clay-revision.link)]
+          ['commit' s+(oid-text:git-codec commit.link)]
+          ['direction' s+direction.link]
+          ['when' s+(scot %da when.link)]
+      ==
   ==
 ::
 ++  decimal
@@ -218,6 +250,11 @@
     (turn ~(tap in writers.repo) |=(writer=@p s+(scot %p writer)))
   =/  protected-json=(list json)
     (turn ~(tap in protected-refs.repo) |=(ref=@t s+ref))
+  =/  head-oid=(unit oid:git)  (~(get by refs.repo) head.repo)
+  =/  head-files=(unit (map path octs))
+    ?~  head-oid  ~
+    (flatten-commit:git-clay objects.repo u.head-oid)
+  =/  file-count=@ud  ?~(head-files 0 (lent ~(tap by u.head-files)))
   =/  pulls-json=(list json)
     %+  turn  native-pulls.repo
     |=  pull=native-pull:git
@@ -249,6 +286,10 @@
       ['refs' [%a refs-json]]
       ['protectedRefs' [%a protected-json]]
       ['objectCount' n+(decimal (lent ~(tap by objects.repo)))]
+      ['fileCount' n+(decimal file-count)]
+      ['commitCount' n+(decimal (first-parent-count repo head.repo))]
+      ['branchCount' n+(decimal (ref-count-prefix refs.repo 'refs/heads/'))]
+      ['tagCount' n+(decimal (ref-count-prefix refs.repo 'refs/tags/'))]
       ['lfsObjectCount' n+(decimal (lent ~(tap by lfs-objects.repo)))]
       ['writeTokenSet' b+?=(^ write-token-hash.repo)]
       ['writers' [%a writers-json]]
@@ -274,7 +315,7 @@
 ++  repository-files-at-json
   |=  [name=@t repo=repository:git ref=@t]
   ^-  json
-  =/  commit=(unit oid:git)  (~(get by refs.repo) ref)
+  =/  commit=(unit oid:git)  (revision-oid repo ref)
   =/  files=(unit (map path octs))
     ?~  commit  `*(map path octs)
     (flatten-commit:git-clay objects.repo u.commit)
@@ -303,10 +344,21 @@
   ?~  files  ~
   (~(get by u.files) file-path)
 ::
+++  revision-oid
+  |=  [repo=repository:git revision=@t]
+  ^-  (unit oid:git)
+  =/  named=(unit oid:git)  (~(get by refs.repo) revision)
+  ?^  named  named
+  ?.  =(40 (met 3 revision))  ~
+  =/  parsed=(unit oid:git)  (oid-at:git-protocol [40 revision] 0)
+  ?~  parsed  ~
+  ?.  (~(has by objects.repo) u.parsed)  ~
+  parsed
+::
 ++  repository-file-at
   |=  [repo=repository:git ref=@t file-path=path]
   ^-  (unit octs)
-  =/  commit=(unit oid:git)  (~(get by refs.repo) ref)
+  =/  commit=(unit oid:git)  (revision-oid repo ref)
   ?~  commit  ~
   (file-at-commit repo u.commit file-path)
 ::
@@ -329,7 +381,7 @@
 ++  repository-file-history-json
   |=  [name=@t repo=repository:git ref=@t file-path=path]
   ^-  json
-  =/  current=(unit oid:git)  (~(get by refs.repo) ref)
+  =/  current=(unit oid:git)  (revision-oid repo ref)
   =/  entries=(list json)  ~
   =/  count=@ud  0
   |-
@@ -368,50 +420,281 @@
     `(add offset 2)
   $(offset +(offset))
 ::
+++  commit-header
+  |=  [data=octs prefix=@t]
+  ^-  (unit @t)
+  =/  prefix-width=@ud  (met 3 prefix)
+  =/  scan
+    |=  offset=@ud
+    ^-  (unit @t)
+    ?:  (gte offset p.data)  ~
+    =/  end=(unit @ud)  (find-byte:git-clay data offset 10)
+    ?~  end  ~
+    =/  width=@ud  (sub u.end offset)
+    ?:  =(width 0)  ~
+    =/  line=octs  (slice:git-codec data offset width)
+    ?:  (starts-with:git-protocol line prefix)
+      =/  value=octs  (slice:git-codec line prefix-width (sub p.line prefix-width))
+      =/  text=@t  `@t`q.value
+      `text
+    $(offset +(u.end))
+  (scan 0)
+::
+++  commit-identity-from-line
+  |=  line=@t
+  ^-  (unit commit-identity)
+  =/  data=octs  [(met 3 line) line]
+  =/  open=(unit @ud)  (find-byte:git-clay data 0 60)
+  ?~  open  ~
+  =/  close=(unit @ud)  (find-byte:git-clay data +(u.open) 62)
+  ?~  close  ~
+  ?.  (gth u.close +(u.open))  ~
+  =/  name-width=@ud
+    ?:  ?&  (gth u.open 0)
+            =(32 (byte-at:git-codec data (sub u.open 1)))
+        ==
+      (sub u.open 1)
+    u.open
+  =/  tail-start=@ud  (add u.close 2)
+  ?:  (gte tail-start p.data)  ~
+  =/  time-end=(unit @ud)  (find-byte:git-clay data tail-start 32)
+  ?~  time-end  ~
+  ?:  (gte +(u.time-end) p.data)  ~
+  =/  name=octs  (slice:git-codec data 0 name-width)
+  =/  email=octs  (slice:git-codec data +(u.open) (sub u.close +(u.open)))
+  =/  timestamp=octs  (slice:git-codec data tail-start (sub u.time-end tail-start))
+  =/  timezone=octs  (slice:git-codec data +(u.time-end) (sub p.data +(u.time-end)))
+  `[`@t`q.name `@t`q.email `@t`q.timestamp `@t`q.timezone]
+::
+++  commit-identity-at
+  |=  [data=octs prefix=@t]
+  ^-  (unit commit-identity)
+  =/  line=(unit @t)  (commit-header data prefix)
+  ?~  line  ~
+  (commit-identity-from-line u.line)
+::
+++  commit-identity-json
+  |=  identity=(unit commit-identity)
+  ^-  json
+  ?~  identity  ~
+  %-  pairs:enjs:format
+  :~  ['name' s+name.u.identity]
+      ['email' s+email.u.identity]
+      ['timestamp' s+timestamp.u.identity]
+      ['timezone' s+timezone.u.identity]
+  ==
+::
+++  commit-parents
+  |=  data=octs
+  ^-  (list oid:git)
+  =/  offset=@ud  0
+  =/  parents=(list oid:git)  ~
+  |-
+  ?:  (gte offset p.data)  (flop parents)
+  =/  end=(unit @ud)  (find-byte:git-clay data offset 10)
+  ?~  end  (flop parents)
+  =/  width=@ud  (sub u.end offset)
+  ?:  =(width 0)  (flop parents)
+  =/  line=octs  (slice:git-codec data offset width)
+  =/  parent=(unit oid:git)
+    ?:  (starts-with:git-protocol line 'parent ')
+      (oid-at:git-protocol line 7)
+    ~
+  =?  parents  ?=(^ parent)  [u.parent parents]
+  $(offset +(u.end), parents parents)
+::
 ++  commit-parent
   |=  data=octs
   ^-  (unit oid:git)
-  ?:  (lte p.data 53)  ~
-  =/  tail=octs  (slice:git-codec data 46 (sub p.data 46))
-  ?.  (starts-with:git-protocol tail 'parent ')  ~
-  (oid-at:git-protocol data 53)
+  =/  parents=(list oid:git)  (commit-parents data)
+  ?~  parents  ~
+  `i.parents
 ::
-++  commit-subject
+++  commit-message
   |=  data=octs
   ^-  @t
   =/  start=(unit @ud)  (double-newline data 0)
   ?~  start  ''
   =/  message=octs  (slice:git-codec data u.start (sub p.data u.start))
+  `@t`q.message
+::
+++  commit-subject
+  |=  data=octs
+  ^-  @t
+  =/  text=@t  (commit-message data)
+  =/  message=octs  [(met 3 text) text]
   =/  end=(unit @ud)  (find-byte:git-clay message 0 10)
   =/  width=@ud  ?~(end p.message u.end)
   =/  subject=octs  (slice:git-codec message 0 width)
   `@t`q.subject
 ::
-++  repository-commits-json
-  |=  [name=@t repo=repository:git]
+++  commit-summary-json
+  |=  [oid=oid:git data=octs]
   ^-  json
-  =/  current=(unit oid:git)  (~(get by refs.repo) head.repo)
+  =/  parents=(list oid:git)  (commit-parents data)
+  =/  parent=(unit oid:git)  ?~(parents ~ `i.parents)
+  %-  pairs:enjs:format
+  :~  ['oid' s+(oid-text:git-codec oid)]
+      ['parent' s+?~(parent '' (oid-text:git-codec u.parent))]
+      ['parents' [%a (turn parents |=(item=oid:git s+(oid-text:git-codec item)))]]
+      ['subject' s+(commit-subject data)]
+      ['author' (commit-identity-json (commit-identity-at data 'author '))]
+      ['committer' (commit-identity-json (commit-identity-at data 'committer '))]
+  ==
+::
+++  repository-commits-json
+  |=  [name=@t repo=repository:git ref=@t]
+  ^-  json
+  =/  current=(unit oid:git)  (revision-oid repo ref)
   =/  entries=(list json)  ~
   =/  count=@ud  0
   |-
   ?:  |(?=(~ current) (gte count 100))
     %-  pairs:enjs:format
-    ~[['repository' s+name] ['head' s+head.repo] ['commits' [%a (flop entries)]]]
+    ~[['repository' s+name] ['head' s+ref] ['commits' [%a (flop entries)]]]
   =/  found=(unit object:git)  (~(get by objects.repo) u.current)
   ?~  found
     %-  pairs:enjs:format
-    ~[['repository' s+name] ['head' s+head.repo] ['commits' [%a (flop entries)]]]
+    ~[['repository' s+name] ['head' s+ref] ['commits' [%a (flop entries)]]]
   ?.  =(%commit kind.u.found)
     %-  pairs:enjs:format
-    ~[['repository' s+name] ['head' s+head.repo] ['commits' [%a (flop entries)]]]
+    ~[['repository' s+name] ['head' s+ref] ['commits' [%a (flop entries)]]]
   =/  parent=(unit oid:git)  (commit-parent data.u.found)
-  =/  entry=json
-    %-  pairs:enjs:format
-    :~  ['oid' s+(oid-text:git-codec u.current)]
-        ['parent' s+?~(parent '' (oid-text:git-codec u.parent))]
-        ['subject' s+(commit-subject data.u.found)]
-    ==
+  =/  entry=json  (commit-summary-json u.current data.u.found)
   $(current parent, entries [entry entries], count +(count))
+::
+++  repository-browse-json
+  |=  [name=@t repo=repository:git]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['repository' (repository-json name repo)]
+      ['files' (repository-files-json name repo)]
+      ['commits' (repository-commits-json name repo head.repo)]
+  ==
+::
+++  repository-commit-json
+  |=  [name=@t repo=repository:git oid=oid:git]
+  ^-  (unit json)
+  =/  found=(unit object:git)  (~(get by objects.repo) oid)
+  ?.  ?&(?=(^ found) =(%commit kind.u.found))  ~
+  =/  parent=(unit oid:git)  (commit-parent data.u.found)
+  =/  current-files=(unit (map path octs))  (flatten-commit:git-clay objects.repo oid)
+  ?~  current-files  ~
+  =/  previous-files=(map path octs)
+    ?~  parent  ~
+    =/  flattened=(unit (map path octs))  (flatten-commit:git-clay objects.repo u.parent)
+    ?~(flattened ~ u.flattened)
+  =/  changed=(list json)
+    %+  murn  ~(tap by u.current-files)
+    |=  entry=[file-path=path data=octs]
+    =/  previous=(unit octs)  (~(get by previous-files) file-path.entry)
+    ?:  ?&(?=(^ previous) =(data.entry u.previous))  ~
+    =/  status=@t  ?~(previous 'added' 'modified')
+    =/  item=json
+      %-  pairs:enjs:format
+      :~  ['path' s+(spat file-path.entry)]
+          ['status' s+status]
+          ['oldSize' n+(decimal ?~(previous 0 p.u.previous))]
+          ['newSize' n+(decimal p.data.entry)]
+      ==
+    `item
+  =/  deleted=(list json)
+    %+  murn  ~(tap by previous-files)
+    |=  entry=[file-path=path data=octs]
+    ?:  (~(has by u.current-files) file-path.entry)  ~
+    =/  item=json
+      %-  pairs:enjs:format
+      :~  ['path' s+(spat file-path.entry)]
+          ['status' s+'deleted']
+          ['oldSize' n+(decimal p.data.entry)]
+          ['newSize' n+'0']
+      ==
+    `item
+  =/  changes=(list json)  (weld changed deleted)
+  =/  tree=(unit @t)  (commit-header data.u.found 'tree ')
+  =/  result=json
+    %-  pairs:enjs:format
+    :~  ['repository' s+name]
+        ['commit' (commit-summary-json oid data.u.found)]
+        ['tree' s+?~(tree '' u.tree)]
+        ['message' s+(commit-message data.u.found)]
+        ['changedCount' n+(decimal (lent changes))]
+        ['changes' [%a (scag 1.000 changes)]]
+    ==
+  `result
+::
+++  repository-diff-json
+  |=  [name=@t repo=repository:git base=oid:git head=oid:git]
+  ^-  (unit json)
+  =/  base-files=(unit (map path octs))  (flatten-commit:git-clay objects.repo base)
+  =/  head-files=(unit (map path octs))  (flatten-commit:git-clay objects.repo head)
+  ?.  ?&(?=(^ base-files) ?=(^ head-files))  ~
+  =/  changed=(list json)
+    %+  murn  ~(tap by u.head-files)
+    |=  entry=[file-path=path data=octs]
+    =/  previous=(unit octs)  (~(get by u.base-files) file-path.entry)
+    ?:  ?&(?=(^ previous) =(data.entry u.previous))  ~
+    =/  status=@t  ?~(previous 'added' 'modified')
+    =/  old-truncated=?  ?^(previous (gth p.u.previous 262.144) %.n)
+    =/  new-truncated=?  (gth p.data.entry 262.144)
+    =/  item=json
+      %-  pairs:enjs:format
+      :~  ['path' s+(spat file-path.entry)]
+          ['status' s+status]
+          ['oldSize' n+(decimal ?~(previous 0 p.u.previous))]
+          ['newSize' n+(decimal p.data.entry)]
+          ['oldContent' s+?~(previous '' ?:(old-truncated '' (en:base64:mimes:html u.previous)))]
+          ['newContent' s+?:(new-truncated '' (en:base64:mimes:html data.entry))]
+          ['truncated' b+|(old-truncated new-truncated)]
+      ==
+    `item
+  =/  deleted=(list json)
+    %+  murn  ~(tap by u.base-files)
+    |=  entry=[file-path=path data=octs]
+    ?:  (~(has by u.head-files) file-path.entry)  ~
+    =/  truncated=?  (gth p.data.entry 262.144)
+    =/  item=json
+      %-  pairs:enjs:format
+      :~  ['path' s+(spat file-path.entry)]
+          ['status' s+'deleted']
+          ['oldSize' n+(decimal p.data.entry)]
+          ['newSize' n+'0']
+          ['oldContent' s+?:(truncated '' (en:base64:mimes:html data.entry))]
+          ['newContent' s+'']
+          ['truncated' b+truncated]
+      ==
+    `item
+  =/  changes=(list json)  (weld changed deleted)
+  =/  result=json
+    %-  pairs:enjs:format
+    :~  ['repository' s+name]
+        ['base' s+(oid-text:git-codec base)]
+        ['head' s+(oid-text:git-codec head)]
+        ['changedCount' n+(decimal (lent changes))]
+        ['changes' [%a (scag 1.000 changes)]]
+    ==
+  `result
+::
+++  first-parent-count
+  |=  [repo=repository:git ref=@t]
+  ^-  @ud
+  =/  current=(unit oid:git)  (revision-oid repo ref)
+  =/  count=@ud  0
+  |-
+  ?:  |(?=(~ current) (gte count 10.000))  count
+  =/  found=(unit object:git)  (~(get by objects.repo) u.current)
+  ?.  ?&(?=(^ found) =(%commit kind.u.found))  count
+  $(current (commit-parent data.u.found), count +(count))
+::
+++  ref-count-prefix
+  |=  [refs=(map @t oid:git) prefix=@t]
+  ^-  @ud
+  =/  matching=(list [@t oid:git])
+    %+  skim  ~(tap by refs)
+    |=  entry=[@t oid:git]
+    =/  ref=@t  -.entry
+    (starts-with:git-protocol [(met 3 ref) ref] prefix)
+  (lent matching)
 --
 ::
 %-  agent:dbug
@@ -425,6 +708,7 @@
 =/  peer-receiving  *(map @uv peer-receive)
 =/  peer-results  *(map @uv peer-result)
 =/  peer-discoveries  *(map @uv peer-discovery)
+=/  peer-browses  *(map @uv peer-browse)
 =/  peer-activities  *(list peer-activity)
 =/  github-in-flight  *(map @uv github-request)
 =/  github-results  *(map @uv github-result)
@@ -447,7 +731,7 @@
   |=  old=vase
   ^-  (quip card _this)
   =/  loaded=state-0:git  !<(state-0:git old)
-  :_  this(state loaded, in-flight ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-activities ~, github-in-flight ~, github-results ~)
+  :_  this(state loaded, in-flight ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-activities ~, github-in-flight ~, github-results ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %git]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/git/api] %git]
   ==
@@ -679,6 +963,21 @@
       %catalog-error
     (peer-catalog-error request.packet message.packet)
   ::
+      %browse-request
+    (peer-browse-request request.packet repository.packet)
+  ::
+      %browse-ready
+    (peer-browse-ready request.packet repository.packet target.packet)
+  ::
+      %browse-begin
+    (peer-browse-begin request.packet repository.packet)
+  ::
+      %browse-error
+    (peer-browse-error request.packet message.packet)
+  ::
+      %browse-release
+    (peer-browse-release request.packet)
+  ::
       %offer
     (peer-offer offer.packet)
   ::
@@ -731,6 +1030,64 @@
   =.  peer-discoveries
     (~(put by peer-discoveries) request u.found(active %.n, ok %.n, message message))
   `this
+::
+++  peer-browse-request
+  |=  [request=@uv repository=@t]
+  ^-  (quip card _this)
+  =/  found=(unit repository:git)  (~(get by repositories) repository)
+  ?.  ?&(?=(^ found) public-read.u.found)
+    :_  this
+    :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or not public'])
+    ==
+  =/  browse-path=path  /browse/(scot %uv request)
+  =/  result=json  (repository-browse-json repository u.found)
+  =/  cards=(list card)
+    ^-  (list card)
+    :~  [%pass /peer/browse-grow/(scot %uv request) %grow browse-path json+!>(result)]
+        [%pass /peer/browse-ready/(scot %uv request) %agent [our.bowl %git] %poke %git-peer !>([%browse-ready request repository src.bowl])]
+    ==
+  [cards this]
+::
+++  peer-browse-ready
+  |=  [request=@uv repository=@t target=ship]
+  ^-  (quip card _this)
+  ?.  =(src.bowl our.bowl)  `this
+  :_  this
+  :~  (peer-card target /peer/browse-begin/(scot %uv request) [%browse-begin request repository])
+  ==
+::
+++  peer-browse-begin
+  |=  [request=@uv repository=@t]
+  ^-  (quip card _this)
+  =/  found=(unit peer-browse)  (~(get by peer-browses) request)
+  ?~  found  `this
+  ?.  ?&  =(src.bowl peer.u.found)
+          =(repository repository.u.found)
+          active.u.found
+      ==
+    `this
+  =/  scry-path=path
+    /g/x/1/git//1/browse/(scot %uv request)
+  :_  this
+  :~  [%pass /peer/browse/(scot %uv request) %keen %.n src.bowl scry-path]
+  ==
+::
+++  peer-browse-error
+  |=  [request=@uv message=@t]
+  ^-  (quip card _this)
+  =/  found=(unit peer-browse)  (~(get by peer-browses) request)
+  ?~  found  `this
+  ?.  =(src.bowl peer.u.found)  `this
+  =.  peer-browses
+    (~(put by peer-browses) request u.found(active %.n, ok %.n, message message))
+  `this
+::
+++  peer-browse-release
+  |=  request=@uv
+  ^-  (quip card _this)
+  :_  this
+  :~  [%pass /peer/browse-cull/(scot %uv request) %cull [%ud 1] /browse/(scot %uv request)]
+  ==
 ::
 ++  peer-offer
   |=  offer=offer:git-peer
@@ -1035,7 +1392,7 @@
       |.(.^((set desk) %cd /(scot %p our.bowl)//(scot %da now.bowl)))
     ?~  desks  `this
     ?.  (~(has in u.desks) desk-name.act)  `this
-    =/  binding=desk-binding:git  [desk-name.act branch.act ~ ~]
+    =/  binding=desk-binding:git  [desk-name.act branch.act ~ ~ ~]
     `this(repositories (~(put by repositories) repository.act u.found(binding `binding)))
   ::
       %unbind-desk
@@ -1062,6 +1419,7 @@
       :*  repository.act
           desk-name.u.binding.u.found
           branch.u.binding.u.found
+          ~
           message.act
           u.desk-files
           ~
@@ -1074,6 +1432,12 @@
       `this
     :_  this(pending-publish `job)
     (publish-next job)
+  ::
+      %add-peer
+    `this(peers (~(put in peers) peer.act))
+  ::
+      %remove-peer
+    `this(peers (~(del in peers) peer.act))
   ==
 ::
 ++  publish-next
@@ -1293,6 +1657,48 @@
         ['repositories' [%a repositories-json]]
     ==
   (pairs:enjs:format ~[['discoveries' [%a entries]]])
+::
+++  peers-json
+  ^-  json
+  =/  entries=(list json)
+    (turn ~(tap in peers) |=(peer=@p s+(scot %p peer)))
+  (pairs:enjs:format ~[['peers' [%a entries]]])
+::
+++  peer-browses-json
+  ^-  json
+  =/  entries=(list json)
+    %+  turn  ~(tap by peer-browses)
+    |=  entry=[@uv peer-browse]
+    =/  request=@uv  -.entry
+    =/  browse=peer-browse  +.entry
+    %-  pairs:enjs:format
+    :~  ['request' s+(scot %uv request)]
+        ['ship' s+(scot %p peer.browse)]
+        ['repository' s+repository.browse]
+        ['view' s+view.browse]
+        ['active' b+active.browse]
+        ['ok' b+ok.browse]
+        ['message' s+message.browse]
+        ['result' ?~(result.browse ~ u.result.browse)]
+    ==
+  (pairs:enjs:format ~[['browses' [%a entries]]])
+::
+++  start-peer-browse
+  |=  [eyre-id=@ta peer=ship repository=@t view=?(%overview %file)]
+  ^-  (quip card _this)
+  =/  request=@uv
+    `@uv`(shas %git-peer-browse (cat 3 eny.bowl request-count))
+  =.  request-count  +(request-count)
+  =.  peer-browses
+    (~(put by peer-browses) request [peer repository view %.y %.n 'reading from peer' ~])
+  =/  cards=(list card)
+    ^-  (list card)
+    :~  (peer-card peer /peer/browse-request/(scot %uv request) [%browse-request request repository])
+        [%pass /peer/browse-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s30)]
+    ==
+  :_  this
+  %+  weld  cards
+  (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
 ::
 ++  peer-activities-json
   ^-  json
@@ -1538,6 +1944,79 @@
     =.  peer-activities  ~
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %peer %peers ~] site)
+      ==
+    :_  this
+    (api-json eyre-id 200 peers-json)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %peer %peers ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    ?~  ship-text
+      :_  this
+      (api-error eyre-id 422 'ship is required')
+    =/  peer=(unit @p)  (slaw %p u.ship-text)
+    ?~  peer
+      :_  this
+      (api-error eyre-id 422 'ship must be a valid Urbit ID')
+    (api-with-action eyre-id 200 [%add-peer u.peer])
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %git %api %peer %peers ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    ?~  ship-text
+      :_  this
+      (api-error eyre-id 422 'ship is required')
+    =/  peer=(unit @p)  (slaw %p u.ship-text)
+    ?~  peer
+      :_  this
+      (api-error eyre-id 422 'ship must be a valid Urbit ID')
+    (api-with-action eyre-id 200 [%remove-peer u.peer])
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %peer %browses ~] site)
+      ==
+    :_  this
+    (api-json eyre-id 200 peer-browses-json)
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %git %api %peer %browses ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  request-text=(unit @t)  (string-at 'request' u.jon)
+    ?~  request-text
+      :_  this
+      (api-error eyre-id 422 'request is required')
+    =/  request=(unit @uv)  (slaw %uv u.request-text)
+    ?~  request
+      :_  this
+      (api-error eyre-id 422 'invalid browse request')
+    ?.  (~(has by peer-browses) u.request)
+      :_  this
+      (api-error eyre-id 404 'browse request not found')
+    =.  peer-browses  (~(del by peer-browses) u.request)
+    :_  this
+    (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %peer %browse @ @ ~] site)
+      ==
+    =/  ship-text=@t  i.t.t.t.t.t.site
+    =/  repository=@t  i.t.t.t.t.t.t.site
+    =/  peer=(unit @p)  (slaw %p ship-text)
+    ?.  ?&(?=(^ peer) (valid-repository-name repository))
+      :_  this
+      (api-error eyre-id 422 'valid ship and repository are required')
+    (start-peer-browse eyre-id u.peer repository %overview)
   ?:  ?&  =(%'GET' method)
           ?=([%apps %git %api %peer %discoveries ~] site)
       ==
@@ -1791,7 +2270,7 @@
       (api-error eyre-id 404 'repository not found')
     =/  requested=(unit @t)  (query-value 'ref' args.line)
     =/  ref=@t  ?~(requested head.u.found u.requested)
-    ?.  (~(has by refs.u.found) ref)
+    ?~  (revision-oid u.found ref)
       :_  this
       (api-error eyre-id 404 'ref not found')
     :_  this
@@ -1804,8 +2283,32 @@
     ?~  found
       :_  this
       (api-error eyre-id 404 'repository not found')
+    =/  requested=(unit @t)  (query-value 'ref' args.line)
+    =/  ref=@t  ?~(requested head.u.found u.requested)
+    ?~  (revision-oid u.found ref)
+      :_  this
+      (api-error eyre-id 404 'ref not found')
     :_  this
-    (api-json eyre-id 200 (repository-commits-json name u.found))
+    (api-json eyre-id 200 (repository-commits-json name u.found ref))
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repository @ %commit @ ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  oid-text=@t  i.t.t.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  parsed=(unit oid:git)  (revision-oid u.found oid-text)
+    ?~  parsed
+      :_  this
+      (api-error eyre-id 404 'commit not found')
+    =/  detail=(unit json)  (repository-commit-json name u.found u.parsed)
+    ?~  detail
+      :_  this
+      (api-error eyre-id 404 'commit not found')
+    :_  this
+    (api-json eyre-id 200 u.detail)
   ?:  ?&  =(%'GET' method)
           ?=([%apps %git %api %repository @ %file-history *] site)
       ==
@@ -1820,7 +2323,7 @@
       (api-error eyre-id 422 'valid file path required')
     =/  requested=(unit @t)  (query-value 'ref' args.line)
     =/  ref=@t  ?~(requested head.u.found u.requested)
-    ?.  (~(has by refs.u.found) ref)
+    ?~  (revision-oid u.found ref)
       :_  this
       (api-error eyre-id 404 'ref not found')
     :_  this
@@ -1839,7 +2342,7 @@
       (api-error eyre-id 422 'valid file path required')
     =/  requested=(unit @t)  (query-value 'ref' args.line)
     =/  ref=@t  ?~(requested head.u.found u.requested)
-    ?.  (~(has by refs.u.found) ref)
+    ?~  (revision-oid u.found ref)
       :_  this
       (api-error eyre-id 404 'ref not found')
     =/  data=(unit octs)  (repository-file-at u.found ref u.file-path)
@@ -1911,10 +2414,11 @@
       (api-error eyre-id 409 'unable to read linked Clay desk')
     ?>  ?=(%& -.u.delta)
     ?:  =(~ p.u.delta)
-      =/  linked-binding=desk-binding:git
-        u.binding.applied(last-git `commit.u.snapped)
+      =/  clay-revision=(unit @ud)
+        %-  mole
+        |.(ud:.^(cass:clay %cw /(scot %p our.bowl)/[desk-name.u.binding.applied]/(scot %da now.bowl)))
       =/  linked=repository:git
-        applied(binding `linked-binding)
+        (update-binding-success applied commit.u.snapped clay-revision now.bowl)
       =.  repositories  (~(put by repositories) name linked)
       :_  this
       (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec commit.u.snapped)]]))
@@ -1980,6 +2484,30 @@
       :_  this
       (api-error eyre-id 422 'publicRead is required')
     (api-with-action eyre-id 200 [%set-public name u.public])
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %git %api %repository @ %pulls @ ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
+    ?~  number
+      :_  this
+      (api-error eyre-id 422 'pull request number is invalid')
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  matches=(list native-pull:git)
+      (skim native-pulls.u.found |=(pull=native-pull:git =(number.pull u.number)))
+    ?~  matches
+      :_  this
+      (api-error eyre-id 404 'pull request not found')
+    =/  pull=native-pull:git  i.matches
+    =/  diff=(unit json)  (repository-diff-json name u.found base.pull head.pull)
+    ?~  diff
+      :_  this
+      (api-error eyre-id 409 'pull request objects are incomplete')
+    :_  this
+    (api-json eyre-id 200 u.diff)
   ?:  ?&  =(%'POST' method)
           ?=([%apps %git %api %repository @ %pulls @ %merge ~] site)
       ==
@@ -2344,15 +2872,16 @@
   `[%& (weld changes deletes)]
 ::
 ++  update-binding-success
-  |=  [repo=repository:git branch=@t new-oid=oid:git riot=riot:clay]
+  |=  [repo=repository:git new-oid=oid:git clay-revision=(unit @ud) when=@da]
   ^-  repository:git
   ?~  binding.repo  repo
-  =/  clay-revision=(unit @ud)
-    ?~  riot  ~
-    ?.  ?=([%ud @] q.p.u.riot)  ~
-    `p.q.p.u.riot
+  =/  links=(list clay-link:git)
+    ?~  clay-revision  history.u.binding.repo
+    =/  link=clay-link:git  [u.clay-revision new-oid %git-to-clay when]
+    =/  old-links=(list clay-link:git)  history.u.binding.repo
+    [link old-links]
   =/  linked=desk-binding:git
-    u.binding.repo(last-clay clay-revision, last-git `new-oid)
+    u.binding.repo(last-clay clay-revision, last-git `new-oid, history links)
   repo(binding `linked)
 ::
 ++  receive-results
@@ -2831,25 +3360,41 @@
   ^-  (unit (unit cage))
   ?+  path  (on-peek:def path)
       [%x %repositories ~]
-    ``json+!>((repositories-json repositories))
+    =/  visible=(map @t repository:git)
+      %-  malt
+      %+  murn  ~(tap by repositories)
+      |=  entry=[@t repository:git]
+      ?.  public-read.+.entry  ~
+      `entry
+    ``json+!>((repositories-json visible))
   ::
       [%x %repository @ ~]
     =/  name=@t  i.t.t.path
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?~  found  [~ ~]
+    ?.  public-read.u.found  [~ ~]
     ``json+!>((repository-json name u.found))
   ::
       [%x %repository @ %files ~]
     =/  name=@t  i.t.t.path
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?~  found  [~ ~]
+    ?.  public-read.u.found  [~ ~]
     ``json+!>((repository-files-json name u.found))
   ::
       [%x %repository @ %commits ~]
     =/  name=@t  i.t.t.path
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?~  found  [~ ~]
-    ``json+!>((repository-commits-json name u.found))
+    ?.  public-read.u.found  [~ ~]
+    ``json+!>((repository-commits-json name u.found head.u.found))
+  ::
+      [%x %repository @ %browse ~]
+    =/  name=@t  i.t.t.path
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found  [~ ~]
+    ?.  public-read.u.found  [~ ~]
+    ``json+!>((repository-browse-json name u.found))
   ::
       [%x %fine @ ~]
     =/  transfer=(unit @uv)  (slaw %uv i.t.t.path)
@@ -2878,8 +3423,11 @@
     (on-agent:def wire sign)
   =/  report-at=@da  (add now.bowl ~s1)
   ?~  p.sign
+    =/  clay-revision=(unit @ud)
+      %-  mole
+      |.(ud:.^(cass:clay %cw /(scot %p our.bowl)/[desk-name.pending]/(scot %da now.bowl)))
     =/  applied=repository:git
-      (update-binding-success applied.pending new-oid.pending ~)
+      (update-binding-success applied.pending new-oid.pending clay-revision now.bowl)
     =.  repositories  (~(put by repositories) repository.pending applied)
     =.  pending  pending(result `[%.y ''])
     =.  pending-clay  `pending
@@ -2909,6 +3457,53 @@
     [[status ~[['content-type' 'application/vnd.git-lfs+json'] ['cache-control' 'no-store']]] `(json-to-octs:server jon)]
   ?+  wire  (on-arvo:def wire sign-arvo)
       [%eyre *]  `this
+      [%peer %browse @ ~]
+    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  request  `this
+    =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
+    ?~  found  `this
+    ?.  active.u.found  `this
+    =/  release=card
+      [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %git] %poke %git-peer !>([%browse-release u.request])]
+    =/  failure
+      |=  message=@t
+      ^-  (quip card _this)
+      :_  this(peer-browses (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message message)))
+      :~  release
+      ==
+    ?.  ?=([%ames %sage *] sign-arvo)
+      (failure 'Fine browse failed')
+    =/  =sage:mess:ames  sage.sign-arvo
+    ?.  =(ship.p.sage peer.u.found)
+      (failure 'Fine browse response came from the wrong ship')
+    ?~  q.sage
+      (failure 'repository is unavailable or not public')
+    ?.  =(%json p.q.sage)
+      (failure 'Fine browse returned the wrong mark')
+    =/  decoded=(unit json)
+      %-  mole
+      |.(;;(json +.q.q.sage))
+    ?~  decoded
+      (failure 'Fine browse result is malformed')
+    =.  peer-browses
+      (~(put by peer-browses) u.request u.found(active %.n, ok %.y, message 'complete', result `u.decoded))
+    :_  this
+    :~  release
+    ==
+  ::
+      [%peer %browse-timeout @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  request  `this
+    =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
+    ?~  found  `this
+    ?.  active.u.found  `this
+    =.  peer-browses
+      (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer browse timed out'))
+    `this
+  ::
       [%peer %fine @ @ ~]
     =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
     ?~  transfer  `this
@@ -3004,9 +3599,14 @@
       (page-octs our.bowl desk-name.job now.bowl raw-page)
     ?~  data  `this(pending-publish ~)
     =/  next-job=publish-job
+      =/  clay-revision=(unit @ud)
+        ?:  ?=([%ud @] q.p.u.riot)
+          `p.q.p.u.riot
+        clay-revision.job
       :*  repository.job
           desk-name.job
           branch.job
+          clay-revision
           message.job
           `(list path)`t.paths.job
           (~(put by files.job) i.paths.job u.data)

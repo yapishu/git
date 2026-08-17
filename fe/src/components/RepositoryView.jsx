@@ -3,6 +3,12 @@ import { api } from '../api'
 import { CopyIcon } from './Icons'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
+const identityLabel = (identity) => identity?.name || identity?.email || 'Unknown author'
+const commitDate = (identity) => {
+  const value = Number(identity?.timestamp) * 1000
+  return Number.isFinite(value) && value > 0 ? new Date(value) : null
+}
+const dateLabel = (identity) => commitDate(identity)?.toLocaleString() || ''
 
 const decodeBase64 = (content) => {
   const raw = atob(content)
@@ -32,7 +38,7 @@ function Files({ data, commit, loading, onOpen }) {
   if (!data?.files?.length) return <div className="empty">This repository has no files yet.</div>
   return (
     <div className="table">
-      {commit && <div className="latest-commit"><span className="commit-dot" /><strong>{commit.subject || 'Untitled commit'}</strong><code title={commit.oid}>{shortOid(commit.oid)}</code></div>}
+      {commit && <div className="latest-commit"><span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span><span><strong>{commit.subject || 'Untitled commit'}</strong><small>{identityLabel(commit.author)}{dateLabel(commit.committer) ? ` · ${dateLabel(commit.committer)}` : ''}</small></span><code title={commit.oid}>{shortOid(commit.oid)}</code></div>}
       <div className="table-head"><span>Path</span><span>Size</span></div>
       {data.files.map((file) => (
         <button className="table-row file-row" key={file.path} onClick={() => onOpen(file.path)}>
@@ -54,12 +60,15 @@ function FileView({ repository, path, branch, editable, onBack, onSaved }) {
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
+  const [revision, setRevision] = useState(branch)
+
+  useEffect(() => { setRevision(branch); setHistory(null); setView('file') }, [branch, path])
 
   useEffect(() => {
     let active = true
     setBusy(true)
     setError('')
-    api.file(repository, path, branch).then((data) => {
+    api.file(repository, path, revision).then((data) => {
       if (!active) return
       const decoded = decodeBase64(data.content)
       setFile({ ...data, ...decoded })
@@ -67,7 +76,7 @@ function FileView({ repository, path, branch, editable, onBack, onSaved }) {
       setOriginal(decoded.text ?? '')
     }).catch((cause) => active && setError(cause.message)).finally(() => active && setBusy(false))
     return () => { active = false }
-  }, [repository, path, branch])
+  }, [repository, path, revision])
 
   useEffect(() => {
     if (view !== 'history' || history) return
@@ -97,16 +106,17 @@ function FileView({ repository, path, branch, editable, onBack, onSaved }) {
     <div className="file-view">
       <div className="file-toolbar">
         <button className="text-button file-back" onClick={onBack}>← Files</button>
-        <code>{path}</code>
+        <code>{path} · {revision === branch ? branch.replace('refs/heads/', '') : shortOid(revision)}</code>
         <div className="file-actions">
           {downloadUrl && <a className="button link-button" href={downloadUrl} download={path.split('/').pop()}>Download</a>}
           <button className={view === 'history' ? 'button active' : 'button'} onClick={() => setView(view === 'history' ? 'file' : 'history')}>{view === 'history' ? 'View file' : 'History'}</button>
-          {editable && file && file.text !== null && !editing && view === 'file' && <button className="button" onClick={() => setEditing(true)}>Edit</button>}
+          {revision !== branch && <button className="button" onClick={() => { setRevision(branch); setView('file') }}>Latest</button>}
+          {editable && revision === branch && file && file.text !== null && !editing && view === 'file' && <button className="button" onClick={() => setEditing(true)}>Edit</button>}
         </div>
       </div>
       {error && <div className="inline-error">{error}</div>}
       {view === 'history' ? (
-        !history ? <div className="empty">Loading file history…</div> : !history.commits?.length ? <div className="empty">No changes found for this file.</div> : <Commits data={history} loading={false} />
+        !history ? <div className="empty">Loading file history…</div> : !history.commits?.length ? <div className="empty">No changes found for this file.</div> : <Commits data={history} loading={false} onSelect={(commit) => { if (commit.present) { setRevision(commit.oid); setView('file') } }} />
       ) : busy && !file ? <div className="empty">Loading file…</div> : editing ? (
         <div className="editor-panel">
           <textarea className="code-editor" value={text} onChange={(event) => setText(event.target.value)} spellCheck="false" />
@@ -148,6 +158,8 @@ function PullRequests({ repo, onMutate }) {
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('open')
   const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState(null)
+  const [diff, setDiff] = useState(null)
   const pulls = repo.pullRequests || []
   async function merge(number) {
     setBusy(number)
@@ -161,18 +173,45 @@ function PullRequests({ repo, onMutate }) {
   ], [pulls, githubPulls])
   const visible = entries.filter((pull) => (filter === 'all' || pull.state === filter) && (!query.trim() || pull.title.toLowerCase().includes(query.trim().toLowerCase())))
   if (!entries.length) return <div className="empty">No pull requests.</div>
+  async function inspect(pull) {
+    setSelected(pull); setDiff(null); setError('')
+    try { setDiff(await api.pull(repo.name, pull.number)) } catch (cause) { setError(cause.message) }
+  }
+  if (selected) return <div className="pull-detail"><button className="text-button file-back" onClick={() => { setSelected(null); setDiff(null) }}>← Pull requests</button><header className="pull-detail-header"><div><h2>#{selected.number} {selected.title}</h2><p><span className={`status ${selected.state === 'open' ? 'good' : ''}`}>{selected.state}</span> <code>{selected.sourceShip}/{selected.sourceRepository}</code> wants to merge {shortOid(selected.head)} into {shortOid(selected.base)}</p></div>{selected.state === 'open' && <button className="button primary" disabled={busy} onClick={() => merge(selected.number)}>{busy === selected.number ? 'Validating…' : 'Merge pull request'}</button>}</header>{error && <div className="inline-error">{error}</div>}{!diff ? <div className="empty">Loading diff…</div> : <DiffView diff={diff} />}</div>
   return <>
     <div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter pull requests…" /></div>
     {!visible.length ? <div className="empty compact">No pull requests match this filter.</div> : <div className="pull-list">
     {error && <div className="inline-error">{error}</div>}
-    {visible.map((pull) => pull.native ? <article className="pull-row" key={`native-${pull.number}`}>
+    {visible.map((pull) => pull.native ? <article className="pull-row clickable" key={`native-${pull.number}`} onClick={() => inspect(pull)}>
       <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.state}</span><h3>#{pull.number} {pull.title}</h3><p><code>{pull.sourceShip}/{pull.sourceRepository}</code> proposes <code>{shortOid(pull.head)}</code></p></div>
-      {pull.state === 'open' && <button className="button primary" disabled={busy} onClick={() => merge(pull.number)}>{busy === pull.number ? 'Validating…' : 'Merge'}</button>}
+      {pull.state === 'open' && <button className="button primary" disabled={busy} onClick={(event) => { event.stopPropagation(); merge(pull.number) }}>{busy === pull.number ? 'Validating…' : 'Merge'}</button>}
     </article> : <a className="pull-row forge-link" key={`github-${pull.number}`} href={pull.url} target="_blank" rel="noreferrer">
       <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.draft ? 'draft' : pull.state}</span><h3>#{pull.number} {pull.title}</h3><p>opened by <strong>{pull.author}</strong> on GitHub</p></div><span className="external-arrow">↗</span>
     </a>)}
     </div>}
   </>
+}
+
+function DiffView({ diff }) {
+  return <div className="diff-view"><div className="diff-overview"><b>{diff.changedCount || 0}</b> files changed <code>{shortOid(diff.base)}..{shortOid(diff.head)}</code></div>{(diff.changes || []).map((change) => <FileDiff key={change.path} change={change} />)}</div>
+}
+
+function FileDiff({ change }) {
+  if (change.truncated) return <section className="file-diff"><header><code>{change.path}</code><span>{change.status}</span></header><div className="empty compact">Diff omitted because this file exceeds 256 KiB.</div></section>
+  let oldText = '', newText = ''
+  try { oldText = change.oldContent ? decodeBase64(change.oldContent).text ?? '' : ''; newText = change.newContent ? decodeBase64(change.newContent).text ?? '' : '' } catch { /* binary */ }
+  if ((change.oldContent && !oldText) || (change.newContent && !newText)) return <section className="file-diff"><header><code>{change.path}</code><span>{change.status}</span></header><div className="empty compact">Binary file changed.</div></section>
+  const before = oldText.split('\n'), after = newText.split('\n')
+  let prefix = 0
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix += 1
+  let suffix = 0
+  while (suffix < before.length - prefix && suffix < after.length - prefix && before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) suffix += 1
+  const rows = []
+  before.slice(Math.max(0, prefix - 3), prefix).forEach((line, index) => rows.push({ type: 'context', line, old: Math.max(0, prefix - 3) + index + 1, next: Math.max(0, prefix - 3) + index + 1 }))
+  before.slice(prefix, before.length - suffix).forEach((line, index) => rows.push({ type: 'delete', line, old: prefix + index + 1, next: '' }))
+  after.slice(prefix, after.length - suffix).forEach((line, index) => rows.push({ type: 'add', line, old: '', next: prefix + index + 1 }))
+  after.slice(after.length - suffix, Math.min(after.length, after.length - suffix + 3)).forEach((line, index) => rows.push({ type: 'context', line, old: before.length - suffix + index + 1, next: after.length - suffix + index + 1 }))
+  return <section className="file-diff"><header><code>{change.path}</code><span>{change.status} · {change.oldSize} → {change.newSize} B</span></header><div className="hunk-head">@@ -{prefix + 1} +{prefix + 1} @@</div><pre>{rows.map((row, index) => <span className={`diff-line ${row.type}`} key={index}><i>{row.old}</i><i>{row.next}</i><b>{row.type === 'add' ? '+' : row.type === 'delete' ? '-' : ' '}</b><code>{row.line}</code></span>)}</pre></section>
 }
 
 function Issues({ repo }) {
@@ -185,20 +224,32 @@ function Issues({ repo }) {
   return <><div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter issues…" /></div>{!visible.length ? <div className="empty compact">No issues match this filter.</div> : <div className="issue-list">{visible.map((issue) => <a className="issue-row forge-link" key={issue.number} href={issue.url} target="_blank" rel="noreferrer"><span className={`issue-icon ${issue.state}`}>◉</span><div><h3>{issue.title}</h3><p>#{issue.number} · {issue.state} · {issue.author}</p></div><span className="external-arrow">↗</span></a>)}</div>}</>
 }
 
-function Commits({ data, loading }) {
+function Commits({ data, loading, onSelect }) {
   if (loading) return <div className="empty">Loading history…</div>
   if (!data?.commits?.length) return <div className="empty">No commits yet.</div>
   return (
     <div className="commit-list">
       {data.commits.map((commit) => (
-        <div className="commit-row" key={commit.oid}>
-          <span className="commit-dot" />
-          <div><strong>{commit.subject || 'Untitled commit'}</strong><small>{commit.parent ? `parent ${shortOid(commit.parent)}` : 'root commit'}</small></div>
+        <button className="commit-row commit-button" key={commit.oid} onClick={() => onSelect?.(commit)} disabled={!onSelect}>
+          <span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span>
+          <div><strong>{commit.subject || 'Untitled commit'}</strong><small>{commit.author ? identityLabel(commit.author) : (commit.parent ? `parent ${shortOid(commit.parent)}` : 'root commit')}{dateLabel(commit.committer || commit.author) ? ` committed ${dateLabel(commit.committer || commit.author)}` : ''}</small></div>
           <code title={commit.oid}>{shortOid(commit.oid)}</code>
-        </div>
+        </button>
       ))}
     </div>
   )
+}
+
+function CommitDetail({ data, onBack }) {
+  if (!data) return <div className="empty">Loading commit…</div>
+  const commit = data.commit
+  return <div className="commit-detail">
+    <button className="text-button file-back" onClick={onBack}>← Commit history</button>
+    <section className="panel commit-summary"><div className="commit-avatar large">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</div><div><h2>{commit.subject || 'Untitled commit'}</h2><p>{identityLabel(commit.author)} authored · {identityLabel(commit.committer)} committed <span title={dateLabel(commit.committer)}>{dateLabel(commit.committer)}</span></p><code>{commit.oid}</code></div></section>
+    {data.message && data.message !== commit.subject && <pre className="commit-message">{data.message}</pre>}
+    <div className="diff-summary"><b>{data.changedCount || 0}</b> changed files <span>tree {shortOid(data.tree)}</span></div>
+    <div className="table"><div className="table-head"><span>File</span><span>Change</span></div>{(data.changes || []).map((change) => <div className="table-row" key={change.path}><span className="file-path"><i />{change.path}</span><span className={`change-status ${change.status}`}>{change.status} · {Number(change.oldSize).toLocaleString()} → {Number(change.newSize).toLocaleString()} B</span></div>)}</div>
+  </div>
 }
 
 function Settings({ repo, onMutate }) {
@@ -330,6 +381,7 @@ function Settings({ repo, onMutate }) {
         {repo.binding?.bound ? (
           <>
             <div className="binding-card"><span>Desk</span><code>{repo.binding.desk}</code><span>Branch</span><code>{repo.binding.branch}</code></div>
+            {!!repo.binding.history?.length && <div className="clay-history"><div className="table-head"><span>Clay revision ↔ Git commit</span><span>Direction</span></div>{repo.binding.history.map((link) => <button type="button" className="table-row" key={`${link.clayRevision}-${link.commit}`} title={link.when}><span><b>r{link.clayRevision}</b><code>{shortOid(link.commit)}</code></span><span className="quiet">{link.direction === 'clay-to-git' ? 'Clay → Git' : 'Git → Clay'}</span></button>)}</div>}
             <label><span>Commit message</span><input value={message} onChange={(e) => setMessage(e.target.value)} /></label>
             <div className="form-actions split">
               <button className="button ghost danger-text" onClick={() => act('unbind', () => api.unbind(repo.name))}>Unbind</button>
@@ -387,22 +439,39 @@ export default function RepositoryView({ repo, onRefresh }) {
   const [branch, setBranch] = useState(repo.head)
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [commitDetail, setCommitDetail] = useState(null)
   const cloneUrl = `${window.location.origin}/git/${repo.name}.git`
 
   useEffect(() => {
     let active = true
     setLoading(true)
-    const load = tab === 'commits' ? api.commits(repo.name) : tab === 'code' ? Promise.all([api.files(repo.name, branch), api.commits(repo.name)]).then(([files, commits]) => ({ files, commits })) : Promise.resolve(null)
+    setDetail(null)
+    const branchExists = (repo.refs || []).some((ref) => ref.name === branch)
+    const emptyCommits = { repository: repo.name, head: branch, commits: [] }
+    const emptyFiles = { repository: repo.name, head: branch, commit: '', files: [] }
+    const load = !branchExists
+      ? Promise.resolve(tab === 'commits' ? emptyCommits : tab === 'code' ? { files: emptyFiles, commits: emptyCommits } : null)
+      : tab === 'commits'
+        ? api.commits(repo.name, branch)
+        : tab === 'code'
+          ? Promise.all([api.files(repo.name, branch), api.commits(repo.name, branch)]).then(([files, commits]) => ({ files, commits }))
+          : Promise.resolve(null)
     load.then((data) => active && setDetail(data)).finally(() => active && setLoading(false))
     return () => { active = false }
   }, [repo.name, repo.refs, tab, branch])
 
   useEffect(() => { setFilePath(''); setBranch(repo.head) }, [repo.name, repo.head])
+  useEffect(() => { setCommitDetail(null) }, [repo.name, branch, tab])
 
   function browseBranch(ref) {
     setBranch(ref)
     setFilePath('')
     setTab('code')
+  }
+
+  async function openCommit(commit) {
+    setCommitDetail(null); setLoading(true)
+    try { setCommitDetail(await api.commit(repo.name, commit.oid)) } finally { setLoading(false) }
   }
 
   async function mutate() {
@@ -416,7 +485,7 @@ export default function RepositoryView({ repo, onRefresh }) {
         <div className="clone-box"><code>{cloneUrl}</code><button className="icon-button" title="Copy clone URL" onClick={() => navigator.clipboard.writeText(cloneUrl)}><CopyIcon /></button></div>
       </header>
       <div className="repo-meta">
-        <span title="Branches, tags, and other named Git pointers"><b>{repo.refs?.length || 0}</b> Git refs</span><span title="Internal Git commits, directory trees, and file blobs"><b>{repo.objectCount || 0}</b> stored Git objects</span><span title="Large file payloads in ship object storage"><b>{repo.lfsObjectCount || 0}</b> LFS files</span>
+        <span><b>{repo.fileCount || 0}</b> files</span><span><b>{repo.commitCount || 0}</b> commits</span><span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span><span title="Large file payloads in ship object storage"><b>{repo.lfsObjectCount || 0}</b> LFS files</span>
         {repo.binding?.bound && <span className="clay-chip">Clay · {repo.binding.desk}</span>}
       </div>
       <nav className="tabs">
@@ -429,7 +498,7 @@ export default function RepositoryView({ repo, onRefresh }) {
           : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={setFilePath} />)}
         {tab === 'issues' && <Issues repo={repo} />}
         {tab === 'branches' && <Branches repo={repo} selected={branch} onBrowse={browseBranch} />}
-        {tab === 'commits' && <Commits data={detail} loading={loading} />}
+        {tab === 'commits' && (commitDetail ? <CommitDetail data={commitDetail} onBack={() => setCommitDetail(null)} /> : <Commits data={detail} loading={loading} onSelect={openCommit} />)}
         {tab === 'pulls' && <PullRequests repo={repo} onMutate={mutate} />}
         {tab === 'settings' && <Settings repo={repo} onMutate={mutate} />}
       </section>

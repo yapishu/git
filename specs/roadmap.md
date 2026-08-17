@@ -33,20 +33,26 @@
 - JSON read models for repository metadata, refs, first-parent history, and head-tree file listings
 - authenticated web API for repository lifecycle, access policy, write tokens, Clay bindings, and publication
 - componentized React interface with repository navigation, clone URLs, file trees, commit history, and settings
-- branch-aware file browsing, text and image blob views, authenticated text editing, and per-file history
+- GitHub-style repository summaries with file, commit, branch, tag, and LFS counts rather than internal object counts
+- branch-aware file browsing, text and image blob views, authenticated text editing, per-file history, commit identities, and commit detail
 - mounted-desk discovery and first-class desk-to-repository publication
 - Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, transfer expiry and cancellation, status pruning, object-count checks, and per-object OID verification
 - two-ship Fine conformance: bidirectional native forks reconstructed complete repositories and passed stock Git clone and `git fsck --full`
 - on-demand Ames peer discovery with bounded public-repository catalogs, writer hints, expiry, cancellation, and status pruning
+- persistent peer bookmarks with expandable public repositories in the sidebar
+- request-scoped Fine browsing of remote repository metadata, branches, current files, and bounded commit history
 - bounded peer activity notifications for incoming and outgoing forks, snapshot reads, native updates, and pull requests
 - public native forks, explicit refresh, and origin metadata
 - ship writer ACLs with fast-forward-only push-back from native forks
 - native pull requests whose object graphs are stored at the origin without advancing a branch
+- native pull-request detail with bounded per-file red/green textual diffs
 - pull-request merges and authorized native updates gated by Clay when the destination branch is desk-bound
+- explicit Clay revision-to-Git commit mappings in both publication directions
 - reload-safe, cache-invalidating static fileserver at `/apps/git` and a separately rebound API at `/apps/git/api`
 - direct GitHub Smart HTTP import and update with authentic refs, canonical OIDs, delta-pack decoding, reachable-graph validation, and 64 MiB/25,000-object bounds
 - optional server-side GitHub token for private repositories and authenticated REST operations
 - bounded GitHub issue and pull-request synchronization plus GitHub fork and pull-request creation
+- consolidated new-repository flow for blank repositories, Clay desks, peer forks, and GitHub imports
 - repository navigation and filtering: repository search, code, issues, pull requests, branches, commits, file editing/history, and settings
 - conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, Clay snapshots, and object-store request signing
 
@@ -55,8 +61,8 @@
 1. Add LFS locking and garbage collection for unreferenced, verified objects.
 2. Subtract the client's known reachable closure during upload-pack negotiation and add ACK negotiation.
 3. Add peeled tag advertisements, shallow fetches, filters, and protocol v2.
-4. Add tags, commit detail, textual diffs, review comments, and non-fast-forward pull-request merging.
-5. Add richer commit metadata, explicit Clay resync/conflict controls, and paginated GitHub metadata.
+4. Add tag creation, review comments, line-level discussion, and non-fast-forward pull-request merging.
+5. Add explicit Clay resync/conflict controls, paginated GitHub metadata, and on-demand remote file contents.
 
 ## Storage direction
 

@@ -16,13 +16,14 @@
 - optional branch-to-desk bindings that apply pushed commits directly to Clay
 - Clay-gated pushes: invalid desks are rejected by Git with the complete Ford stack trace
 - Clay-to-Git publishing that snapshots a bound desk as canonical blobs, trees, and commits
-- authenticated web interface for repositories, files, commits, access, tokens, and Clay publication
-- branch browsing, file contents and editing, per-file history, native pull requests, and repository settings
+- GitHub-style web interface for repositories, branches, files, commit details, authorship, per-file history, and repository settings
+- repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
 - one-click publication of any mounted Clay desk as a Git repository
 - verified, incremental native forks: Ames coordinates access and refs while Fine carries only the missing immutable object snapshot
-- on-demand discovery of a ship's public repositories and a live peer-operation activity panel
+- persistent ship peers in the sidebar, with on-demand public repository discovery and Fine-backed remote browsing
 - ship write ACLs with fast-forward-only native push-back from authorized forks
-- Clay-gated native updates and pull-request merges, with validation failures returned to the sender
+- native pull requests between ships with per-file red/green diffs and Clay-gated merges
+- explicit Clay revision-to-commit history for both pushed Git trees and published desk snapshots
 - direct GitHub import and update through Git Smart HTTP, preserving branches, tags, commits, trees, blobs, and object IDs
 - optional GitHub token support for private imports, GitHub forks, and opening pull requests
 - cached GitHub issues and pull-request status, synchronized through the GitHub REST API
@@ -68,4 +69,4 @@ A repository branch can be linked to a Clay desk with `%bind-desk`. A push to th
 
 The web read model is available through `%git` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`.
 
-The authenticated web app is served at `/apps/git`. Its API creates and deletes repositories, publishes mounted desks, changes public-read policy and hashed write tokens, manages ship writers, binds and unbinds Clay desks, browses branches and file history, edits text files, forks public repositories through Ames and Fine, opens or merges native pull requests, and imports or updates GitHub repositories. GitHub imports are limited to a 64 MiB pack response and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.
+The authenticated web app is served at `/apps/git`. Its new-repository dialog creates a blank repository, publishes a mounted desk, forks from a ship, or imports from GitHub. The API manages repository policy and Clay bindings, browses and edits local files, keeps peer bookmarks, remotely browses public repositories over Fine, forks and refreshes repositories, and opens or merges native pull requests. GitHub imports are limited to a 64 MiB pack response and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.

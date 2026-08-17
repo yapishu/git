@@ -28,6 +28,12 @@ export const api = {
   repositories: () => request('/repositories'),
   desks: () => request('/desks'),
   peerActivity: () => request('/peer/activity'),
+  peers: () => request('/peer/peers'),
+  addPeer: (ship) => request('/peer/peers', { method: 'POST', body: JSON.stringify({ ship }) }),
+  removePeer: (ship) => request('/peer/peers', { method: 'DELETE', body: JSON.stringify({ ship }) }),
+  peerBrowse: (ship, repository) => request(`/peer/browse/${encodeURIComponent(ship)}/${encodeURIComponent(repository)}`, { method: 'POST', body: '{}' }),
+  peerBrowses: () => request('/peer/browses'),
+  peerDeleteBrowse: (requestId) => request('/peer/browses', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
   clearPeerActivity: () => request('/peer/activity', { method: 'DELETE' }),
   peerDiscover: (ship) => request('/peer/discover', { method: 'POST', body: JSON.stringify({ ship }) }),
   peerDiscoveries: () => request('/peer/discoveries'),
@@ -58,7 +64,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ content, message }),
     }),
-  commits: (name) => request(`/repository/${encodeURIComponent(name)}/commits`),
+  commits: (name, ref) => request(atRef(`/repository/${encodeURIComponent(name)}/commits`, ref)),
+  commit: (name, oid) => request(`/repository/${encodeURIComponent(name)}/commit/${encodeURIComponent(oid)}`),
   create: (name, publicRead) =>
     request('/repositories', { method: 'POST', body: JSON.stringify({ name, publicRead }) }),
   remove: (name) => request(`/repository/${encodeURIComponent(name)}`, { method: 'DELETE' }),
@@ -77,6 +84,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ref, protected: protectedBranch }),
     }),
+  pull: (name, number) => request(`/repository/${encodeURIComponent(name)}/pulls/${number}`),
   mergePull: (name, number) => request(`/repository/${encodeURIComponent(name)}/pulls/${number}/merge`, { method: 'POST', body: '{}' }),
   setToken: (name, token) =>
     request(`/repository/${encodeURIComponent(name)}/token`, {
