@@ -1,6 +1,6 @@
 # %git
 
-## `|install ~matwet %git`
+## `|install ~matwet %urgit`
 
 <img width="947" height="585" alt="image" src="https://github.com/user-attachments/assets/b13cdad5-ab95-4e9a-95af-e3fc81fbdd18" />
 
