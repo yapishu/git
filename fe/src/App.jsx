@@ -136,9 +136,10 @@ export default function App() {
     setTimeout(() => refresh(name), 1200)
   }
 
-  async function create(name, publicRead) {
+  async function create(name, publicRead, description = '') {
     try {
       await api.create(name, publicRead)
+      if (description) await api.setDescription(name, description)
       await refresh(name)
       choose(name)
     } catch (cause) {

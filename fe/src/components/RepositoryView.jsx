@@ -230,11 +230,11 @@ function Commits({ data, loading, onSelect }) {
   return (
     <div className="commit-list">
       {data.commits.map((commit) => (
-        <button className="commit-row commit-button" key={commit.oid} onClick={() => onSelect?.(commit)} disabled={!onSelect}>
+        <div className="commit-row" key={commit.oid}>
           <span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span>
           <div><strong>{commit.subject || 'Untitled commit'}</strong><small>{commit.author ? identityLabel(commit.author) : (commit.parent ? `parent ${shortOid(commit.parent)}` : 'root commit')}{dateLabel(commit.committer || commit.author) ? ` committed ${dateLabel(commit.committer || commit.author)}` : ''}</small></div>
-          <code title={commit.oid}>{shortOid(commit.oid)}</code>
-        </button>
+          <button className="commit-hash" title={`View ${commit.oid}`} onClick={() => onSelect?.(commit)} disabled={!onSelect}><code>{shortOid(commit.oid)}</code></button>
+        </div>
       ))}
     </div>
   )
@@ -247,12 +247,12 @@ function CommitDetail({ data, onBack }) {
     <button className="text-button file-back" onClick={onBack}>← Commit history</button>
     <section className="panel commit-summary"><div className="commit-avatar large">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</div><div><h2>{commit.subject || 'Untitled commit'}</h2><p>{identityLabel(commit.author)} authored · {identityLabel(commit.committer)} committed <span title={dateLabel(commit.committer)}>{dateLabel(commit.committer)}</span></p><code>{commit.oid}</code></div></section>
     {data.message && data.message !== commit.subject && <pre className="commit-message">{data.message}</pre>}
-    <div className="diff-summary"><b>{data.changedCount || 0}</b> changed files <span>tree {shortOid(data.tree)}</span></div>
-    <div className="table"><div className="table-head"><span>File</span><span>Change</span></div>{(data.changes || []).map((change) => <div className="table-row" key={change.path}><span className="file-path"><i />{change.path}</span><span className={`change-status ${change.status}`}>{change.status} · {Number(change.oldSize).toLocaleString()} → {Number(change.newSize).toLocaleString()} B</span></div>)}</div>
+    <DiffView diff={{ changedCount: data.changedCount, base: commit.parent, head: commit.oid, changes: data.changes || [] }} />
   </div>
 }
 
 function Settings({ repo, onMutate }) {
+  const [description, setDescription] = useState(repo.description || '')
   const [desk, setDesk] = useState(repo.binding?.desk || '')
   const [branch, setBranch] = useState(repo.binding?.branch || repo.head || 'refs/heads/main')
   const [message, setMessage] = useState('Publish Clay desk')
@@ -267,6 +267,7 @@ function Settings({ repo, onMutate }) {
   const [githubBase, setGithubBase] = useState((repo.head || 'refs/heads/main').replace('refs/heads/', ''))
 
   useEffect(() => {
+    setDescription(repo.description || '')
     setDesk(repo.binding?.desk || '')
     setBranch(repo.binding?.branch || repo.head || 'refs/heads/main')
   }, [repo])
@@ -358,6 +359,10 @@ function Settings({ repo, onMutate }) {
   return (
     <div className="settings-grid">
       {error && <div className="inline-error">{error}</div>}
+      <section className="panel">
+        <div className="section-title"><div><h2>Repository details</h2><p>Shown on this ship and when other ships browse the repository.</p></div></div>
+        <label><span>Description</span><div className="inline-field"><input maxLength="500" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What is this repository for?" /><button className="button" disabled={busy || description === (repo.description || '')} onClick={() => act('description', () => api.setDescription(repo.name, description.trim()))}>{busy === 'description' ? 'Saving…' : 'Save'}</button></div></label>
+      </section>
       {repo.peerOrigin && <section className="panel">
         <div className="section-title"><div><h2>Native origin</h2><p>Forked from <code>{repo.peerOrigin.ship}/{repo.peerOrigin.repository}</code>. Ames coordinates updates and Fine carries the verified object snapshot.</p></div></div>
         <div className="form-actions split"><small className="quiet">{syncResult || 'The origin must grant this ship write access.'}</small><button className="button primary" disabled={busy} onClick={pushToOrigin}>{busy === 'peer-push' ? 'Syncing…' : 'Push to origin'}</button></div>
@@ -481,7 +486,7 @@ export default function RepositoryView({ repo, onRefresh }) {
   return (
     <main className="content">
       <header className="repo-header">
-        <div><div className="repo-breadcrumb"><span>{repo.owner}</span><b>/</b><h1>{repo.name}</h1><span className="visibility-badge">{repo.publicRead ? 'Public' : 'Private'}</span></div>{repo.githubOrigin && <a className="origin-link" href={`https://github.com/${repo.githubOrigin.owner}/${repo.githubOrigin.repository}`} target="_blank" rel="noreferrer">GitHub · {repo.githubOrigin.owner}/{repo.githubOrigin.repository} ↗</a>}</div>
+        <div><div className="repo-breadcrumb"><span>{repo.owner}</span><b>/</b><h1>{repo.name}</h1><span className="visibility-badge">{repo.publicRead ? 'Public' : 'Private'}</span></div>{repo.description && <p className="repo-description">{repo.description}</p>}{repo.githubOrigin && <a className="origin-link" href={`https://github.com/${repo.githubOrigin.owner}/${repo.githubOrigin.repository}`} target="_blank" rel="noreferrer">GitHub · {repo.githubOrigin.owner}/{repo.githubOrigin.repository} ↗</a>}</div>
         <div className="clone-box"><code>{cloneUrl}</code><button className="icon-button" title="Copy clone URL" onClick={() => navigator.clipboard.writeText(cloneUrl)}><CopyIcon /></button></div>
       </header>
       <div className="repo-meta">

@@ -12,7 +12,7 @@ export default function RemoteRepositoryView({ ship, data, onFork }) {
   if (!repo) return <main className="content"><div className="empty">Repository data is unavailable.</div></main>
   const commits = data.commits?.commits || []
   return <main className="content">
-    <header className="repo-header"><div><div className="repo-breadcrumb"><span>{ship}</span><b>/</b><h1>{repo.name}</h1><span className="visibility-badge">Peer</span></div><p className="remote-note">Read from the peer’s public Fine endpoint. Fork it locally to edit, push, or open a pull request.</p></div><button className="button primary" onClick={() => onFork(ship, repo.name)}>Fork repository</button></header>
+    <header className="repo-header"><div><div className="repo-breadcrumb"><span>{ship}</span><b>/</b><h1>{repo.name}</h1><span className="visibility-badge">Peer</span></div>{repo.description && <p className="repo-description">{repo.description}</p>}</div><button className="button primary" onClick={() => onFork(ship, repo.name)}>Fork repository</button></header>
     <div className="repo-meta"><span><b>{repo.fileCount || 0}</b> files</span><span><b>{repo.commitCount || 0}</b> commits</span><span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span></div>
     <nav className="tabs"><button className={tab === 'code' ? 'active' : ''} onClick={() => setTab('code')}>Code</button><button className={tab === 'commits' ? 'active' : ''} onClick={() => setTab('commits')}>Commits <span className="tab-count">{commits.length}</span></button><button className={tab === 'branches' ? 'active' : ''} onClick={() => setTab('branches')}>Branches <span className="tab-count">{repo.branchCount || 0}</span></button></nav>
     <section className="repo-body">

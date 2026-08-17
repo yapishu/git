@@ -14,6 +14,7 @@
       head=@t
       refs=(map @t oid:git)
       objects=@ud
+      pages=@ud
   ==
 +$  ready
   $:  transfer=@uv
@@ -21,6 +22,7 @@
       head=@t
       refs=(map @t oid:git)
       objects=@ud
+      pages=@ud
   ==
 +$  catalog-request
   $:  request=@uv

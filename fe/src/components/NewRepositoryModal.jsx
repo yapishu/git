@@ -3,13 +3,14 @@ import { useState } from 'react'
 export default function NewRepositoryModal({ onCreate, onPublishDesk, onForkPeer, onImportGitHub, onClose }) {
   const [mode, setMode] = useState('choose')
   const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
   const [publicRead, setPublicRead] = useState(false)
   const [busy, setBusy] = useState(false)
 
   async function submit(event) {
     event.preventDefault()
     setBusy(true)
-    try { await onCreate(name.trim(), publicRead); onClose() } finally { setBusy(false) }
+    try { await onCreate(name.trim(), publicRead, description.trim()); onClose() } finally { setBusy(false) }
   }
 
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -23,6 +24,7 @@ export default function NewRepositoryModal({ onCreate, onPublishDesk, onForkPeer
       </div> : <form onSubmit={submit}>
         <button type="button" className="text-button modal-back" onClick={() => setMode('choose')}>← Sources</button>
         <label><span>Name</span><input autoFocus required pattern="[A-Za-z0-9._-]+" maxLength="100" value={name} onChange={(event) => setName(event.target.value)} placeholder="my-project" /></label>
+        <label><span>Description</span><input maxLength="500" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What is this repository for?" /></label>
         <label className="check-row"><input type="checkbox" checked={publicRead} onChange={(event) => setPublicRead(event.target.checked)} /><span><strong>Public read access</strong><small>Other ships and Git clients can browse, clone, and fetch.</small></span></label>
         <div className="form-actions"><button type="button" className="button ghost" onClick={onClose}>Cancel</button><button className="button primary" disabled={busy || !name.trim()}>{busy ? 'Creating…' : 'Create repository'}</button></div>
       </form>}

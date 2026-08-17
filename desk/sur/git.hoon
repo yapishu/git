@@ -88,6 +88,7 @@
 +$  repository
   $:  owner=@p
       public-read=?
+      description=@t
       head=@t
       refs=(map @t oid)
       protected-refs=(set @t)
@@ -120,6 +121,7 @@
       [%set-protected repository=@t ref=@t protected=?]
       [%set-head repository=@t ref=@t]
       [%set-public repository=@t public-read=?]
+      [%set-description repository=@t description=@t]
       [%grant-writer repository=@t writer=@p]
       [%revoke-writer repository=@t writer=@p]
       [%set-write-token repository=@t token=@t]

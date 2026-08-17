@@ -281,6 +281,7 @@
   %-  pairs:enjs:format
   :~  ['name' s+name]
       ['owner' s+(scot %p owner.repo)]
+      ['description' s+description.repo]
       ['publicRead' b+public-read.repo]
       ['head' s+head.repo]
       ['refs' [%a refs-json]]
@@ -590,24 +591,33 @@
     =/  previous=(unit octs)  (~(get by previous-files) file-path.entry)
     ?:  ?&(?=(^ previous) =(data.entry u.previous))  ~
     =/  status=@t  ?~(previous 'added' 'modified')
+    =/  old-truncated=?  ?^(previous (gth p.u.previous 262.144) %.n)
+    =/  new-truncated=?  (gth p.data.entry 262.144)
     =/  item=json
       %-  pairs:enjs:format
       :~  ['path' s+(spat file-path.entry)]
           ['status' s+status]
           ['oldSize' n+(decimal ?~(previous 0 p.u.previous))]
           ['newSize' n+(decimal p.data.entry)]
+          ['oldContent' s+?~(previous '' ?:(old-truncated '' (en:base64:mimes:html u.previous)))]
+          ['newContent' s+?:(new-truncated '' (en:base64:mimes:html data.entry))]
+          ['truncated' b+|(old-truncated new-truncated)]
       ==
     `item
   =/  deleted=(list json)
     %+  murn  ~(tap by previous-files)
     |=  entry=[file-path=path data=octs]
     ?:  (~(has by u.current-files) file-path.entry)  ~
+    =/  truncated=?  (gth p.data.entry 262.144)
     =/  item=json
       %-  pairs:enjs:format
       :~  ['path' s+(spat file-path.entry)]
           ['status' s+'deleted']
           ['oldSize' n+(decimal p.data.entry)]
           ['newSize' n+'0']
+          ['oldContent' s+?:(truncated '' (en:base64:mimes:html data.entry))]
+          ['newContent' s+'']
+          ['truncated' b+truncated]
       ==
     `item
   =/  changes=(list json)  (weld changed deleted)
@@ -786,6 +796,23 @@
   ^-  @ta
   (scot %uv (cut 0 [0 64] transfer))
 ::
+++  peer-object-pages
+  |=  objects=(list [oid:git object:git])
+  ^-  (list (map oid:git object:git))
+  =/  remaining  objects
+  =/  page=(map oid:git object:git)  ~
+  =/  pages=(list (map oid:git object:git))  ~
+  =/  count=@ud  0
+  |-
+  ?~  remaining
+    ?:  =(count 0)  (flop pages)
+    (flop [page pages])
+  =/  next-page=(map oid:git object:git)
+    (~(put by page) -.i.remaining +.i.remaining)
+  ?:  =(count 15)
+    $(remaining t.remaining, page ~, pages [next-page pages], count 0)
+  $(remaining t.remaining, page next-page, count +(count))
+::
 ++  peer-fail
   |=  [target=ship transfer=@uv message=@t]
   ^-  (quip card _this)
@@ -899,6 +926,7 @@
     ?~  existing
       :*  our.bowl
           public-read.flight
+          ''
           head.flight
           refs.flight
           ~
@@ -1160,12 +1188,13 @@
   =.  peer-activities
     (peer-activity-start transfer.req %serve %incoming src.bowl repository.req 'repository snapshot requested')
   =/  snapshot-path=path  /fine/(peer-fine-name transfer.req)
+  =/  pages=(list (map oid:git object:git))  (peer-object-pages objects)
   =/  object-pages=(list card)
-    %+  turn  objects
-    |=  entry=[oid:git object:git]
-    [%pass /peer/grow/(scot %uv transfer.req) %grow snapshot-path noun+!>(entry)]
+    %+  turn  pages
+    |=  page=(map oid:git object:git)
+    [%pass /peer/grow/(scot %uv transfer.req) %grow snapshot-path noun+!>(page)]
   =/  final-cards=(list card)
-    :~  [%pass /peer/ready/(scot %uv transfer.req) %agent [our.bowl %git] %poke %git-peer !>([%ready transfer.req repository.req head.u.found refs.u.found (lent objects)])]
+    :~  [%pass /peer/ready/(scot %uv transfer.req) %agent [our.bowl %git] %poke %git-peer !>([%ready transfer.req repository.req head.u.found refs.u.found (lent objects) (lent pages)])]
         [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl ~m10)]
     ==
   :_  this
@@ -1178,7 +1207,7 @@
   =/  found=(unit peer-serve)  (~(get by peer-serving) transfer.msg)
   ?~  found  `this
   :_  this
-  :~  (peer-card target.u.found /peer/begin/(scot %uv transfer.msg) [%begin transfer.msg repository.msg 1 head.msg refs.msg objects.msg])
+  :~  (peer-card target.u.found /peer/begin/(scot %uv transfer.msg) [%begin transfer.msg repository.msg 1 head.msg refs.msg objects.msg pages.msg])
   ==
 ::
 ++  peer-begin
@@ -1204,7 +1233,7 @@
     (peer-snapshot transfer.msg *(map oid:git object:git))
   :_  this
   =/  object-reads=(list card)
-    %+  turn  (gulf 1 objects.msg)
+    %+  turn  (gulf 1 pages.msg)
     |=  revision=@ud
     =/  scry-path=path
       /g/x/(scot %ud revision)/git//1/fine/(peer-fine-name transfer.msg)
@@ -1221,7 +1250,7 @@
   ?~  found  `this
   ?.  =(src.bowl target.u.found)  `this
   =.  peer-activities  (peer-activity-finish transfer %.y 'repository snapshot delivered')
-  =/  count=@ud  (lent objects.u.found)
+  =/  count=@ud  (lent (peer-object-pages objects.u.found))
   =/  culls=(list card)
     ?:  =(0 count)  ~
     %+  turn  (gulf 1 count)
@@ -1297,6 +1326,7 @@
     =/  repo=repository:git
       :*  our.bowl
           public-read.act
+          ''
           'refs/heads/main'
           ~
           ~
@@ -1358,6 +1388,12 @@
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)
     ?~  found  `this
     `this(repositories (~(put by repositories) repository.act u.found(public-read public-read.act)))
+  ::
+      %set-description
+    =/  found=(unit repository:git)  (~(get by repositories) repository.act)
+    ?~  found  `this
+    =/  clean=@t  (crip (scag 500 (trip description.act)))
+    `this(repositories (~(put by repositories) repository.act u.found(description clean)))
   ::
       %grant-writer
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)
@@ -2484,6 +2520,22 @@
       :_  this
       (api-error eyre-id 422 'publicRead is required')
     (api-with-action eyre-id 200 [%set-public name u.public])
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %git %api %repository @ %description ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  description=(unit @t)  (string-at 'description' u.jon)
+    ?~  description
+      :_  this
+      (api-error eyre-id 422 'description is required')
+    (api-with-action eyre-id 200 [%set-description name u.description])
   ?:  ?&  =(%'GET' method)
           ?=([%apps %git %api %repository @ %pulls @ ~] site)
       ==
@@ -3525,12 +3577,12 @@
         (fail 'Fine repository snapshot is unavailable')
       ?.  =(%noun p.q.sage)
         (fail 'Fine repository snapshot has the wrong mark')
-      =/  decoded=(unit [oid:git object:git])
+      =/  decoded=(unit (map oid:git object:git))
         %-  mole
-        |.(;;([oid:git object:git] +.q.q.sage))
+        |.(;;((map oid:git object:git) +.q.q.sage))
       ?~  decoded
         (fail 'Fine repository object page is malformed')
-      [%snapshot u.transfer (malt ~[u.decoded])]
+      [%snapshot u.transfer u.decoded]
     :_  this
     :~  [%pass /peer/snapshot/(scot %uv u.transfer) %agent [our.bowl %git] %poke %git-peer !>(packet)]
     ==
@@ -3783,6 +3835,7 @@
         ?~  existing
           :*  our.bowl
               public-read.u.context
+              ''
               head.u.context
               refs.u.context
               ~

@@ -74,6 +74,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ publicRead }),
     }),
+  setDescription: (name, description) =>
+    request(`/repository/${encodeURIComponent(name)}/description`, {
+      method: 'POST',
+      body: JSON.stringify({ description }),
+    }),
   setWriter: (name, ship, allowed) =>
     request(`/repository/${encodeURIComponent(name)}/writers`, {
       method: 'POST',
