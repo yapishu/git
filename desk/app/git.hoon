@@ -127,6 +127,20 @@
   ^-  (list [ok=? ref=@t message=@t])
   (turn commands |=(command=receive-command:git [ok ref.command message]))
 ::
+++  push-event-json
+  |=  commands=(list receive-command:git)
+  ^-  json
+  =/  entries=(list json)
+    %+  turn  commands
+    |=  command=receive-command:git
+    %-  pairs:enjs:format
+    :~  ['ref' s+ref.command]
+        ['before' s+?~(old.command '' (oid-text:git-codec u.old.command))]
+        ['after' s+?~(new.command '' (oid-text:git-codec u.new.command))]
+        ['deleted' b+?=(~ new.command)]
+    ==
+  (pairs:enjs:format ~[['updates' [%a entries]]])
+::
 ++  receive-payload
   |=  [unpack=@t results=(list [ok=? ref=@t message=@t])]
   ^-  simple-payload:http
@@ -1479,6 +1493,29 @@
     =/  ref=@t  -.entry
     (starts-with:git-protocol [(met 3 ref) ref] prefix)
   (lent matching)
+::
+++  settle-webhook-repository
+  |=  repo=repository:git
+  ^-  repository:git
+  =/  deliveries=(list webhook-delivery:git)
+    %+  turn  webhook-deliveries.repo
+    |=  delivery=webhook-delivery:git
+    ?:  =(%pending status.delivery)
+      delivery(status %failure, status-code 0, message 'delivery interrupted by agent restart')
+    delivery
+  repo(webhook-deliveries deliveries)
+::
+++  settle-webhook-state
+  |=  stored=state-0:git
+  ^-  state-0:git
+  =/  remaining=(list [@t repository:git])  ~(tap by repositories.stored)
+  =/  settled=(map @t repository:git)  ~
+  |-
+  ?~  remaining  stored(repositories settled)
+  %=  $
+    remaining  t.remaining
+    settled    (~(put by settled) -.i.remaining (settle-webhook-repository +.i.remaining))
+  ==
 --
 ::
 %-  agent:dbug
@@ -1516,7 +1553,7 @@
 ++  on-load
   |=  old=vase
   ^-  (quip card _this)
-  =/  loaded=state-0:git  !<(state-0:git old)
+  =/  loaded=state-0:git  (settle-webhook-state !<(state-0:git old))
   :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %git]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/git/api] %git]
@@ -2153,15 +2190,19 @@
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)
     ?~  found  `this
     ?.  (~(has by objects.u.found) oid.act)  `this
+    =/  old=(unit oid:git)  (~(get by refs.u.found) ref.act)
     =/  repo=repository:git  u.found(refs (~(put by refs.u.found) ref.act oid.act))
     =.  repositories  (~(put by repositories) repository.act repo)
-    (dispatch-webhooks repository.act %push (pairs:enjs:format ~[['ref' s+ref.act] ['after' s+(oid-text:git-codec oid.act)]]))
+    (dispatch-webhooks repository.act %push (push-event-json ~[[old `oid.act ref.act]]))
   ::
       %delete-ref
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)
     ?~  found  `this
+    =/  old=(unit oid:git)  (~(get by refs.u.found) ref.act)
+    ?~  old  `this
     =/  repo=repository:git  u.found(refs (~(del by refs.u.found) ref.act))
-    `this(repositories (~(put by repositories) repository.act repo))
+    =.  repositories  (~(put by repositories) repository.act repo)
+    (dispatch-webhooks repository.act %push (push-event-json ~[[old ~ ref.act]]))
   ::
       %set-protected
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)
@@ -2778,20 +2819,6 @@
     u.found(webhook-deliveries (scag 100 (weld deliveries.result webhook-deliveries.u.found)))
   =.  repositories  (~(put by repositories) name updated)
   [(flop cards.result) this]
-::
-++  push-event-json
-  |=  commands=(list receive-command:git)
-  ^-  json
-  =/  entries=(list json)
-    %+  turn  commands
-    |=  command=receive-command:git
-    %-  pairs:enjs:format
-    :~  ['ref' s+ref.command]
-        ['before' s+?~(old.command '' (oid-text:git-codec u.old.command))]
-        ['after' s+?~(new.command '' (oid-text:git-codec u.new.command))]
-        ['deleted' b+?=(~ new.command)]
-    ==
-  (pairs:enjs:format ~[['updates' [%a entries]]])
 ::
 ++  accept-receive
   |=  $:  eyre-id=@ta
@@ -4707,6 +4734,9 @@
     ?.  (~(has by refs.u.found) tag-ref)
       :_  this
       (api-error eyre-id 404 'tag not found')
+    ?:  (~(has by releases.u.found) u.tag-name)
+      :_  this
+      (api-error eyre-id 409 'delete the release before deleting its tag')
     =.  repositories  (~(put by repositories) name u.found(refs (~(del by refs.u.found) tag-ref)))
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
@@ -5400,6 +5430,11 @@
   |-
   ?~  remaining  ~
   =/  command=receive-command:git  i.remaining
+  =/  release-tag=?
+    ?.  (starts-with 'refs/tags/' ref.command)  %.n
+    (~(has by releases.repo) (crip (slag 10 (trip ref.command))))
+  ?:  release-tag
+    `'release tags cannot be updated or deleted; delete the release first'
   ?.  (~(has in protected-refs.repo) ref.command)
     $(remaining t.remaining)
   ?~  old.command
@@ -6724,11 +6759,7 @@
       (~(put by repositories) repository.pending applied)
     =/  webhook-cards=(list card)
       ?.  ok.result  ~
-      =/  push-data=json
-        %-  pairs:enjs:format
-        :~  :-  'updates'
-            [%a ~[(pairs:enjs:format ~[['ref' s+branch.pending] ['before' s+''] ['after' s+(oid-text:git-codec new-oid.pending)] ['deleted' b+%.n]])]]
-        ==
+      =/  push-data=json  (push-event-json commands.pending)
       =/  clay-data=json
         %-  pairs:enjs:format
         :~  ['desk' s+desk-name.pending]

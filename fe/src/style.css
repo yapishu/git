@@ -187,7 +187,11 @@ p { color: var(--muted); line-height: 1.55; }
 .commit-summary code { color: var(--muted); font-size: 10px; word-break: break-all; }
 .clay-revision-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .clay-revision-meta code { padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
-.clay-revision-meta .tako { display: inline-block; max-width: min(34ch, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.tako-chip { display: inline-flex; width: fit-content; max-width: 100%; align-items: stretch; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+.clay-revision-meta .tako-chip code { width: auto; max-width: min(42ch, 70vw); overflow: hidden; border: 0; border-radius: 0; text-overflow: ellipsis; white-space: nowrap; }
+.hash-copy { width: 25px; min-width: 25px; display: inline-grid; place-items: center; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+.hash-copy:hover { background: var(--soft); color: var(--text); }
+.hash-copy svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .commit-links { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .commit-tag-action { margin-right: 5px; white-space: nowrap; }
 .commit-summary.with-actions { grid-template-columns: 38px minmax(0, 1fr) auto; align-items: start; }

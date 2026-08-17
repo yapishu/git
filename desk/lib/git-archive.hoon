@@ -89,37 +89,43 @@
   $(reversed t.reversed, name-path [i.reversed name-path])
 ::
 ++  file-entry
-  |=  [file-path=path data=octs]
+  |=  [file-path=path mode=@t data=octs]
   ^-  (unit octs)
   =/  names=(unit [prefix=@t name=@t])  (split-path file-path)
   ?~  names  ~
+  =/  symlink=?  =('120000' mode)
+  =/  executable=?  =('100755' mode)
+  =/  body=octs  ?:(symlink [0 0] data)
+  =/  linkname=@t  ?:(symlink `@t`q.data '')
+  ?:  (gth (met 3 linkname) 100)  ~
   =/  header=tar-header
     :*  name.u.names
-        '0000644'
+        ?:(symlink '0000777' ?:(executable '0000755' '0000644'))
         '0000000'
         '0000000'
-        (ud-oct p.data)
+        (ud-oct p.body)
         '0'
-        '0'
-        ''
+        ?:(symlink '2' '0')
+        linkname
         'urbit'
         'urbit'
         ''
         ''
         prefix.u.names
-    ==
+  ==
   =/  head=octs  (encode-header header)
-  =/  padding=@ud  (mod (sub 512 (mod p.data 512)) 512)
-  =/  padded=octs  [(add p.data padding) q.data]
+  =/  padding=@ud  (mod (sub 512 (mod p.body 512)) 512)
+  =/  padded=octs  [(add p.body padding) q.body]
   `(join:git-codec head padded)
 ::
 ++  archive
   |=  [objects=(map oid:git object:git) commit=oid:git]
   ^-  (unit octs)
-  =/  files=(unit (map path octs))  (flatten-commit:git-tree objects commit)
+  =/  files=(unit (map path flat-entry:git-tree))
+    (flatten-commit-index:git-tree objects commit)
   ?~  files  ~
   ?:  (gth (lent ~(tap by u.files)) 10.000)  ~
-  =/  remaining=(list [path octs])  ~(tap by u.files)
+  =/  remaining=(list [path flat-entry:git-tree])  ~(tap by u.files)
   =/  parts=(list octs)  ~
   =/  total=@ud  1.024
   |-
@@ -127,8 +133,11 @@
     =/  result=octs
       `octs`(join-all:git-codec (weld (flop parts) ~[[1.024 0]]))
     `result
+  =/  indexed=flat-entry:git-tree  +.i.remaining
+  =/  object=(unit object:git)  (~(get by objects) oid.indexed)
+  ?.  ?&(?=(^ object) =(%blob kind.u.object))  ~
   =/  entry=(unit octs)
-    (file-entry -.i.remaining `octs`+.i.remaining)
+    (file-entry -.i.remaining mode.indexed data.u.object)
   ?~  entry  ~
   =/  bytes=octs  +.entry
   =.  total  (add total p.bytes)

@@ -76,13 +76,14 @@ Then commit the `%git` desk and run the protocol vectors:
 +git!git-storage-vector
 +git!git-clay-vector
 +git!git-tree-vector
++git!git-archive-vector
 +git!git-shallow-vector
 +git!git-blame-vector
 +git!git-github-vector
 +git!git-webhook-vector
 ```
 
-The codec vector's blob OID must be `3b18e512dba79e4c8300dd08aeb37f8e728b8dad`, matching `git hash-object` for `hello world\n`. The pack vectors cover local round trips and stock Git packs containing binary tree data, `REF_DELTA`, and `OFS_DELTA` entries. The storage vector checks that object-store transfers contain authorization, date, and payload-hash headers. The webhook vector checks a standard HMAC-SHA256 value and GitHub push parsing.
+The codec vector's blob OID must be `3b18e512dba79e4c8300dd08aeb37f8e728b8dad`, matching `git hash-object` for `hello world\n`. The pack vectors cover local round trips and stock Git packs containing binary tree data, `REF_DELTA`, and `OFS_DELTA` entries. The storage vector checks that object-store transfers contain authorization, date, and payload-hash headers. The archive vector checks executable and symbolic-link tar entries. The webhook vector checks a standard HMAC-SHA256 value and GitHub push parsing.
 
 Each repository can be assigned a write token with the `%set-write-token` action. Git and Git LFS clients use any Basic-auth username and that token as the password. The token authorizes fetch and push for private repositories. Public repositories permit unauthenticated fetches and LFS downloads; uploads require the write token or an authenticated ship session.
 

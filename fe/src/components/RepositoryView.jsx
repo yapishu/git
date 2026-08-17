@@ -18,6 +18,10 @@ const githubDate = (value) => {
   const date = value ? new Date(value) : null
   return date && Number.isFinite(date.getTime()) ? date.toLocaleString() : ''
 }
+
+function CopyableHash({ value }) {
+  return <span className="tako-chip"><code title={value}>{value}</code><button type="button" className="hash-copy" title="Copy revision hash" aria-label="Copy revision hash" onClick={() => navigator.clipboard.writeText(value)}><CopyIcon /></button></span>
+}
 const validTabs = new Set(['code', 'issues', 'pulls', 'branches', 'tags', 'releases', 'commits', 'webhooks', 'settings'])
 
 function parseLineRange(value) {
@@ -544,10 +548,25 @@ function Webhooks({ repo, onMutate }) {
     setBusy(`sync-${update.id}`); setError(''); setStatus('')
     try {
       if (!repo.githubOrigin) throw new Error('This repository has no GitHub origin configured')
+      const before = await api.githubStatus()
+      const prior = new Set((before.jobs || []).map((job) => job.job))
       await api.githubImport(repo.githubOrigin.owner, repo.githubOrigin.repository, repo.name, repo.publicRead)
-      setStatus('Upstream sync started. The repository will refresh when the import completes.')
-      await api.dismissUpstreamUpdate(repo.name, update.id)
-      await onMutate?.()
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 800))
+        const github = await api.githubStatus()
+        const matching = (github.jobs || []).filter((job) => !prior.has(job.job) && job.repository === repo.name && ['import', 'update'].includes(job.kind))
+        const active = matching.find((job) => job.active)
+        if (active) { setStatus(active.message); continue }
+        const failed = matching.find((job) => !job.ok)
+        if (failed) throw new Error(failed.message)
+        if (matching.length) {
+          await api.dismissUpstreamUpdate(repo.name, update.id)
+          setStatus(matching[matching.length - 1].message)
+          await onMutate?.()
+          return
+        }
+      }
+      throw new Error('GitHub upstream sync did not finish in time')
     } catch (cause) { setError(cause.message) } finally { setBusy('') }
   }
 
@@ -856,7 +875,7 @@ function CommitDetail({ data, onBack, onOpenGit, onCreateTag }) {
   const clay = data.historyKind === 'clay' || commit.kind === 'clay'
   return <div className="commit-detail">
     <button className="text-button file-back" onClick={onBack}>← {clay ? 'Revision history' : 'Commit history'}</button>
-    <section className="panel commit-summary with-actions"><div className="commit-avatar large">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</div><div><h2>{clay ? `Revision ${commit.revision}` : commit.subject || 'Untitled commit'}</h2><p>{identityLabel(commit.author)} {clay ? 'committed this Clay revision' : `authored · ${identityLabel(commit.committer)} committed`} <span title={dateLabel(commit.committer)}>{dateLabel(commit.committer)}</span></p>{clay ? <div className="clay-revision-meta"><code title="Clay revision">r{commit.revision}</code><code title="Canonical Clay timestamp">{commit.timestampCase}</code><code className="tako" title={commit.tako}>{commit.tako}</code>{commit.gitCommit && <button className="commit-hash mapped-commit" title={commit.gitCommit} onClick={() => onOpenGit?.(commit.gitCommit)}><code>Git {shortOid(commit.gitCommit)}</code></button>}</div> : <code>{commit.oid}</code>}</div>{onCreateTag && <button className="button commit-detail-tag" onClick={() => onCreateTag(commit)}>Create tag</button>}</section>
+    <section className="panel commit-summary with-actions"><div className="commit-avatar large">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</div><div><h2>{clay ? `Revision ${commit.revision}` : commit.subject || 'Untitled commit'}</h2><p>{identityLabel(commit.author)} {clay ? 'committed this Clay revision' : `authored · ${identityLabel(commit.committer)} committed`} <span title={dateLabel(commit.committer)}>{dateLabel(commit.committer)}</span></p>{clay ? <div className="clay-revision-meta"><code title="Clay revision">r{commit.revision}</code><code title="Canonical Clay timestamp">{commit.timestampCase}</code><CopyableHash value={commit.tako} />{commit.gitCommit && <button className="commit-hash mapped-commit" title={commit.gitCommit} onClick={() => onOpenGit?.(commit.gitCommit)}><code>Git {shortOid(commit.gitCommit)}</code></button>}</div> : <code>{commit.oid}</code>}</div>{onCreateTag && <button className="button commit-detail-tag" onClick={() => onCreateTag(commit)}>Create tag</button>}</section>
     {!clay && data.message && data.message !== commit.subject && <pre className="commit-message">{data.message}</pre>}
     <DiffView diff={{ changedCount: data.changedCount, base: commit.parent, head: commit.oid, changes: data.changes || [] }} />
   </div>

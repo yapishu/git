@@ -77,7 +77,7 @@
 - structural web editing that creates the first commit in a blank repository, creates nested files, preserves existing modes, removes empty directories, and deletes files through Clay-gated commits
 - web creation and deletion of lightweight and annotated tags from contextual history actions or compact revision/ref/unique-short-hash targets, with canonical tag objects and peeled tag advertisements for stock Git clients
 - on-demand materialization of selected native Clay revisions as canonical Git commits for tags, archives, diffs, and revision-to-commit mapping
-- tag-rooted releases with bounded notes, public detail reads, and deterministic ustar source archives limited to 10,000 files and 64 MiB
+- tag-rooted releases with immutable backing tags, bounded notes, public detail reads, and deterministic mode-preserving ustar source archives limited to 10,000 files and 64 MiB
 - HMAC-SHA256 outgoing repository webhooks with event filters, pending/success/failure delivery history, and Smart HTTP plus Clay-gated push integration
 - HMAC-SHA256 incoming GitHub ping/push endpoints that record bounded upstream notices and expose explicit pull-or-dismiss actions in the web interface
 - conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, GitHub receive-pack requests/results, Clay snapshots, object-store request signing, and webhook signing/parsing
