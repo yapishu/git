@@ -15,11 +15,12 @@ export default function GitHubImport({ onComplete, onCancel }) {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const priorJobs = useRef(new Set())
+  const nameEdited = useRef(false)
 
   const parsed = splitRepository(source)
 
   useEffect(() => {
-    if (parsed.repository && !name) setName(parsed.repository)
+    if (!nameEdited.current) setName(parsed.repository)
   }, [parsed.repository])
 
   useEffect(() => {
@@ -73,7 +74,7 @@ export default function GitHubImport({ onComplete, onCancel }) {
         <p>Fetch branches, tags, commits, trees, and blobs from GitHub.</p>
         {error && <div className="inline-error">{error}</div>}
         <label><span>Repository URL or owner/name</span><input autoFocus value={source} onChange={(event) => setSource(event.target.value)} placeholder="octocat/Hello-World" /></label>
-        <label><span>Local name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Hello-World" /></label>
+        <label><span>Local name</span><input value={name} onChange={(event) => { nameEdited.current = true; setName(event.target.value) }} placeholder="Hello-World" /></label>
         <label className="check-row"><input type="checkbox" checked={publicRead} onChange={(event) => setPublicRead(event.target.checked)} /><span><strong>Public on this ship</strong><small>Anyone can clone and fetch the imported repository.</small></span></label>
         <small className="field-note">Limits: 64 MiB and 25,000 objects. Import runs in the background.</small>
         {message && <div className="transfer-status"><span className={busy ? 'spinner' : ''} />{message}</div>}
