@@ -805,7 +805,9 @@
   =/  count=@ud  0
   |-
   ?~  remaining
-    ?:  =(count 0)  (flop pages)
+    ?:  =(count 0)
+      ?~  pages  [page ~]
+      (flop pages)
     (flop [page pages])
   =/  next-page=(map oid:git object:git)
     (~(put by page) -.i.remaining +.i.remaining)
@@ -1229,8 +1231,6 @@
     ?~  serving
       (peer-snapshot-fail transfer.msg 'local repository snapshot is unavailable')
     (peer-snapshot transfer.msg (silt objects.u.serving))
-  ?:  =(0 objects.msg)
-    (peer-snapshot transfer.msg *(map oid:git object:git))
   :_  this
   =/  object-reads=(list card)
     %+  turn  (gulf 1 pages.msg)

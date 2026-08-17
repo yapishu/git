@@ -185,6 +185,7 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
         await new Promise((resolve) => setTimeout(resolve, 500))
         const status = await api.peerTransfers()
         const transfer = status.transfers?.find((item) => item.transfer === started.transfer)
+        if (!transfer || transfer.message === 'opening pull request') continue
         if (transfer?.active) {
           if (transfer.message) setSubmitStatus(transfer.message)
           continue

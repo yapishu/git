@@ -46,6 +46,8 @@ Build directly into a mounted desk:
 zig build -Ddesk=/path/to/pier/git
 ```
 
+The build requires Git, Zig, and Node.js 22 (or Node.js 20.19 or newer). It installs frontend dependencies with `npm` when needed.
+
 Then commit the `%git` desk and run the protocol vectors:
 
 ```hoon

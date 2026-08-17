@@ -45,6 +45,7 @@
 - public native forks, explicit refresh, and origin metadata
 - ship writer ACLs with fast-forward-only push-back from native forks
 - native pull requests whose object graphs are stored at the origin without advancing a branch
+- pull-request creation in the fork UI with source/target context, live transfer status, origin navigation, remote PR listings, review diffs, and merge controls
 - native pull-request detail with bounded per-file red/green textual diffs
 - pull-request merges and authorized native updates gated by Clay when the destination branch is desk-bound
 - explicit Clay revision-to-Git commit mappings in both publication directions
