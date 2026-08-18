@@ -2720,6 +2720,12 @@
       =('.' char)
   ==
 ::
+++  api-terminal-name
+  |=  [segment=@t extension=(unit @ta)]
+  ^-  @t
+  ?~  extension  segment
+  (rap 3 ~[segment '.' `@t`u.extension])
+::
 ++  api-file-path
   |=  [segments=(list @t) extension=(unit @ta)]
   ^-  (unit path)
@@ -3025,9 +3031,21 @@
   ?:  ?&(?=(^ event) =('ping' u.event))
     :_  this
     (api-ok eyre-id 200)
+  ?:  ?&(?=(^ event) =('pull_request' u.event))
+    ?~  github-origin.u.found
+      :_  this
+      (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['message' s+'pull request event accepted; repository has no GitHub origin']]))
+    =/  owner=@t  owner.u.github-origin.u.found
+    =/  remote=@t  repository.u.github-origin.u.found
+    =/  ctx=github-request  [0v0 %pulls name owner remote public-read.u.found '' ~ 1 ~ 0]
+    =/  request=request:http
+      [%'GET' (api-url:git-github owner remote '/pulls?state=all&per_page=100&page=1') (api-headers:git-github github-token) ~]
+    =/  result  (github-start ctx request)
+    :_  +.result
+    (weld -.result (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['message' s+'pull request metadata refresh started']])))
   ?.  ?&(?=(^ event) =('push' u.event))
     :_  this
-    (api-error eyre-id 422 'only GitHub push webhooks are actionable')
+    (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['message' s+'event ignored']]))
   =/  jon=(unit json)  (de:json:html q.body)
   ?~  jon
     :_  this
@@ -3058,7 +3076,7 @@
     :_  this
     (api-error eyre-id 405 'public repository API is read-only')
   ?:  ?=([%apps %urgit %api %public %repository @ ~] site)
-    =/  name=@t  i.t.t.t.t.t.site
+    =/  name=@t  (api-terminal-name i.t.t.t.t.t.site ext.line)
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?.  ?&(?=(^ found) public-read.u.found)
       :_  this
@@ -3261,7 +3279,7 @@
   ^-  (quip card _this)
   =/  site=(list @t)  site.line
   ?:  ?=([%apps %urgit %api %hooks @ ~] site)
-    (handle-incoming-hook eyre-id req i.t.t.t.t.site)
+    (handle-incoming-hook eyre-id req (api-terminal-name i.t.t.t.t.site ext.line))
   ?:  ?=([%apps %urgit %api %public *] site)
     (handle-public-api eyre-id req line)
   ?.  authenticated.req
@@ -3669,7 +3687,7 @@
           ?=([%apps %urgit %api %peer %browse @ @ ~] site)
       ==
     =/  ship-text=@t  i.t.t.t.t.t.site
-    =/  repository=@t  i.t.t.t.t.t.t.site
+    =/  repository=@t  (api-terminal-name i.t.t.t.t.t.t.site ext.line)
     =/  peer=(unit @p)  (slaw %p ship-text)
     ?.  ?&(?=(^ peer) (valid-repository-name repository))
       :_  this
@@ -3938,7 +3956,7 @@
   ?:  ?&  =(%'GET' method)
           ?=([%apps %urgit %api %repository @ ~] site)
       ==
-    =/  name=@t  i.t.t.t.t.site
+    =/  name=@t  (api-terminal-name i.t.t.t.t.site ext.line)
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?~  found
       :_  this
@@ -4493,7 +4511,7 @@
   ?:  ?&  =(%'DELETE' method)
           ?=([%apps %urgit %api %repository @ ~] site)
       ==
-    =/  name=@t  i.t.t.t.t.site
+    =/  name=@t  (api-terminal-name i.t.t.t.t.site ext.line)
     ?.  (~(has by repositories) name)
       :_  this
       (api-error eyre-id 404 'repository not found')

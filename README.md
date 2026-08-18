@@ -30,11 +30,11 @@
 - tags can target native Clay revisions; the selected revision is materialized as a canonical Git commit and recorded in the revision-to-commit map without moving the bound branch
 - releases rooted at existing tags, with notes and deterministic source tar archives for authenticated and public repository pages
 - signed outgoing webhooks for pushes, tags, pull requests, issues, releases, and successful Clay synchronization, with a bounded delivery ledger
-- signed incoming GitHub push webhooks that create explicit upstream-update prompts instead of mutating a repository in the background
+- signed incoming GitHub webhooks: pushes create explicit upstream-update prompts, while pull-request events refresh linked PR metadata in the background
 - unauthenticated read-only repository pages for public projects, including branches, files, history, and commit diffs
 - repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
 - one-click publication of any mounted Clay desk as a Git repository
-- verified, incremental native forks: Ames coordinates access and refs while Fine carries only the missing immutable object snapshot
+- verified, incremental native forks with explicit pull-from-origin refresh: Ames coordinates access and refs while Fine carries only the missing immutable object snapshot
 - persistent ship peers in the sidebar, with on-demand public repository discovery and bounded remote browsing over Ames or request-scoped Fine
 - ship write ACLs with fast-forward-only native push-back from authorized forks
 - native pull requests between ships or local branches, with close/reopen lifecycle, per-file red/green diffs, resolvable general and line-anchored review comments, fast-forward or conflict-checked three-way merges, and Clay gating
