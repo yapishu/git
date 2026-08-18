@@ -649,10 +649,10 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
   }
 
   useEffect(() => {
-    if (!repo.githubOrigin || githubPulls.length > 0 || githubSyncKey === repo.name) return
+    if (!repo.githubOrigin || githubSyncKey === repo.name) return
     setGithubSyncKey(repo.name)
     void syncGithubPulls(1)
-  }, [repo.name, repo.githubOrigin?.owner, repo.githubOrigin?.repository, githubPulls.length, githubSyncKey])
+  }, [repo.name, repo.githubOrigin?.owner, repo.githubOrigin?.repository, githubSyncKey])
 
   async function loadMoreGithubPulls() {
     await syncGithubPulls(Math.min(5, githubPage + 1))
