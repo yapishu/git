@@ -391,6 +391,21 @@
       ['received' s+(scot %da received.update)]
   ==
 ::
+++  dedupe-upstream-updates
+  |=  updates=(list upstream-update:git)
+  ^-  (list upstream-update:git)
+  =/  seen=(set @t)  ~
+  =/  kept=(list upstream-update:git)  ~
+  |-
+  ?~  updates  (flop kept)
+  ?:  (~(has in seen) ref.i.updates)
+    $(updates t.updates)
+  %=  $
+    updates  t.updates
+    seen     (~(put in seen) ref.i.updates)
+    kept     [i.updates kept]
+  ==
+::
 ++  repository-json
   |=  [name=@t repo=repository:git]
   ^-  json
@@ -468,7 +483,7 @@
       ['webhooks' [%a (turn ~(tap by webhooks.repo) |=(entry=[@ud webhook:git] (webhook-json +.entry)))]]
       ['incomingHookConfigured' b+?=(^ incoming-hook.repo)]
       ['webhookDeliveries' [%a (turn (scag 100 webhook-deliveries.repo) webhook-delivery-json)]]
-      ['upstreamUpdates' [%a (turn upstream-updates.repo upstream-update-json)]]
+      ['upstreamUpdates' [%a (turn (dedupe-upstream-updates upstream-updates.repo) upstream-update-json)]]
       ['githubIssues' [%a (turn github-issues.repo github-item-json)]]
       ['githubPulls' [%a (turn github-pulls.repo github-item-json)]]
       ['binding' (binding-json binding.repo)]
@@ -1510,7 +1525,10 @@
     ?:  =(%pending status.delivery)
       delivery(status %failure, status-code 0, message 'delivery interrupted by agent restart')
     delivery
-  repo(webhook-deliveries deliveries)
+  %=  repo
+    webhook-deliveries  deliveries
+    upstream-updates    (dedupe-upstream-updates upstream-updates.repo)
+  ==
 ::
 ++  settle-webhook-state
   |=  stored=state-0:git
@@ -3023,8 +3041,10 @@
   =.  request-count  +(request-count)
   =/  update=upstream-update:git
     [update-id source.u.notice ref.u.notice before.u.notice after.u.notice now.bowl]
+  =/  remaining=(list upstream-update:git)
+    (skim upstream-updates.u.found |=(prior=upstream-update:git !=(ref.prior ref.update)))
   =/  updated=repository:git
-    u.found(upstream-updates (scag 50 (weld ~[update] upstream-updates.u.found)))
+    u.found(upstream-updates (scag 50 (weld ~[update] remaining)))
   =.  repositories  (~(put by repositories) name updated)
   :_  this
   (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['update' s+(scot %uv update-id)]]))
@@ -4717,8 +4737,11 @@
     ?~  id
       :_  this
       (api-error eyre-id 422 'valid update id required')
+    =/  matches=(list upstream-update:git)
+      (skim upstream-updates.u.found |=(update=upstream-update:git =(id.update u.id)))
     =/  updates=(list upstream-update:git)
-      (skim upstream-updates.u.found |=(update=upstream-update:git !=(id.update u.id)))
+      ?~  matches  upstream-updates.u.found
+      (skim upstream-updates.u.found |=(update=upstream-update:git !=(ref.update ref.i.matches)))
     =.  repositories  (~(put by repositories) name u.found(upstream-updates updates))
     :_  this
     (api-ok eyre-id 200)

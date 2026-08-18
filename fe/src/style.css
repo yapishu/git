@@ -217,6 +217,7 @@ p { color: var(--muted); line-height: 1.55; }
 .webhook-list, .delivery-list { margin: 2px -22px -22px; display: grid; }
 .webhook-row, .delivery-row { min-height: 58px; padding: 9px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; border-top: 1px solid var(--line); }
 .delivery-row { grid-template-columns: 9px minmax(0, 1fr) auto; }
+.upstream-update-row { grid-template-columns: minmax(0, 1fr) auto; }
 .webhook-row strong, .webhook-row small, .delivery-row strong, .delivery-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .webhook-row strong { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .webhook-row small, .delivery-row small { margin-top: 4px; color: var(--muted); font-size: 10px; }

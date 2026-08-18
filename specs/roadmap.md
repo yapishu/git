@@ -79,7 +79,7 @@
 - on-demand materialization of selected native Clay revisions as canonical Git commits for tags, archives, diffs, and revision-to-commit mapping
 - tag-rooted releases with immutable backing tags, bounded notes, public detail reads, and deterministic mode-preserving ustar source archives limited to 10,000 files and 64 MiB
 - HMAC-SHA256 outgoing repository webhooks with event filters, pending/success/failure delivery history, and Smart HTTP plus Clay-gated push integration
-- HMAC-SHA256 incoming GitHub ping/push endpoints that record bounded upstream notices and expose explicit pull-or-dismiss actions in the web interface
+- HMAC-SHA256 incoming GitHub ping/push endpoints that record bounded, ref-coalesced upstream notices and expose explicit pull-or-dismiss actions in the web interface
 - conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, GitHub receive-pack requests/results, Clay snapshots, object-store request signing, and webhook signing/parsing
 
 ## Next

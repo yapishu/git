@@ -366,7 +366,7 @@
   ?~  items  `(flop out)
   =/  item=json  i.items
   =/  pull=(unit json)  (json-at 'pull_request' item)
-  ?:  !=(include-pulls ?=(^ pull))
+  ?:  ?&(!include-pulls ?=(^ pull))
     $(items t.items)
   =/  number=(unit @ud)  (nat-at 'number' item)
   =/  title=(unit @t)  (string-at 'title' item)
