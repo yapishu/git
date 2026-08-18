@@ -51,7 +51,30 @@
       received=@ud
       pages=@ud
       completed=(set @ud)
+      progress-at=@da
+      fine-progress=(map @ud [fag=@ud tot=@ud])
       objects=(map oid:git object:git)
+  ==
++$  peer-transfer-debug
+  $:  transfer=@uv
+      purpose=?(%fork %push %pull)
+      source=ship
+      source-repository=@t
+      local-repository=@t
+      stage=?(%request %fine)
+      expected-objects=@ud
+      received-objects=@ud
+      pages=@ud
+      completed-pages=(list @ud)
+      fine-progress=(list [revision=@ud fag=@ud tot=@ud])
+      progress-at=@da
+  ==
++$  peer-serve-debug
+  $:  transfer=@uv
+      target=ship
+      repository=@t
+      pages=@ud
+      objects=@ud
   ==
 +$  peer-result  [status=? message=@t repository=@t]
 +$  webhook-flight  [repository=@t hook=@ud delivery=@uv]
@@ -2129,6 +2152,8 @@
         0
         0
         ~
+        now.bowl
+        ~
         objects.u.found
     ==
   =.  peer-receiving  (~(put by peer-receiving) transfer.offer flight)
@@ -2206,7 +2231,7 @@
     :~  [%pass /peer/begin-error/(scot %uv transfer.msg) %agent [our.bowl %urgit] %poke %git-peer !>([%snapshot-error transfer.msg 'peer announced an invalid Fine page count'])]
     ==
   =/  next=peer-receive
-    u.found(head head.msg, refs refs.msg, expected objects.msg, pages pages.msg, completed ~)
+    u.found(head head.msg, refs refs.msg, expected objects.msg, pages pages.msg, completed ~, progress-at now.bowl, fine-progress ~)
   =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
   =.  peer-results
     (~(put by peer-results) transfer.msg [%.n 'reading repository over Fine' local-repository.u.found])
@@ -2217,11 +2242,14 @@
     (peer-snapshot transfer.msg (silt objects.u.serving))
   :_  this
   =/  object-reads=(list card)
+    %-  zing
     %+  turn  (gulf 1 (min 8 pages.msg))
     |=  revision=@ud
     =/  scry-path=path
       /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer.msg)
-    [%pass /peer/fine/(scot %uv transfer.msg)/(scot %ud revision) %keen %.n src.bowl scry-path]
+    :~  [%pass /peer/fine/(scot %uv transfer.msg)/(scot %ud revision) %keen %.n src.bowl scry-path]
+        [%pass /peer/rate/(scot %uv transfer.msg)/(scot %ud revision) %arvo %a %prog [src.bowl scry-path] [%keen ~] 64]
+    ==
   =/  stall-cards=(list card)
     :~  [%pass /peer/stall/(scot %uv transfer.msg)/0 %arvo %b %wait (add now.bowl ~m2)]
     ==
@@ -2296,7 +2324,7 @@
   ?.  valid
     (peer-snapshot-fail transfer 'Fine repository object failed content-address validation')
   =/  next=peer-receive
-    flight(objects (merge-objects objects.flight incoming), received (add received.flight count))
+    flight(objects (merge-objects objects.flight incoming), received (add received.flight count), progress-at now.bowl)
   =.  peer-receiving  (~(put by peer-receiving) transfer next)
   ?.  =(received.next expected.next)
     :_  this
@@ -2820,6 +2848,10 @@
         ['repository' s+repository.result]
         ['received' n+(decimal ?~(flight 0 received.u.flight))]
         ['expected' n+(decimal ?~(flight 0 expected.u.flight))]
+        ['pages' n+(decimal ?~(flight 0 pages.u.flight))]
+        ['completedPages' n+(decimal ?~(flight 0 ~(wyt in completed.u.flight)))]
+        ['fineFragmentsReceived' n+(decimal ?~(flight 0 (roll ~(val by fine-progress.u.flight) |=([[fag=@ud tot=@ud] sum=@ud] (add fag sum)))))]
+        ['fineFragmentsTotal' n+(decimal ?~(flight 0 (roll ~(val by fine-progress.u.flight) |=([[fag=@ud tot=@ud] sum=@ud] (add tot sum)))))]
     ==
   (pairs:enjs:format ~[['transfers' [%a entries]]])
 ::
@@ -3939,6 +3971,8 @@
           0
           0
           0
+          ~
+          now.bowl
           ~
           base-objects
       ==
@@ -6728,6 +6762,35 @@
   |=  =path
   ^-  (unit (unit cage))
   ?+  path  (on-peek:def path)
+      [%x %dbug %state ~]
+    =/  transfers=(list peer-transfer-debug)
+      %+  turn  ~(tap by peer-receiving)
+      |=  entry=[@uv peer-receive]
+      =/  transfer=@uv  -.entry
+      =/  flight=peer-receive  +.entry
+      :*  transfer
+          purpose.flight
+          source.flight
+          source-repository.flight
+          local-repository.flight
+          ?:(=('' head.flight) %request %fine)
+          expected.flight
+          received.flight
+          pages.flight
+          %+  sort  ~(tap in completed.flight)
+          |=  [a=@ud b=@ud]  (lth a b)
+          %+  turn  ~(tap by fine-progress.flight)
+          |=  progress=[@ud [fag=@ud tot=@ud]]
+          [revision=-.progress fag=fag.+.progress tot=tot.+.progress]
+          progress-at.flight
+      ==
+    =/  serving=(list peer-serve-debug)
+      %+  turn  ~(tap by peer-serving)
+      |=  entry=[@uv peer-serve]
+      =/  flight=peer-serve  +.entry
+      [transfer=-.entry target=target.flight repository=repository.flight pages=pages.flight objects=(lent objects.flight)]
+    ``noun+!>([transfers=transfers serving=serving results=~(tap by peer-results)])
+  ::
       [%x %repositories ~]
     =/  visible=(map @t repository:git)
       %-  malt
@@ -6866,7 +6929,28 @@
       /g/x/(scot %ud next-revision)/urgit//1/fine/(peer-fine-name u.transfer)
     :~  snapshot-card
         [%pass /peer/fine/(scot %uv u.transfer)/(scot %ud next-revision) %keen %.n source.u.found next-path]
+        [%pass /peer/rate/(scot %uv u.transfer)/(scot %ud next-revision) %arvo %a %prog [source.u.found next-path] [%keen ~] 64]
     ==
+  ::
+      [%peer %rate @ @ ~]
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  transfer  `this
+    =/  revision=(unit @ud)  (slaw %ud i.t.t.t.wire)
+    ?~  revision  `this
+    =/  found=(unit peer-receive)  (~(get by peer-receiving) u.transfer)
+    ?~  found  `this
+    ?.  ?=([%ames %rate *] sign-arvo)  `this
+    =/  [tag=@tas =spar:ames =rate:ames]
+      ;;([@tas spar:ames rate:ames] +.sign-arvo)
+    ?@  rate  `this
+    ?.  =(ship.spar source.u.found)  `this
+    =/  previous=(unit [fag=@ud tot=@ud])
+      (~(get by fine-progress.u.found) u.revision)
+    ?.  ?~(previous %.y (gth fag.rate fag.u.previous))  `this
+    =/  next=peer-receive
+      u.found(progress-at now.bowl, fine-progress (~(put by fine-progress.u.found) u.revision [fag.rate tot.rate]))
+    =.  peer-receiving  (~(put by peer-receiving) u.transfer next)
+    `this
   ::
       [%peer %browse @ @ ~]
     =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
@@ -6991,8 +7075,12 @@
     =/  found=(unit peer-receive)  (~(get by peer-receiving) u.transfer)
     ?~  found  `this
     ?.  =(u.checkpoint received.u.found)  `this
+    ?.  (gte (sub now.bowl progress-at.u.found) ~m2)
+      :_  this
+      :~  [%pass /peer/stall/(scot %uv u.transfer)/(scot %ud received.u.found) %arvo %b %wait (add now.bowl ~s30)]
+      ==
     =/  packet=packet:git-peer
-      [%snapshot-error u.transfer 'Fine repository read stalled without object progress']
+      [%snapshot-error u.transfer 'Fine repository read stalled without fragment progress']
     :_  this
     :~  [%pass /peer/stall-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ==

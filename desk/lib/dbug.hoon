@@ -4,7 +4,8 @@
 ::
 |%
 +$  poke
-  $%  [%bowl ~]
+  $%  [%skip depth=@ud =poke]
+      [%bowl ~]
       [%state grab=cord]
       [%incoming =about]
       [%outgoing =about]
@@ -55,8 +56,13 @@
     ?.  ?=(%dbug mark)
       =^  cards  agent  (on-poke:ag mark vase)
       [cards this]
-    =/  dbug
-      !<(poke vase)
+    =/  dbug  !<(poke vase)
+    =?  dbug  ?=([%skip %0 *] dbug)  poke.dbug
+    ?:  ?=(%skip -.dbug)
+      =^  cards  agent
+        %+  on-poke:ag  %dbug
+        !>(`poke`dbug(depth (dec depth.dbug)))
+      [cards this]
     =;  =tang
       ((%*(. slog pri 1) tang) [~ this])
     ?-  -.dbug
@@ -176,4 +182,3 @@
     [cards this]
   --
 --
-
