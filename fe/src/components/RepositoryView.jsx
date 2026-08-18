@@ -761,7 +761,7 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
   </>
 }
 
-function DiffView({ diff, onCommentTarget }) {
+export function DiffView({ diff, onCommentTarget }) {
   return <div className="diff-view"><div className="diff-overview"><b>{diff.changedCount || 0}</b> files changed <code>{shortOid(diff.base)}..{shortOid(diff.head)}</code></div>{(diff.changes || []).map((change) => <FileDiff key={change.path} change={change} onCommentTarget={onCommentTarget} />)}</div>
 }
 

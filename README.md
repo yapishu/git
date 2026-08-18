@@ -35,10 +35,10 @@
 - repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
 - one-click publication of any mounted Clay desk as a Git repository
 - verified, incremental native forks with explicit pull-from-origin refresh: Ames coordinates access and refs while bounded sequential Fine pages carry checksummed Git pack bytes for only the missing immutable objects; duplicate requests coalesce and active transfers can be cancelled
-- persistent ship peers in the sidebar, with on-demand public repository discovery and bounded remote browsing over Ames or request-scoped Fine
+- persistent ship peers in the sidebar, with on-demand public repository discovery; bounded remote browsing of code, branches, and history; and full native issue and pull-request discussions read through request-scoped Fine
 - ship write ACLs with fast-forward-only native push-back from authorized forks
-- native pull requests between ships or local branches, with close/reopen lifecycle, per-file red/green diffs, resolvable general and line-anchored review comments, fast-forward or conflict-checked three-way merges, and Clay gating
-- native issues authored by ship identity, with open/close lifecycle, comments, labels, assignees, public read-only views, and linked `~ship/repository#number` references
+- native pull requests between ships or local branches, with close/reopen lifecycle, per-file red/green diffs, resolvable general and line-anchored review comments, cross-ship discussion at the origin, fast-forward or conflict-checked three-way merges, and Clay gating
+- native issues authored by ship identity, with open/close lifecycle, origin-authoritative cross-ship comments, labels, assignees, public read-only views, and linked `~ship/repository#number` references
 - explicit Clay revision-to-commit history for both pushed Git trees and published desk snapshots
 - bidirectional GitHub synchronization through Git Smart HTTP: safe fast-forward pulls and branch-selectable pushes preserving canonical object IDs
 - optional GitHub token support for private imports, GitHub forks, and opening pull requests

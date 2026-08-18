@@ -46,6 +46,17 @@
   $:  request=@uv
       repositories=(list catalog-repository)
   ==
++$  browse-view  ?(%overview %issue %pull)
+::
++$  forge-kind  ?(%issue %pull)
+::
++$  forge-comment
+  $:  request=@uv
+      repository=@t
+      kind=forge-kind
+      number=@ud
+      body=@t
+  ==
 +$  offer
   $:  transfer=@uv
       repository=@t
@@ -62,12 +73,14 @@
       [%catalog-request catalog-request=catalog-request]
       [%catalog catalog=catalog]
       [%catalog-error request=@uv message=@t]
-      [%browse-request request=@uv repository=@t]
+      [%browse-request request=@uv repository=@t view=browse-view number=@ud]
       [%browse-ready request=@uv repository=@t target=ship pages=@ud]
       [%browse-response request=@uv repository=@t result=json]
       [%browse-begin request=@uv repository=@t pages=@ud]
       [%browse-release request=@uv]
       [%browse-error request=@uv message=@t]
+      [%forge-comment comment=forge-comment]
+      [%forge-result request=@uv repository=@t kind=forge-kind number=@ud ok=? message=@t result=(unit json)]
       [%offer offer=offer]
       [%release transfer=@uv]
       [%snapshot transfer=@uv objects=(map oid:git object:git)]

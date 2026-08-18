@@ -90,7 +90,8 @@
 +$  peer-browse
   $:  peer=ship
       repository=@t
-      view=?(%overview %file)
+      view=browse-view:git-peer
+      number=@ud
       phase=?(%request %fine)
       active=?
       ok=?
@@ -100,6 +101,16 @@
       expected=@ud
       received=@ud
       parts=(map @ud [length=@ud data=@])
+      result=(unit json)
+  ==
++$  peer-forge
+  $:  peer=ship
+      repository=@t
+      kind=forge-kind:git-peer
+      number=@ud
+      active=?
+      ok=?
+      message=@t
       result=(unit json)
   ==
 +$  peer-activity-kind  ?(%fork %serve %push %pull-request)
@@ -1618,6 +1629,7 @@
 =/  peer-discoveries  *(map @uv peer-discovery)
 =/  peer-browses  *(map @uv peer-browse)
 =/  peer-browse-serving  *(map @uv peer-browse-serve)
+=/  peer-forges  *(map @uv peer-forge)
 =/  peer-activities  *(list peer-activity)
 =/  github-in-flight  *(map @uv github-request)
 =/  github-results  *(map @uv github-result)
@@ -1641,7 +1653,7 @@
   |=  old=vase
   ^-  (quip card _this)
   =/  loaded=state-0:git  (settle-webhook-state !<(state-0:git old))
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -1950,7 +1962,7 @@
     (peer-catalog-error request.packet message.packet)
   ::
       %browse-request
-    (peer-browse-request request.packet repository.packet)
+    (peer-browse-request request.packet repository.packet view.packet number.packet)
   ::
       %browse-ready
     (peer-browse-ready request.packet repository.packet target.packet pages.packet)
@@ -1966,6 +1978,12 @@
   ::
       %browse-error
     (peer-browse-error request.packet message.packet)
+  ::
+      %forge-comment
+    (peer-forge-comment comment.packet)
+  ::
+      %forge-result
+    (peer-forge-result request.packet repository.packet kind.packet number.packet ok.packet message.packet result.packet)
   ::
       %offer
     (peer-offer offer.packet)
@@ -2021,15 +2039,31 @@
   `this
 ::
 ++  peer-browse-request
-  |=  [request=@uv repository=@t]
+  |=  [request=@uv repository=@t view=browse-view:git-peer number=@ud]
   ^-  (quip card _this)
   =/  found=(unit repository:git)  (~(get by repositories) repository)
   ?.  ?&(?=(^ found) public-read.u.found)
     :_  this
     :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or not public'])
     ==
+  =/  detail=(unit json)
+    ?:  =(%overview view)
+      `(repository-browse-json repository u.found)
+    ?:  =(%issue view)
+      =/  issue=(unit native-issue:git)  (native-issue-at u.found number)
+      ?~  issue  ~
+      `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['issue' (native-issue-json u.issue %.y)]])
+    =/  pull=(unit native-pull:git)  (native-pull-at u.found number)
+    ?~  pull  ~
+    =/  pull-json=(unit json)  (native-pull-detail-json repository u.found u.pull)
+    ?~  pull-json  ~
+    `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['pull' u.pull-json]])
+  ?~  detail
+    :_  this
+    :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'forge item not found or its Git objects are incomplete'])
+    ==
   =/  browse-path=path  /browse/(scot %uv request)
-  =/  result=json  (repository-browse-json repository u.found)
+  =/  result=json  u.detail
   =/  pages=(list [length=@ud data=@])  (peer-browse-pages result)
   =.  peer-browse-serving
     (~(put by peer-browse-serving) request [src.bowl (lent pages)])
@@ -2127,6 +2161,69 @@
   ?.  =(src.bowl peer.u.found)  `this
   =.  peer-browses
     (~(put by peer-browses) request u.found(active %.n, ok %.n, message message))
+  `this
+::
+++  peer-forge-reply
+  |=  [target=ship request=@uv repository=@t kind=forge-kind:git-peer number=@ud ok=? message=@t result=(unit json)]
+  ^-  (quip card _this)
+  :_  this
+  :~  (peer-card target /peer/forge-result/(scot %uv request) [%forge-result request repository kind number ok message result])
+  ==
+::
+++  peer-forge-comment
+  |=  msg=forge-comment:git-peer
+  ^-  (quip card _this)
+  =/  found=(unit repository:git)  (~(get by repositories) repository.msg)
+  ?.  ?&(?=(^ found) public-read.u.found)
+    (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'repository is unavailable or not public' ~)
+  ?:  =(%issue kind.msg)
+    =/  issue=(unit native-issue:git)  (native-issue-at u.found number.msg)
+    ?~  issue
+      (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'issue not found' ~)
+    =/  comment=issue-comment:git
+      [(add 1 (lent comments.u.issue)) src.bowl body.msg now.bowl]
+    =/  updated-issue=native-issue:git
+      u.issue(comments (weld comments.u.issue ~[comment]), updated now.bowl)
+    =/  issues=(list native-issue:git)
+      %+  turn  native-issues.u.found
+      |=  candidate=native-issue:git
+      ?:(=(number.candidate number.msg) updated-issue candidate)
+    =.  repositories
+      (~(put by repositories) repository.msg u.found(native-issues issues))
+    (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.y 'comment added' `(native-issue-json updated-issue %.y))
+  =/  pull=(unit native-pull:git)  (native-pull-at u.found number.msg)
+  ?~  pull
+    (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'pull request not found' ~)
+  =/  comment=review-comment:git
+    [(add 1 (lent comments.u.pull)) src.bowl body.msg now.bowl ~ ~ ~ %.n]
+  =/  updated-pull=native-pull:git
+    u.pull(comments (weld comments.u.pull ~[comment]))
+  =/  pulls=(list native-pull:git)
+    %+  turn  native-pulls.u.found
+    |=  candidate=native-pull:git
+    ?:(=(number.candidate number.msg) updated-pull candidate)
+  =.  repositories
+    (~(put by repositories) repository.msg u.found(native-pulls pulls))
+  =/  result=(unit json)
+    (native-pull-detail-json repository.msg (~(got by repositories) repository.msg) updated-pull)
+  ?~  result
+    (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'comment was added but pull request detail could not be rendered' ~)
+  (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.y 'comment added' `u.result)
+::
+++  peer-forge-result
+  |=  [request=@uv repository=@t kind=forge-kind:git-peer number=@ud ok=? message=@t result=(unit json)]
+  ^-  (quip card _this)
+  =/  found=(unit peer-forge)  (~(get by peer-forges) request)
+  ?~  found  `this
+  ?.  ?&  active.u.found
+          =(src.bowl peer.u.found)
+          =(repository repository.u.found)
+          =(kind kind.u.found)
+          =(number number.u.found)
+      ==
+    `this
+  =.  peer-forges
+    (~(put by peer-forges) request u.found(active %.n, ok ok, message message, result result))
   `this
 ::
 ++  peer-offer
@@ -2707,6 +2804,29 @@
   ?~  matches  ~
   `i.matches
 ::
+++  native-pull-at
+  |=  [repo=repository:git number=@ud]
+  ^-  (unit native-pull:git)
+  =/  matches=(list native-pull:git)
+    (skim native-pulls.repo |=(pull=native-pull:git =(number.pull number)))
+  ?~  matches  ~
+  `i.matches
+::
+++  native-pull-detail-json
+  |=  [name=@t repo=repository:git pull=native-pull:git]
+  ^-  (unit json)
+  =/  diff=(unit json)  (repository-diff-json name repo base.pull head.pull)
+  ?~  diff  ~
+  ?.  ?=([%o *] u.diff)  ~
+  =/  fields=(map @t json)  p.u.diff
+  =.  fields  (~(put by fields) 'number' n+(decimal number.pull))
+  =.  fields  (~(put by fields) 'title' s+title.pull)
+  =.  fields  (~(put by fields) 'state' s+state.pull)
+  =.  fields  (~(put by fields) 'sourceShip' s+(scot %p source-ship.pull))
+  =.  fields  (~(put by fields) 'sourceRepository' s+source-repository.pull)
+  =.  fields  (~(put by fields) 'comments' [%a (turn comments.pull review-comment-json)])
+  `[%o fields]
+::
 ++  valid-lfs-oid
   |=  oid=@t
   ^-  ?
@@ -2968,6 +3088,7 @@
         ['ship' s+(scot %p peer.browse)]
         ['repository' s+repository.browse]
         ['view' s+view.browse]
+        ['number' n+(decimal number.browse)]
         ['phase' s+phase.browse]
         ['active' b+active.browse]
         ['ok' b+ok.browse]
@@ -2984,7 +3105,7 @@
   (pairs:enjs:format ~[['browses' [%a entries]]])
 ::
 ++  start-peer-browse
-  |=  [eyre-id=@ta peer=ship repository=@t view=?(%overview %file)]
+  |=  [eyre-id=@ta peer=ship repository=@t view=browse-view:git-peer number=@ud]
   ^-  (quip card _this)
   =/  duplicate=(unit [@uv peer-browse])
     =/  matches=(list [@uv peer-browse])
@@ -2995,6 +3116,7 @@
               =(peer peer.browse)
               =(repository repository.browse)
               =(view view.browse)
+              =(number number.browse)
           ==
         ~
       `entry
@@ -3006,11 +3128,63 @@
     `@uv`(shas %git-peer-browse (cat 3 eny.bowl request-count))
   =.  request-count  +(request-count)
   =.  peer-browses
-    (~(put by peer-browses) request [peer repository view %request %.y %.n 'reading from peer' ~ now.bowl 0 0 ~ ~])
+    (~(put by peer-browses) request [peer repository view number %request %.y %.n 'reading from peer' ~ now.bowl 0 0 ~ ~])
   :_  this
   %+  weld
-    :~  (peer-card peer /peer/browse-request/(scot %uv request) [%browse-request request repository])
+    :~  (peer-card peer /peer/browse-request/(scot %uv request) [%browse-request request repository view number])
         [%pass /peer/browse-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s45)]
+    ==
+  (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
+::
+++  peer-forges-json
+  ^-  json
+  =/  entries=(list json)
+    %+  turn  ~(tap by peer-forges)
+    |=  entry=[@uv peer-forge]
+    =/  request=@uv  -.entry
+    =/  forge=peer-forge  +.entry
+    %-  pairs:enjs:format
+    :~  ['request' s+(scot %uv request)]
+        ['ship' s+(scot %p peer.forge)]
+        ['repository' s+repository.forge]
+        ['kind' s+kind.forge]
+        ['number' n+(decimal number.forge)]
+        ['active' b+active.forge]
+        ['ok' b+ok.forge]
+        ['message' s+message.forge]
+        ['result' ?~(result.forge ~ u.result.forge)]
+    ==
+  (pairs:enjs:format ~[['requests' [%a entries]]])
+::
+++  start-peer-forge-comment
+  |=  [eyre-id=@ta peer=ship repository=@t kind=forge-kind:git-peer number=@ud body=@t]
+  ^-  (quip card _this)
+  =/  duplicate=(unit [@uv peer-forge])
+    =/  matches=(list [@uv peer-forge])
+      %+  murn  ~(tap by peer-forges)
+      |=  entry=[@uv peer-forge]
+      =/  forge=peer-forge  +.entry
+      ?.  ?&  active.forge
+              =(peer peer.forge)
+              =(repository repository.forge)
+              =(kind kind.forge)
+              =(number number.forge)
+          ==
+        ~
+      `entry
+    ?~(matches ~ `i.matches)
+  ?^  duplicate
+    :_  this
+    (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv -.u.duplicate)] ['deduplicated' b+%.y]]))
+  =/  request=@uv
+    `@uv`(shas %git-peer-forge (cat 3 eny.bowl request-count))
+  =.  request-count  +(request-count)
+  =.  peer-forges
+    (~(put by peer-forges) request [peer repository kind number %.y %.n 'sending comment to repository owner' ~])
+  :_  this
+  %+  weld
+    :~  (peer-card peer /peer/forge-comment/(scot %uv request) [%forge-comment request repository kind number body])
+        [%pass /peer/forge-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s30)]
     ==
   (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
 ::
@@ -3869,7 +4043,89 @@
     ?.  ?&(?=(^ peer) (valid-repository-name repository))
       :_  this
       (api-error eyre-id 422 'valid ship and repository are required')
-    (start-peer-browse eyre-id u.peer repository %overview)
+    (start-peer-browse eyre-id u.peer repository %overview 0)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %peer %detail ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    =/  repository=(unit @t)  (string-at 'repository' u.jon)
+    =/  kind-text=(unit @t)  (string-at 'kind' u.jon)
+    =/  number=(unit @ud)  (nat-at 'number' u.jon)
+    ?.  ?&  ?=(^ ship-text)
+            ?=(^ repository)
+            ?=(^ kind-text)
+            ?=(^ number)
+            (gth u.number 0)
+            (valid-repository-name u.repository)
+        ==
+      :_  this
+      (api-error eyre-id 422 'ship, repository, kind, and positive number are required')
+    =/  peer=(unit @p)  (slaw %p u.ship-text)
+    =/  view=(unit browse-view:git-peer)
+      ?:  =('issue' u.kind-text)  `%issue
+      ?:  =('pull' u.kind-text)   `%pull
+      ~
+    ?.  ?&(?=(^ peer) ?=(^ view))
+      :_  this
+      (api-error eyre-id 422 'ship and kind must be valid')
+    (start-peer-browse eyre-id u.peer u.repository u.view u.number)
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %urgit %api %peer %forge ~] site)
+      ==
+    :_  this
+    (api-json eyre-id 200 peer-forges-json)
+  ?:  ?&  =(%'DELETE' method)
+          ?=([%apps %urgit %api %peer %forge ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  request-text=(unit @t)  (string-at 'request' u.jon)
+    =/  request=(unit @uv)  ?~(request-text ~ (slaw %uv u.request-text))
+    ?.  ?&(?=(^ request) (~(has by peer-forges) u.request))
+      :_  this
+      (api-error eyre-id 404 'forge request not found')
+    =.  peer-forges  (~(del by peer-forges) u.request)
+    :_  this
+    (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %peer %forge ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    =/  repository=(unit @t)  (string-at 'repository' u.jon)
+    =/  kind-text=(unit @t)  (string-at 'kind' u.jon)
+    =/  number=(unit @ud)  (nat-at 'number' u.jon)
+    =/  body=(unit @t)  (string-at 'body' u.jon)
+    ?.  ?&  ?=(^ ship-text)
+            ?=(^ repository)
+            ?=(^ kind-text)
+            ?=(^ number)
+            ?=(^ body)
+            (gth u.number 0)
+            !=('' u.body)
+            (lte (met 3 u.body) 16.384)
+            (valid-repository-name u.repository)
+        ==
+      :_  this
+      (api-error eyre-id 422 'ship, repository, kind, positive number, and a comment up to 16 KiB are required')
+    =/  peer=(unit @p)  (slaw %p u.ship-text)
+    =/  kind=(unit forge-kind:git-peer)
+      ?:  =('issue' u.kind-text)  `%issue
+      ?:  =('pull' u.kind-text)   `%pull
+      ~
+    ?.  ?&(?=(^ peer) ?=(^ kind))
+      :_  this
+      (api-error eyre-id 422 'ship and kind must be valid')
+    (start-peer-forge-comment eyre-id u.peer u.repository u.kind u.number u.body)
   ?:  ?&  =(%'GET' method)
           ?=([%apps %urgit %api %peer %discoveries ~] site)
       ==
@@ -7209,6 +7465,19 @@
       [%pass /peer/cull/(scot %uv u.transfer)/(scot %ud revision) %cull [%ud revision] /fine/(peer-fine-name u.transfer)]
     :_  this(peer-serving (~(del by peer-serving) u.transfer))
     culls
+  ::
+      [%peer %forge-timeout @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  request  `this
+    =/  found=(unit peer-forge)  (~(get by peer-forges) u.request)
+    ?~  found  `this
+    ?.  active.u.found  `this
+    =.  peer-forges
+      (~(put by peer-forges) u.request u.found(active %.n, ok %.n, message 'peer did not answer the forge comment request'))
+    `this
   ::
       [%peer %discovery-timeout @ ~]
     ?.  ?=([%behn %wake *] sign-arvo)

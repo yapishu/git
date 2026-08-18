@@ -368,6 +368,8 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 :root .highlighted-code .shiki .selected-line { background: color-mix(in srgb, var(--accent) 15%, transparent) !important; box-shadow: inset 3px 0 var(--accent); }
 .editor-footer { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; gap: 8px; padding: 12px; background: var(--soft); }
 .branch-context { display: flex; align-items: center; gap: 12px; min-height: 48px; margin-bottom: 12px; padding: 0; color: var(--muted); font-size: 12px; }
+.remote-forge-row { width: 100%; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.remote-forge-row:hover { background: var(--hover); }
 .branch-context select { width: auto; min-width: 160px; height: 34px; background: var(--panel); color: var(--text); font-weight: 600; }
 .branch-context code { color: var(--text); font-weight: 650; }
 .branch-context .text-button { margin-left: auto; }

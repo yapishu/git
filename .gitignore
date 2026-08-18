@@ -2,3 +2,4 @@
 /zig-out/
 /desk-deps/
 /fe/node_modules/
+desk/web/*

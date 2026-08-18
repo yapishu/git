@@ -48,6 +48,8 @@
 - on-demand Ames peer discovery with bounded public-repository catalogs, writer hints, expiry, cancellation, and status pruning
 - persistent peer bookmarks with expandable public repositories in the sidebar
 - bounded remote repository overviews over Ames, with request-scoped Fine overview reads accepted and every unanswered browse terminated explicitly
+- remote forge summaries expose native and cached GitHub issues and pull requests alongside code, branches, and history
+- request-scoped Fine detail reads expose native issue bodies and comments plus pull-request diffs and review discussion; authenticated Ames comment requests append origin-authoritative ship-authored comments to both native issues and pull requests
 - bounded peer activity notifications for incoming and outgoing forks, snapshot reads, native updates, and pull requests
 - public native forks, explicit pull-from-origin refresh, and origin metadata
 - ship writer ACLs with fast-forward-only push-back from native forks
@@ -84,9 +86,12 @@
 
 ## Next
 
-1. Add webhook delivery redelivery and editable webhook configuration.
-2. Emit issue and pull-request events for every lifecycle mutation, including comments, review resolution, close, reopen, and merge.
-3. Add release assets as LFS-backed objects alongside the deterministic source archive.
+1. Add origin-authoritative cross-ship issue creation plus pull-request line-comment and resolution operations.
+2. Add peer notifications and explicit subscriptions for issue and pull-request lifecycle activity.
+3. Add cross-ship close, reopen, label, assignment, review resolution, and merge operations.
+4. Add webhook delivery redelivery and editable webhook configuration.
+5. Emit issue and pull-request events for every lifecycle mutation, including comments, review resolution, close, reopen, and merge.
+6. Add release assets as LFS-backed objects alongside the deterministic source archive.
 
 ## Storage direction
 

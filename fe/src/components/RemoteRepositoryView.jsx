@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { api, waitForPeerBrowse, waitForPeerForge } from '../api'
 import FileTree from './FileTree'
+import { DiffView } from './RepositoryView'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
 const formatDate = (timestamp) => {
@@ -7,14 +9,27 @@ const formatDate = (timestamp) => {
   return Number.isFinite(value) && value > 0 ? new Date(value).toLocaleString() : ''
 }
 
+const remoteRoute = () => {
+  const query = location.hash.split('?')[1] || ''
+  const params = new URLSearchParams(query)
+  const requested = params.get('tab')
+  const tab = ['code', 'issues', 'pulls', 'commits', 'branches'].includes(requested) ? requested : 'code'
+  const issue = Number(params.get('issue'))
+  const pull = Number(params.get('pull'))
+  if (tab === 'issues' && Number.isInteger(issue) && issue > 0) return { tab, kind: 'issue', number: issue }
+  if (tab === 'pulls' && Number.isInteger(pull) && pull > 0) return { tab, kind: 'pull', number: pull }
+  return { tab, kind: '', number: 0 }
+}
+
 export default function RemoteRepositoryView({ ship, repository, repositories, data, onFork, onCancelTransfer }) {
   const repo = data?.repository
-  const routeTab = () => {
-    const query = location.hash.split('?')[1] || ''
-    const requested = new URLSearchParams(query).get('tab')
-    return ['code', 'pulls', 'commits', 'branches'].includes(requested) ? requested : 'code'
-  }
-  const [tab, setTab] = useState(routeTab)
+  const [tab, setTab] = useState(() => remoteRoute().tab)
+  const [selected, setSelected] = useState(null)
+  const [detail, setDetail] = useState(null)
+  const [detailError, setDetailError] = useState('')
+  const [comment, setComment] = useState('')
+  const [commentBusy, setCommentBusy] = useState(false)
+  const [commentCounts, setCommentCounts] = useState({})
   const [forking, setForking] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [transfer, setTransfer] = useState('')
@@ -23,15 +38,64 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
   const [localName, setLocalName] = useState(repository)
   const [forkTarget, setForkTarget] = useState(repository)
   const [publicRead, setPublicRead] = useState(true)
+  async function inspect(kind, item, pushHistory = true) {
+    if (!item) return
+    setSelected({ kind, item }); setDetail(null); setDetailError(''); setComment('')
+    if (pushHistory) {
+      const key = kind === 'issue' ? 'issue' : 'pull'
+      history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(repository)}?tab=${kind === 'issue' ? 'issues' : 'pulls'}&${key}=${item.number}`)
+    }
+    let request = ''
+    try {
+      const started = await api.peerDetail(ship, repository, kind, item.number)
+      request = started.request
+      const found = await waitForPeerBrowse(request)
+      if (!found.ok) throw new Error(found.message || `Could not load ${kind}`)
+      setDetail(found.result?.[kind] || null)
+    } catch (cause) {
+      setDetailError(cause.message)
+    } finally {
+      if (request) api.peerDeleteBrowse(request).catch(() => {})
+    }
+  }
   useEffect(() => {
-    const restore = () => setTab(routeTab())
+    const restore = () => {
+      const route = remoteRoute()
+      setTab(route.tab)
+      if (!route.kind) { setSelected(null); setDetail(null); setDetailError(''); return }
+      const source = route.kind === 'issue' ? (repo?.nativeIssues || []) : (repo?.pullRequests || [])
+      const item = source.find((candidate) => candidate.number === route.number)
+      if (item) void inspect(route.kind, item, false)
+    }
     addEventListener('popstate', restore)
+    const initial = remoteRoute()
+    if (initial.kind) restore()
     return () => removeEventListener('popstate', restore)
   }, [ship, repo?.name])
   function chooseTab(next) {
     const query = next === 'code' ? '' : `?tab=${encodeURIComponent(next)}`
     history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(repo.name)}${query}`)
-    setTab(next)
+    setTab(next); setSelected(null); setDetail(null); setDetailError('')
+  }
+  async function addComment() {
+    const body = comment.trim()
+    if (!body || !selected || commentBusy) return
+    setCommentBusy(true); setDetailError('')
+    let request = ''
+    try {
+      const started = await api.peerForgeComment(ship, repository, selected.kind, selected.item.number, body)
+      request = started.request
+      const found = await waitForPeerForge(request)
+      if (!found.ok) throw new Error(found.message || 'Comment was rejected by the repository owner')
+      setDetail(found.result)
+      setComment('')
+      setCommentCounts((current) => ({ ...current, [`${selected.kind}-${selected.item.number}`]: found.result?.comments?.length || 0 }))
+    } catch (cause) {
+      setDetailError(cause.message)
+    } finally {
+      if (request) api.peerDeleteForgeRequest(request).catch(() => {})
+      setCommentBusy(false)
+    }
   }
   const existing = repositories.find((item) => item.name === localName.trim())
   const sameOrigin = existing?.peerOrigin?.ship === ship && existing?.peerOrigin?.repository === repository && !existing?.binding?.bound
@@ -54,20 +118,57 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
   }
   if (!repo) return <main className="content"><div className="empty">Repository data is unavailable.</div></main>
   const commits = data.commits?.commits || []
-  const pulls = repo.pullRequests || []
+  const nativePulls = repo.pullRequests || []
+  const githubPulls = repo.githubPulls || []
+  const pulls = [
+    ...nativePulls.map((pull) => ({ ...pull, source: 'native' })),
+    ...githubPulls.map((pull) => ({ ...pull, source: 'github' })),
+  ]
+  const nativeIssues = repo.nativeIssues || []
+  const githubIssues = repo.githubIssues || []
+  const issues = [
+    ...nativeIssues.map((issue) => ({ ...issue, source: 'native' })),
+    ...githubIssues.map((issue) => ({ ...issue, source: 'github' })),
+  ]
   return <main className="content">
     <header className="repo-header"><div><div className="repo-breadcrumb"><span>{ship}</span><b>/</b><h1>{repository}</h1><span className="visibility-badge">Peer</span></div>{repo.description && <p className="repo-description">{repo.description}</p>}</div><button className={`button primary ${forking ? 'is-busy' : ''}`} disabled={forking} onClick={() => { setLocalName(repository); setForkDialog(true) }}>{forking && <span className="spinner" />}{forking ? 'Forking to my ship…' : 'Fork to my ship'}</button></header>
     {forking && <TransferProgress ship={ship} repository={repository} localName={forkTarget} progress={progress} cancelling={cancelling} onCancel={cancelFork} />}
     <div className="repo-meta"><span><b>{repo.fileCount || 0}</b> files</span><span><b>{repo.commitCount || 0}</b> commits</span><span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span></div>
-    <nav className="tabs"><button className={tab === 'code' ? 'active' : ''} onClick={() => chooseTab('code')}>Code</button><button className={tab === 'pulls' ? 'active' : ''} onClick={() => chooseTab('pulls')}>Pull requests <span className="tab-count">{pulls.length}</span></button><button className={tab === 'commits' ? 'active' : ''} onClick={() => chooseTab('commits')}>Commits <span className="tab-count">{repo.commitCount || commits.length}</span></button><button className={tab === 'branches' ? 'active' : ''} onClick={() => chooseTab('branches')}>Branches <span className="tab-count">{repo.branchCount || 0}</span></button></nav>
+    <nav className="tabs"><button className={tab === 'code' ? 'active' : ''} onClick={() => chooseTab('code')}>Code</button><button className={tab === 'issues' ? 'active' : ''} onClick={() => chooseTab('issues')}>Issues <span className="tab-count">{issues.length}</span></button><button className={tab === 'pulls' ? 'active' : ''} onClick={() => chooseTab('pulls')}>Pull requests <span className="tab-count">{pulls.length}</span></button><button className={tab === 'commits' ? 'active' : ''} onClick={() => chooseTab('commits')}>Commits <span className="tab-count">{repo.commitCount || commits.length}</span></button><button className={tab === 'branches' ? 'active' : ''} onClick={() => chooseTab('branches')}>Branches <span className="tab-count">{repo.branchCount || 0}</span></button></nav>
     <section className="repo-body">
       {tab === 'code' && <FileTree files={data.files?.files || []} />}
       {tab === 'commits' && <div className="commit-list">{commits.map((commit) => { const date = formatDate(commit.committer?.timestamp); return <div className="commit-row" key={commit.oid}><span className="commit-avatar">{(commit.author?.name || '?').slice(0, 1).toUpperCase()}</span><div><strong>{commit.subject || 'Untitled commit'}</strong><small>{commit.author?.name || commit.author?.email || 'Unknown author'}{date ? ` committed ${date}` : ''}</small></div><code title={commit.oid}>{shortOid(commit.oid)}</code></div> })}</div>}
-      {tab === 'pulls' && (!pulls.length ? <div className="empty compact">No native pull requests.</div> : <div className="pull-list">{pulls.map((pull) => <article className="pull-row" key={pull.number}><div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.state}</span><h3>#{pull.number} {pull.title}</h3><p><code>{pull.sourceShip}/{pull.sourceRepository}</code> proposes <code>{shortOid(pull.head)}</code> into <code>{shortOid(pull.base)}</code></p></div></article>)}</div>)}
+      {selected && <RemoteForgeDetail selected={selected} detail={detail} error={detailError} comment={comment} commentBusy={commentBusy} onCommentChange={setComment} onComment={addComment} onBack={() => history.back()} />}
+      {!selected && tab === 'issues' && (!issues.length ? <div className="empty compact">No issues.</div> : <div className="issue-list">{issues.map((issue) => issue.source === 'github' ? <a className="issue-row forge-link" href={issue.url} target="_blank" rel="noreferrer" key={`github-${issue.number}`}><span className={`issue-icon ${issue.state}`}>◉</span><div><h3>{issue.title}</h3><p>#{issue.number} · {issue.state} · {issue.author} · GitHub</p></div><span className="external-arrow">↗</span></a> : <button type="button" className="issue-row remote-forge-row" onClick={() => inspect('issue', issue)} key={`native-${issue.number}`}><span className={`issue-icon ${issue.state}`}>◉</span><div><h3>{issue.title}</h3><p>#{issue.number} · {issue.state} · {issue.author} · {commentCounts[`issue-${issue.number}`] ?? issue.commentCount ?? 0} comments</p><div className="issue-labels inline">{(issue.labels || []).map((label) => <span key={label}>{label}</span>)}</div></div></button>)}</div>)}
+      {!selected && tab === 'pulls' && (!pulls.length ? <div className="empty compact">No pull requests.</div> : <div className="pull-list">{pulls.map((pull) => pull.source === 'github' ? <a className="pull-row forge-link" href={pull.url} target="_blank" rel="noreferrer" key={`github-${pull.number}`}><div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.draft ? 'draft' : pull.state}</span><h3>#{pull.number} {pull.title}</h3><p>opened by <strong>{pull.author}</strong> on GitHub</p></div><span className="external-arrow">↗</span></a> : <button type="button" className="pull-row remote-forge-row" onClick={() => inspect('pull', pull)} key={`native-${pull.number}`}><div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.state}</span><h3>#{pull.number} {pull.title}</h3><p><code>{pull.sourceShip}/{pull.sourceRepository}</code> proposes <code>{shortOid(pull.head)}</code> into <code>{shortOid(pull.base)}</code> · {commentCounts[`pull-${pull.number}`] ?? pull.commentCount ?? 0} comments</p></div></button>)}</div>)}
       {tab === 'branches' && <div className="table"><div className="table-head"><span>Branch</span><span>Commit</span></div>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <div className="table-row" key={ref.name}><strong>{ref.name.replace('refs/heads/', '')}</strong><code>{shortOid(ref.oid)}</code></div>)}</div>}
     </section>
     {forkDialog && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setForkDialog(false)}><section className="modal-card" role="dialog" aria-modal="true" aria-label="Fork repository"><header><div><span className="eyebrow">Fork</span><h1>{ship}/{repository}</h1></div><button type="button" className="icon-button" onClick={() => setForkDialog(false)} aria-label="Close">×</button></header><form onSubmit={fork}><label><span>Local repository name</span><input autoFocus required pattern="[A-Za-z0-9._-]+" maxLength="100" value={localName} onChange={(event) => setLocalName(event.target.value)} /></label>{sameOrigin && <small className="field-note">This updates the existing fork from the same origin.</small>}{blockedCollision && <small className="field-error">That name belongs to another repository. Choose a different local name.</small>}<label className="check-row"><input type="checkbox" checked={publicRead} onChange={(event) => setPublicRead(event.target.checked)} /><span><strong>Public local fork</strong><small>Allow other ships and Git clients to fetch this copy.</small></span></label><div className="form-actions"><button type="button" className="button ghost" onClick={() => setForkDialog(false)}>Cancel</button><button className="button primary" disabled={blockedCollision || !localName.trim()}>{sameOrigin ? 'Update fork' : 'Fork repository'}</button></div></form></section></div>}
   </main>
+}
+
+function RemoteForgeDetail({ selected, detail, error, comment, commentBusy, onCommentChange, onComment, onBack }) {
+  const kind = selected.kind
+  const fallback = selected.item
+  const item = detail || fallback
+  const comments = detail?.comments || []
+  return <div className={kind === 'issue' ? 'issue-detail' : 'pull-detail'}>
+    <button className="text-button file-back" onClick={onBack}>← {kind === 'issue' ? 'Issues' : 'Pull requests'}</button>
+    <header className="pull-detail-header"><div><h2>#{item.number} {item.title}</h2><p><span className={`status ${item.state === 'open' ? 'good' : ''}`}>{item.state}</span> {kind === 'issue' ? <>opened by <strong>{item.author}</strong></> : <><code>{item.sourceShip}/{item.sourceRepository}</code> proposes <code>{shortOid(item.head)}</code> into <code>{shortOid(item.base)}</code></>}</p></div></header>
+    {error && <div className="inline-error">{error}</div>}
+    {!detail && !error ? <div className="empty"><span className="spinner" /> Loading discussion from {fallback.sourceShip || fallback.author || 'peer'}…</div> : detail && <>
+      {kind === 'issue' ? <div className="issue-layout"><div className="issue-thread"><article className="review-comment"><header><strong>{detail.author}</strong><span title={detail.created}>{detail.created}</span></header><p>{detail.body || 'No description provided.'}</p></article><RemoteDiscussion comments={comments} /><RemoteCommentComposer value={comment} busy={commentBusy} onChange={onCommentChange} onSubmit={onComment} /></div><aside className="issue-sidebar"><section><strong>Labels</strong><div className="issue-labels">{(detail.labels || []).map((label) => <span key={label}>{label}</span>)}{!(detail.labels || []).length && <small>None</small>}</div></section><section><strong>Assignees</strong><div>{(detail.assignees || []).map((assignee) => <code key={assignee}>{assignee}</code>)}{!(detail.assignees || []).length && <small>Unassigned</small>}</div></section></aside></div> : <><DiffView diff={detail} /><section className="review-discussion"><h3>Discussion <span>{comments.length}</span></h3><RemoteDiscussion comments={comments} pull /><RemoteCommentComposer value={comment} busy={commentBusy} onChange={onCommentChange} onSubmit={onComment} /></section></>}
+    </>}
+  </div>
+}
+
+function RemoteDiscussion({ comments, pull = false }) {
+  if (!comments.length) return <div className="empty compact">No comments yet.</div>
+  return <>{comments.map((entry) => <article className={`review-comment ${entry.resolved ? 'resolved' : ''}`} key={entry.id}><header><strong>{entry.author}</strong><span>{pull && entry.path ? <><code>{entry.path} · {entry.side === 'base' ? 'base ' : ''}L{entry.line}</code> · </> : null}<time title={entry.created}>{entry.created}</time></span></header><p>{entry.body}</p></article>)}</>
+}
+
+function RemoteCommentComposer({ value, busy, onChange, onSubmit }) {
+  return <div className="review-composer"><div className="review-target"><strong>Comment as this ship</strong></div><textarea value={value} maxLength="16384" onChange={(event) => onChange(event.target.value)} placeholder="Add a comment on the origin repository…" /><div className="form-actions"><button className="button primary" disabled={busy || !value.trim()} onClick={onSubmit}>{busy ? 'Commenting…' : 'Comment'}</button></div></div>
 }
 
 function TransferProgress({ ship, repository, localName, progress, cancelling, onCancel }) {

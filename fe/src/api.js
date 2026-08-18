@@ -52,8 +52,16 @@ export const api = {
   addPeer: (ship) => request('/peer/peers', { method: 'POST', body: JSON.stringify({ ship }) }),
   removePeer: (ship) => request('/peer/peers', { method: 'DELETE', body: JSON.stringify({ ship }) }),
   peerBrowse: (ship, repository) => request(`/peer/browse/${encodeURIComponent(ship)}/${encodeURIComponent(repository)}`, { method: 'POST', body: '{}' }),
+  peerDetail: (ship, repository, kind, number) => request('/peer/detail', {
+    method: 'POST', body: JSON.stringify({ ship, repository, kind, number }),
+  }),
   peerBrowses: () => request('/peer/browses'),
   peerDeleteBrowse: (requestId) => request('/peer/browses', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
+  peerForgeRequests: () => request('/peer/forge'),
+  peerForgeComment: (ship, repository, kind, number, body) => request('/peer/forge', {
+    method: 'POST', body: JSON.stringify({ ship, repository, kind, number, body }),
+  }),
+  peerDeleteForgeRequest: (requestId) => request('/peer/forge', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
   clearPeerActivity: () => request('/peer/activity', { method: 'DELETE' }),
   peerDiscover: (ship) => request('/peer/discover', { method: 'POST', body: JSON.stringify({ ship }) }),
   peerDiscoveries: () => request('/peer/discoveries'),
@@ -285,5 +293,21 @@ export async function waitForPeerBrowse(requestId, { interval = 500, onProgress 
     missingPolls = 0
     onProgress?.(browse)
     if (!browse.active) return browse
+  }
+}
+
+export async function waitForPeerForge(requestId, { interval = 500 } = {}) {
+  let missingPolls = 0
+  while (true) {
+    await new Promise((resolve) => setTimeout(resolve, interval))
+    const status = await api.peerForgeRequests()
+    const request = status.requests?.find((item) => item.request === requestId)
+    if (!request) {
+      missingPolls += 1
+      if (missingPolls >= 8) throw new Error('peer forge request state was reset')
+      continue
+    }
+    missingPolls = 0
+    if (!request.active) return request
   }
 }
