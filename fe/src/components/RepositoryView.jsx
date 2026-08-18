@@ -20,6 +20,13 @@ const githubDate = (value) => {
   return date && Number.isFinite(date.getTime()) ? date.toLocaleString() : ''
 }
 
+const notificationEvents = [
+  ['issue', 'New issues', 'An issue is opened from another ship.'],
+  ['issue-comment', 'Issue comments', 'Another ship comments on a native issue.'],
+  ['pull-request', 'New pull requests', 'A native pull request arrives from another ship.'],
+  ['pull-comment', 'Pull request comments', 'Another ship comments on a native pull request.'],
+]
+
 function CopyableHash({ value }) {
   return <span className="tako-chip"><code title={value}>{value}</code><button type="button" className="hash-copy" title="Copy revision hash" aria-label="Copy revision hash" onClick={() => navigator.clipboard.writeText(value)}><CopyIcon /></button></span>
 }
@@ -1098,6 +1105,20 @@ function Settings({ repo, onMutate }) {
       <section className="panel">
         <div className="section-title"><div><h2>Repository details</h2><p>Shown on this ship and when other ships browse the repository.</p></div></div>
         <label><span>Description</span><div className="inline-field"><input maxLength="500" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What is this repository for?" /><button className="button" disabled={busy || description === (repo.description || '')} onClick={() => act('description', () => api.setDescription(repo.name, description.trim()))}>{busy === 'description' ? 'Saving…' : 'Save'}</button></div></label>
+      </section>
+      <section className="panel">
+        <div className="section-title"><div><h2>Notifications</h2></div><span className={(repo.notificationEvents || []).length ? 'status good' : 'status'}>{(repo.notificationEvents || []).length ? `${repo.notificationEvents.length} enabled` : 'muted'}</span></div>
+        <div className="event-grid notification-event-grid">
+          {notificationEvents.map(([eventName, label, detail]) => {
+            const checked = (repo.notificationEvents || []).includes(eventName)
+            return <label className="check-row compact" key={eventName}><input type="checkbox" disabled={!!busy} checked={checked} onChange={(event) => {
+              const next = new Set(repo.notificationEvents || [])
+              if (event.target.checked) next.add(eventName); else next.delete(eventName)
+              act(`notification-${eventName}`, () => api.setNotifications(repo.name, [...next]))
+            }} /><span><strong>{label}</strong><small>{detail}</small></span></label>
+          })}
+        </div>
+        <small className="quiet">Uncheck all to mute.</small>
       </section>
       {repo.peerOrigin && <section className="panel">
         <div className="section-title"><div><h2>Native origin</h2><p>Forked from <code>{repo.peerOrigin.ship}/{repo.peerOrigin.repository}</code>. Ames coordinates updates and Fine carries the verified object snapshot.</p></div></div>

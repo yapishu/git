@@ -39,6 +39,7 @@
 - ship write ACLs with fast-forward-only native push-back from authorized forks
 - native pull requests between ships or local branches, with close/reopen lifecycle, per-file red/green diffs, resolvable general and line-anchored review comments, cross-ship discussion at the origin, fast-forward or conflict-checked three-way merges, and Clay gating
 - native issues authored by ship identity, with remote creation, open/close lifecycle, origin-authoritative cross-ship comments, labels, assignees, public read-only views, and linked `~ship/repository#number` references
+- per-repository Landscape notifications for incoming native issues, pull requests, and comments, with event-level muting and Hark-owned `%urgit` history
 - explicit Clay revision-to-commit history for both pushed Git trees and published desk snapshots
 - bidirectional GitHub synchronization through Git Smart HTTP: safe fast-forward pulls and branch-selectable pushes preserving canonical object IDs
 - optional GitHub token support for private imports, GitHub forks, and opening pull requests

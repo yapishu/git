@@ -125,6 +125,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ description }),
     }),
+  setNotifications: (name, events) =>
+    request(`/repository/${encodeURIComponent(name)}/notifications`, {
+      method: 'POST',
+      body: JSON.stringify({ events }),
+    }),
   createBranch: (name, branch, source) =>
     request(`/repository/${encodeURIComponent(name)}/branches`, {
       method: 'POST',

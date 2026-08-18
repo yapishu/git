@@ -4,7 +4,7 @@
 
 ## Working now
 
-- state-0 repositories, ownership, public-read policy, writers, symbolic `HEAD`, refs, and canonical loose objects
+- state-1 repositories, ownership, public-read policy, writers, symbolic `HEAD`, refs, and canonical loose objects; state-0 upgrades in place
 - SHA-1 object identity over Git's canonical `<type> <size>\0<content>` representation
 - binary-safe pkt-line encoding and decoding, including flush, delimiter, and response-end packets
 - protocol v0/v1 Smart HTTP ref discovery for upload-pack
@@ -82,12 +82,13 @@
 - tag-rooted releases with immutable backing tags, bounded notes, public detail reads, and deterministic mode-preserving ustar source archives limited to 10,000 files and 64 MiB
 - HMAC-SHA256 outgoing repository webhooks with event filters, pending/success/failure delivery history, and Smart HTTP plus Clay-gated push integration
 - HMAC-SHA256 incoming GitHub ping, push, and pull-request endpoints; pushes record bounded, ref-coalesced upstream notices with explicit pull-or-dismiss actions, while pull-request events asynchronously refresh page-one GitHub PR metadata
+- per-repository Hark notifications for incoming native issues, pull requests, and comments, with event filters, repository muting, and `%urgit`-scoped Landscape history
 - conformance vectors for Git object hashing, pkt-line round trips, pack generation, stock Git pack decoding, delta resolution, GitHub receive-pack requests/results, Clay snapshots, object-store request signing, and webhook signing/parsing
 
 ## Next
 
 1. Add origin-authoritative cross-ship pull-request line-comment and resolution operations.
-2. Add peer notifications and explicit subscriptions for issue and pull-request lifecycle activity.
+2. Map native issue, pull-request, and comment mutations onto linked GitHub repositories.
 3. Add cross-ship close, reopen, label, assignment, review resolution, and merge operations.
 4. Add webhook delivery redelivery and editable webhook configuration.
 5. Emit issue and pull-request events for every lifecycle mutation, including comments, review resolution, close, reopen, and merge.

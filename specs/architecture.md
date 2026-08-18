@@ -104,6 +104,8 @@ Line blame uses the same first-parent boundary for ordinary Git branches and the
 
 Repository metadata is projected into JSON scries for the web frontend. Separate paths expose the repository list, one repository with its refs and binding, canonical Clay revisions or bounded Git first-parent history as appropriate, and the current head tree's file names and sizes. Write credentials and object bytes are not included in this read model.
 
+Persisted state is `%1`. Loading `%0` preserves every repository and global setting while adding the default repository notification event set.
+
 ## Native collaboration
 
 The authenticated frontend discovers a peer explicitly rather than maintaining a background network index. An Ames catalog request returns at most 200 public repositories with their symbolic head, ref and object counts, and whether the requesting ship is in that repository's writer ACL. Discovery results are transient, expire after thirty seconds, and can be cancelled or pruned through the authenticated API. Private repositories are never advertised.
@@ -119,6 +121,8 @@ Forks without write access can open native pull requests from the repository's P
 Native issues live in repository state independently of Git objects and Clay revisions. Each issue records its author as an Urbit ship, title, bounded body, open or closed state, a deduplicated set of labels, a deduplicated set of ship assignees, creation and update times, and append-only ship-authored comments. Repository summaries include issue metadata and counts but omit bodies and comments; opening an issue reads its complete detail over request-scoped Fine. Remote issue creation and comments are origin-authoritative Ames mutations: the browser supplies the target and bounded issue or comment text, while Gall takes the author from the sending ship and returns the created issue or updated thread. Active identical requests coalesce, and transient status makes success or failure observable. Labels are limited to 20 values of 64 bytes, assignees to 20 ships, issue bodies to 64 KiB, and comments to 16 KiB. Discussion text recognizes `~ship/repository#number` references and links to the peer repository without requiring a global issue index.
 
 Peer operations also write a bounded, transient activity ledger. Incoming snapshot reads and outgoing forks, pushes, and pull requests move from active to success or failure without changing persisted state. The authenticated activity API and top-bar panel expose the peer, repository, direction, time, and terminal message; clearing the ledger has no effect on repositories or transfers.
+
+Incoming native issue, pull-request, and comment mutations can emit notifications according to each repository's event set. The repository stores only those preferences. The `%hark-store` agent owns delivery and history: notes are visible in the global feed and grouped under stable `%urgit` issue and pull-request paths. An empty event set mutes the repository.
 
 ## Web interface
 

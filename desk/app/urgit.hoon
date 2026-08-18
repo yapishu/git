@@ -444,6 +444,14 @@
     kept     [i.updates kept]
   ==
 ::
+++  default-notification-events
+  ^-  (set notification-event:git)
+  =/  events=(set notification-event:git)  ~
+  =.  events  (~(put in events) %issue)
+  =.  events  (~(put in events) %issue-comment)
+  =.  events  (~(put in events) %pull-request)
+  (~(put in events) %pull-comment)
+::
 ++  repository-json
   |=  [name=@t repo=repository:git]
   ^-  json
@@ -465,6 +473,8 @@
     (turn ~(tap in writers.repo) |=(writer=@p s+(scot %p writer)))
   =/  protected-json=(list json)
     (turn ~(tap in protected-refs.repo) |=(ref=@t s+ref))
+  =/  notification-events-json=(list json)
+    (turn ~(tap in notification-events.repo) |=(event=notification-event:git s+event))
   =/  head-oid=(unit oid:git)  (~(get by refs.repo) head.repo)
   =/  head-files=(unit (map path octs))
     ?~  head-oid  ~
@@ -522,6 +532,7 @@
       ['incomingHookConfigured' b+?=(^ incoming-hook.repo)]
       ['webhookDeliveries' [%a (turn (scag 100 webhook-deliveries.repo) webhook-delivery-json)]]
       ['upstreamUpdates' [%a (turn (dedupe-upstream-updates upstream-updates.repo) upstream-update-json)]]
+      ['notificationEvents' [%a notification-events-json]]
       ['githubIssues' [%a (turn github-issues.repo github-item-json)]]
       ['githubPulls' [%a (turn github-pulls.repo github-item-json)]]
       ['binding' (binding-json binding.repo)]
@@ -553,6 +564,7 @@
   =.  fields  (~(del by fields) 'webhooks')
   =.  fields  (~(del by fields) 'incomingHookConfigured')
   =.  fields  (~(del by fields) 'webhookDeliveries')
+  =.  fields  (~(del by fields) 'notificationEvents')
   =.  fields  (~(del by fields) 'upstreamUpdates')
   [%o fields]
 ::
@@ -1570,9 +1582,52 @@
     upstream-updates    (dedupe-upstream-updates upstream-updates.repo)
   ==
 ::
-++  settle-webhook-state
+++  migrate-repository-0
+  |=  repo=repository-0:git
+  ^-  repository:git
+  :*  owner.repo
+      public-read.repo
+      description.repo
+      head.repo
+      refs.repo
+      protected-refs.repo
+      objects.repo
+      writers.repo
+      write-token-hash.repo
+      lfs-objects.repo
+      lfs-uploads.repo
+      lfs-locks.repo
+      binding.repo
+      peer-origin.repo
+      github-origin.repo
+      github-issues.repo
+      github-pulls.repo
+      native-pulls.repo
+      native-issues.repo
+      releases.repo
+      webhooks.repo
+      incoming-hook.repo
+      webhook-deliveries.repo
+      upstream-updates.repo
+      default-notification-events
+  ==
+::
+++  migrate-state-0
   |=  stored=state-0:git
-  ^-  state-0:git
+  ^-  state-1:git
+  =/  remaining=(list [@t repository-0:git])  ~(tap by repositories.stored)
+  =/  migrated=(map @t repository:git)  ~
+  =.  migrated
+    |-
+    ?~  remaining  migrated
+    =.  migrated
+      (~(put by migrated) -.i.remaining (migrate-repository-0 +.i.remaining))
+    $(remaining t.remaining)
+  [%1 migrated peers.stored github-token.stored]
+::
+++  settle-webhook-state
+  |=  stored=state-1:git
+  ^-  state-1:git
   =/  remaining=(list [@t repository:git])  ~(tap by repositories.stored)
   =/  settled=(map @t repository:git)  ~
   |-
@@ -1616,7 +1671,7 @@
 --
 ::
 %-  agent:dbug
-=|  state-0:git
+=|  state-1:git
 =*  state  -
 =/  in-flight  *(map @uv lfs-request)
 =/  lfs-deletes  *(map @uv lfs-delete)
@@ -1652,7 +1707,10 @@
 ++  on-load
   |=  old=vase
   ^-  (quip card _this)
-  =/  loaded=state-0:git  (settle-webhook-state !<(state-0:git old))
+  =/  loaded=state-1:git
+    ?:  ?=([%0 *] q.old)
+      (settle-webhook-state (migrate-state-0 !<(state-0:git old)))
+    (settle-webhook-state !<(state-1:git old))
   :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
@@ -1815,7 +1873,17 @@
     =/  updated=repository:git
       u.existing(objects objects.flight, native-pulls [pull native-pulls.u.existing])
     =.  repositories  (~(put by repositories) local-repository.flight updated)
-    (peer-push-finish flight transfer %.y (rap 3 ~['pull request #' (decimal number) ' opened']))
+    =/  notices=(list card)
+      %-  repository-notification
+      :*  local-repository.flight
+          updated
+          %pull-request
+          /[local-repository.flight]/pull/(scot %ud number)
+          (rap 3 ~[(scot %p source.flight) ' opened pull request #' (decimal number) ' in ' local-repository.flight ': ' title.flight])
+      ==
+    =/  finished=(quip card _this)
+      (peer-push-finish flight transfer %.y (rap 3 ~['pull request #' (decimal number) ' opened']))
+    [(weld notices -.finished) +.finished]
   ?:  =(%push purpose.flight)
     ?~  existing
       (peer-push-finish flight transfer %.n 'destination repository disappeared')
@@ -1901,6 +1969,7 @@
           ~
           ~
           ~
+          default-notification-events
       ==
     u.existing(head head.flight, refs refs.flight, objects objects.flight, peer-origin `[[source.flight source-repository.flight]])
   =.  repositories  (~(put by repositories) local-repository.flight repo)
@@ -2191,9 +2260,19 @@
       %+  turn  native-issues.u.found
       |=  candidate=native-issue:git
       ?:(=(number.candidate number.msg) updated-issue candidate)
-    =.  repositories
-      (~(put by repositories) repository.msg u.found(native-issues issues))
-    (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.y 'comment added' `(native-issue-json updated-issue %.y))
+    =/  updated-repo=repository:git  u.found(native-issues issues)
+    =.  repositories  (~(put by repositories) repository.msg updated-repo)
+    =/  notices=(list card)
+      %-  repository-notification
+      :*  repository.msg
+          updated-repo
+          %issue-comment
+          /[repository.msg]/issue/(scot %ud number.msg)
+          (rap 3 ~[(scot %p src.bowl) ' commented on issue #' (decimal number.msg) ' in ' repository.msg ': ' title.updated-issue])
+      ==
+    =/  replied=(quip card _this)
+      (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.y 'comment added' `(native-issue-json updated-issue %.y))
+    [(weld notices -.replied) +.replied]
   =/  pull=(unit native-pull:git)  (native-pull-at u.found number.msg)
   ?~  pull
     (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'pull request not found' ~)
@@ -2205,13 +2284,23 @@
     %+  turn  native-pulls.u.found
     |=  candidate=native-pull:git
     ?:(=(number.candidate number.msg) updated-pull candidate)
-  =.  repositories
-    (~(put by repositories) repository.msg u.found(native-pulls pulls))
+  =/  updated-repo=repository:git  u.found(native-pulls pulls)
+  =.  repositories  (~(put by repositories) repository.msg updated-repo)
   =/  result=(unit json)
-    (native-pull-detail-json repository.msg (~(got by repositories) repository.msg) updated-pull)
+    (native-pull-detail-json repository.msg updated-repo updated-pull)
   ?~  result
     (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'comment was added but pull request detail could not be rendered' ~)
-  (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.y 'comment added' `u.result)
+  =/  notices=(list card)
+    %-  repository-notification
+    :*  repository.msg
+        updated-repo
+        %pull-comment
+        /[repository.msg]/pull/(scot %ud number.msg)
+        (rap 3 ~[(scot %p src.bowl) ' commented on pull request #' (decimal number.msg) ' in ' repository.msg ': ' title.updated-pull])
+    ==
+  =/  replied=(quip card _this)
+    (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.y 'comment added' `u.result)
+  [(weld notices -.replied) +.replied]
 ::
 ++  peer-forge-create-issue
   |=  msg=forge-create-issue:git-peer
@@ -2229,14 +2318,23 @@
     [number src.bowl title.msg body.msg %open ~ ~ now.bowl now.bowl ~]
   =.  repositories
     (~(put by repositories) repository.msg u.found(native-issues [issue native-issues.u.found]))
+  =/  updated-repo=repository:git  u.found(native-issues [issue native-issues.u.found])
   =/  result=json  (native-issue-json issue %.y)
   =/  dispatched=(quip card _this)
     (dispatch-webhooks repository.msg %issue result)
+  =/  notices=(list card)
+    %-  repository-notification
+    :*  repository.msg
+        updated-repo
+        %issue
+        /[repository.msg]/issue/(scot %ud number)
+        (rap 3 ~[(scot %p src.bowl) ' opened issue #' (decimal number) ' in ' repository.msg ': ' title.msg])
+    ==
   =/  reply-cards=(list card)
     :~  (peer-card src.bowl /peer/forge-result/(scot %uv request.msg) [%forge-result request.msg repository.msg %issue 0 %.y 'issue opened' `result])
     ==
   :_  +.dispatched
-  (weld -.dispatched reply-cards)
+  (weld -.dispatched (weld notices reply-cards))
 ::
 ++  peer-forge-result
   |=  [request=@uv repository=@t kind=forge-kind:git-peer number=@ud ok=? message=@t result=(unit json)]
@@ -2560,6 +2658,7 @@
           ~
           ~
           ~
+          default-notification-events
       ==
     `this(repositories (~(put by repositories) name.act repo))
   ::
@@ -2807,6 +2906,24 @@
     ?:  =('issue' i.remaining)         `%issue
     ?:  =('release' i.remaining)       `%release
     ?:  =('clay-sync' i.remaining)     `%clay-sync
+    ~
+  ?~  event  ~
+  $(remaining t.remaining, events (~(put in events) u.event))
+::
+++  notification-events-at
+  |=  [key=@t jon=json]
+  ^-  (unit (set notification-event:git))
+  =/  values=(unit (list @t))  (string-list-at key jon)
+  ?~  values  ~
+  =/  remaining=(list @t)  u.values
+  =/  events=(set notification-event:git)  ~
+  |-
+  ?~  remaining  `events
+  =/  event=(unit notification-event:git)
+    ?:  =('issue' i.remaining)          `%issue
+    ?:  =('issue-comment' i.remaining)  `%issue-comment
+    ?:  =('pull-request' i.remaining)   `%pull-request
+    ?:  =('pull-comment' i.remaining)   `%pull-comment
     ~
   ?~  event  ~
   $(remaining t.remaining, events (~(put in events) u.event))
@@ -3350,6 +3467,18 @@
     u.found(webhook-deliveries (scag 100 (weld deliveries.result webhook-deliveries.u.found)))
   =.  repositories  (~(put by repositories) name updated)
   [(flop cards.result) this]
+::
+++  repository-notification
+  |=  [name=@t repo=repository:git event=notification-event:git thread=path message=@t]
+  ^-  (list card)
+  ?.  (~(has in notification-events.repo) event)  ~
+  =/  id  (end 7 (shas %urgit-notification eny.bowl))
+  =/  place=hark-place:git  [%urgit thread]
+  =/  bin=hark-bin:git  [/notification place]
+  =/  body=hark-body:git
+    [~[[%text message]] ~ now.bowl /notification /apps/urgit]
+  :~  [%pass /hark-store/(scot %uv id) %agent [our.bowl %hark-store] %poke %hark-action !>(`hark-action:git`[%add-note bin body])]
+  ==
 ::
 ++  accept-receive
   |=  $:  eyre-id=@ta
@@ -5158,6 +5287,27 @@
       :_  this
       (api-error eyre-id 404 'branch not found')
     (api-with-action eyre-id 200 [%set-head name branch-ref])
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %repository @ %notifications ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  events=(unit (set notification-event:git))
+      (notification-events-at 'events' u.jon)
+    ?~  events
+      :_  this
+      (api-error eyre-id 422 'events must contain only issue, issue-comment, pull-request, or pull-comment')
+    =/  updated=repository:git  u.found(notification-events u.events)
+    =.  repositories  (~(put by repositories) name updated)
+    :_  this
+    (api-json eyre-id 200 (repository-json name updated))
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %repository @ %webhooks ~] site)
       ==
@@ -7976,10 +8126,11 @@
               ~
               ~
               ~
-              ~
-              ~
-              ~
-              ~
+          ~
+          ~
+          ~
+          ~
+          default-notification-events
           ==
         u.existing(head head.u.context, refs next-refs, objects combined, github-origin `origin)
       =.  repositories  (~(put by repositories) repository.u.context repo)

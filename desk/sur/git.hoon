@@ -139,6 +139,31 @@
 +$  webhook-event
   ?(%push %tag %pull-request %issue %release %clay-sync)
 ::
++$  notification-event
+  ?(%issue %issue-comment %pull-request %pull-comment)
+::
++$  hark-place
+  [desk=desk path=path]
+::
++$  hark-bin
+  [path=path place=hark-place]
+::
++$  hark-content
+  $%  [%ship ship=ship]
+      [%text text=cord]
+  ==
+::
++$  hark-body
+  $:  title=(list hark-content)
+      content=(list hark-content)
+      time=@da
+      binned=path
+      link=path
+  ==
+::
++$  hark-action
+  [%add-note bin=hark-bin body=hark-body]
+::
 +$  webhook
   $:  id=@ud
       url=@t
@@ -207,10 +232,45 @@
       incoming-hook=(unit incoming-hook)
       webhook-deliveries=(list webhook-delivery)
       upstream-updates=(list upstream-update)
+      notification-events=(set notification-event)
   ==
 ::
 +$  state-0
   $:  %0
+      repositories=(map @t repository-0)
+      peers=(set @p)
+      github-token=(unit @t)
+  ==
+::
++$  repository-0
+  $:  owner=@p
+      public-read=?
+      description=@t
+      head=@t
+      refs=(map @t oid)
+      protected-refs=(set @t)
+      objects=(map oid object)
+      writers=(set @p)
+      write-token-hash=(unit @)
+      lfs-objects=(map @t lfs-object)
+      lfs-uploads=(map @t lfs-upload)
+      lfs-locks=(map @ud lfs-lock)
+      binding=(unit desk-binding)
+      peer-origin=(unit peer-origin)
+      github-origin=(unit github-origin)
+      github-issues=(list forge-item)
+      github-pulls=(list forge-item)
+      native-pulls=(list native-pull)
+      native-issues=(list native-issue)
+      releases=(map @t release)
+      webhooks=(map @ud webhook)
+      incoming-hook=(unit incoming-hook)
+      webhook-deliveries=(list webhook-delivery)
+      upstream-updates=(list upstream-update)
+  ==
+::
++$  state-1
+  $:  %1
       repositories=(map @t repository)
       peers=(set @p)
       github-token=(unit @t)
