@@ -45,6 +45,7 @@
       local-repository=@t
       title=@t
       public-read=?
+      accepted=?
       head=@t
       refs=(map @t oid:git)
       expected=@ud
@@ -61,7 +62,7 @@
       source=ship
       source-repository=@t
       local-repository=@t
-      stage=?(%request %fine)
+      stage=?(%request %prepare %fine)
       expected-objects=@ud
       received-objects=@ud
       pages=@ud
@@ -1710,23 +1711,27 @@
 ::
 ++  peer-object-pages
   |=  objects=(list [oid:git object:git])
-  ^-  (list (map oid:git object:git))
+  ^-  (list octs)
   =/  remaining  objects
   =/  page=(map oid:git object:git)  ~
-  =/  pages=(list (map oid:git object:git))  ~
+  =/  pages=(list octs)  ~
   =/  count=@ud  0
   =/  bytes=@ud  0
+  =/  packed-page
+    |=  entries=(map oid:git object:git)
+    ^-  octs
+    (encode-pack:git-pack ~(val by entries))
   |-
   ?~  remaining
     ?:  =(count 0)
-      ?~  pages  [page ~]
+      ?~  pages  [(packed-page page) ~]
       (flop pages)
-    (flop [page pages])
+    (flop [(packed-page page) pages])
   =/  object-bytes=@ud  (add 64 p.data.+.i.remaining)
   =/  page-full=?
     |(=(count 256) ?&((gth count 0) (gth (add bytes object-bytes) 524.288)))
   ?:  page-full
-    $(page ~, pages [page pages], count 0, bytes 0)
+    $(page ~, pages [(packed-page page) pages], count 0, bytes 0)
   =/  next-page=(map oid:git object:git)
     (~(put by page) -.i.remaining +.i.remaining)
   %=  $
@@ -1921,6 +1926,13 @@
   ?-  -.packet
       %request
     (peer-request request.packet)
+  ::
+      %accepted
+    (peer-accepted accepted.packet)
+  ::
+      %prepare
+    ?>  =(src.bowl our.bowl)
+    (peer-prepare target.prepare.packet request.prepare.packet)
   ::
       %ready
     (peer-ready ready.packet)
@@ -2146,6 +2158,7 @@
         repository.offer
         title.offer
         public-read.u.found
+        %.n
         ''
         ~
         0
@@ -2182,12 +2195,48 @@
   ?.  |(public-read.u.found origin-request)
     (peer-fail src.bowl transfer.req 'repository is not public')
   ?:  (~(has by peer-serving) transfer.req)
-    (peer-fail src.bowl transfer.req 'transfer identifier is already active')
+    :_  this
+    :~  (peer-card src.bowl /peer/accepted/(scot %uv transfer.req) [%accepted transfer.req repository.req])
+    ==
+  :_  this
+  :~  (peer-card src.bowl /peer/accepted/(scot %uv transfer.req) [%accepted transfer.req repository.req])
+      [%pass /peer/prepare/(scot %uv transfer.req) %agent [our.bowl %urgit] %poke %git-peer !>([%prepare src.bowl req])]
+  ==
+::
+++  peer-accepted
+  |=  msg=accepted:git-peer
+  ^-  (quip card _this)
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
+  ?~  found  `this
+  ?.  ?&  =(src.bowl source.u.found)
+          =(repository.msg source-repository.u.found)
+      ==
+    `this
+  =/  next=peer-receive  u.found(accepted %.y, progress-at now.bowl)
+  =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
+  =.  peer-results
+    (~(put by peer-results) transfer.msg [%.n 'peer is preparing repository snapshot' local-repository.u.found])
+  :_  this
+  :~  [%pass /peer/prepare-timeout/(scot %uv transfer.msg) %arvo %b %wait (add now.bowl ~m10)]
+  ==
+::
+++  peer-prepare
+  |=  [target=ship req=request:git-peer]
+  ^-  (quip card _this)
+  =/  found=(unit repository:git)  (~(get by repositories) repository.req)
+  ?~  found  (peer-fail target transfer.req 'repository not found')
+  =/  origin-request=?
+    ?~  peer-origin.u.found  %.n
+    =(target ship.u.peer-origin.u.found)
+  ?.  |(public-read.u.found origin-request)
+    (peer-fail target transfer.req 'repository is not public')
+  ?:  (~(has by peer-serving) transfer.req)
+    `this
   =/  superseded=(list [@uv peer-serve])
     %+  skim  ~(tap by peer-serving)
     |=  entry=[@uv peer-serve]
     =/  prior=peer-serve  +.entry
-    ?&  =(src.bowl target.prior)
+    ?&  =(target target.prior)
         =(repository.req repository.prior)
     ==
   =/  superseded-ids=(set @uv)
@@ -2218,15 +2267,15 @@
     |=  entry=[oid:git object:git]
     ?:  (~(has in haves.req) -.entry)  ~
     `entry
-  =/  pages=(list (map oid:git object:git))  (peer-object-pages objects)
-  =/  flight=peer-serve  [src.bowl transfer.req repository.req (lent pages) objects]
+  =/  pages=(list octs)  (peer-object-pages objects)
+  =/  flight=peer-serve  [target transfer.req repository.req (lent pages) objects]
   =.  peer-serving  (~(put by peer-serving) transfer.req flight)
   =.  peer-activities
-    (peer-activity-start transfer.req %serve %incoming src.bowl repository.req 'repository snapshot requested')
+    (peer-activity-start transfer.req %serve %incoming target repository.req 'repository snapshot requested')
   =/  snapshot-path=path  /fine/(peer-fine-name transfer.req)
   =/  object-pages=(list card)
     %+  turn  pages
-    |=  page=(map oid:git object:git)
+    |=  page=octs
     [%pass /peer/grow/(scot %uv transfer.req) %grow snapshot-path noun+!>(page)]
   =/  final-cards=(list card)
     :~  [%pass /peer/ready/(scot %uv transfer.req) %agent [our.bowl %urgit] %poke %git-peer !>([%ready transfer.req repository.req head.u.found refs.u.found (lent objects) (lent pages)])]
@@ -2271,19 +2320,10 @@
       (peer-snapshot-fail transfer.msg 'local repository snapshot is unavailable')
     (peer-snapshot transfer.msg (silt objects.u.serving))
   :_  this
-  =/  object-reads=(list card)
-    %-  zing
-    %+  turn  (gulf 1 (min 1 pages.msg))
-    |=  revision=@ud
-    =/  scry-path=path
-      /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer.msg)
-    :~  [%pass /peer/fine/(scot %uv transfer.msg)/(scot %ud revision) %keen %.n src.bowl scry-path]
-        [%pass /peer/rate/(scot %uv transfer.msg)/(scot %ud revision) %arvo %a %prog [src.bowl scry-path] [%keen ~] 64]
-    ==
-  =/  stall-cards=(list card)
-    :~  [%pass /peer/stall/(scot %uv transfer.msg)/0 %arvo %b %wait (add now.bowl ~m2)]
-    ==
-  (weld object-reads stall-cards)
+  =/  scry-path=path
+    /g/x/1/urgit//1/fine/(peer-fine-name transfer.msg)
+  :~  [%pass /peer/fine/(scot %uv transfer.msg)/1 %keen %.n src.bowl scry-path]
+  ==
 ::
 ++  peer-release
   |=  transfer=@uv
@@ -2357,9 +2397,7 @@
     flight(objects (merge-objects objects.flight incoming), received (add received.flight count), progress-at now.bowl)
   =.  peer-receiving  (~(put by peer-receiving) transfer next)
   ?.  =(received.next expected.next)
-    :_  this
-    :~  [%pass /peer/stall/(scot %uv transfer)/(scot %ud received.next) %arvo %b %wait (add now.bowl ~m2)]
-    ==
+    `this
   =/  finished=(quip card _this)  (peer-finish transfer)
   =/  release=card
     (peer-card source.flight /peer/release/(scot %uv transfer) [%release transfer])
@@ -3996,6 +4034,7 @@
           u.local-repository
           ''
           ?^(existing public-read.u.existing u.public)
+          %.n
           ''
           ~
           0
@@ -6803,7 +6842,7 @@
           source.flight
           source-repository.flight
           local-repository.flight
-          ?:(=('' head.flight) %request %fine)
+          ?:(=('' head.flight) ?:(accepted.flight %prepare %request) %fine)
           expected.flight
           received.flight
           pages.flight
@@ -6938,12 +6977,16 @@
         (fail 'Fine repository snapshot is unavailable')
       ?.  =(%noun p.q.sage)
         (fail 'Fine repository snapshot has the wrong mark')
-      =/  decoded=(unit (map oid:git object:git))
+      =/  packed=(unit octs)
         %-  mole
-        |.(;;((map oid:git object:git) +.q.q.sage))
+        |.(;;(octs +.q.q.sage))
+      ?~  packed
+        (fail 'Fine repository pack page has the wrong shape')
+      =/  decoded=(unit decoded-pack:git-pack-decode)
+        (decode-pack:git-pack-decode u.packed)
       ?~  decoded
-        (fail 'Fine repository object page is malformed')
-      [%snapshot u.transfer u.decoded]
+        (fail 'Fine repository pack page failed checksum or object decoding')
+      [%snapshot u.transfer objects.u.decoded]
     =/  snapshot-card=card
       [%pass /peer/snapshot/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ?.  ?=([%snapshot *] packet)
@@ -6959,7 +7002,6 @@
       /g/x/(scot %ud next-revision)/urgit//1/fine/(peer-fine-name u.transfer)
     :~  snapshot-card
         [%pass /peer/fine/(scot %uv u.transfer)/(scot %ud next-revision) %keen %.n source.u.found next-path]
-        [%pass /peer/rate/(scot %uv u.transfer)/(scot %ud next-revision) %arvo %a %prog [source.u.found next-path] [%keen ~] 64]
     ==
   ::
       [%peer %rate @ @ ~]
@@ -7123,11 +7165,27 @@
     ?~  transfer  `this
     =/  found=(unit peer-receive)  (~(get by peer-receiving) u.transfer)
     ?~  found  `this
+    ?:  accepted.u.found  `this
     ?.  =('' head.u.found)  `this
     =/  packet=packet:git-peer
       [%snapshot-error u.transfer 'peer did not answer the repository transfer request']
     :_  this
     :~  [%pass /peer/request-timeout-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
+    ==
+  ::
+      [%peer %prepare-timeout @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  transfer  `this
+    =/  found=(unit peer-receive)  (~(get by peer-receiving) u.transfer)
+    ?~  found  `this
+    ?.  ?&(accepted.u.found =('' head.u.found))  `this
+    =/  packet=packet:git-peer
+      [%snapshot-error u.transfer 'peer did not finish preparing the repository snapshot']
+    :_  this
+    :~  [%pass /peer/prepare-timeout-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ==
   ::
       [%peer %serve-timeout @ ~]

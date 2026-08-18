@@ -24,6 +24,14 @@
       objects=@ud
       pages=@ud
   ==
++$  accepted
+  $:  transfer=@uv
+      repository=@t
+  ==
++$  prepare
+  $:  target=ship
+      request=request
+  ==
 +$  catalog-request
   $:  request=@uv
   ==
@@ -47,6 +55,8 @@
   ==
 +$  packet
   $%  [%request request=request]
+      [%accepted accepted=accepted]
+      [%prepare prepare=prepare]
       [%ready ready=ready]
       [%begin begin=begin]
       [%catalog-request catalog-request=catalog-request]
