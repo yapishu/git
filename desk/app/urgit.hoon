@@ -35,6 +35,7 @@
   $:  target=ship
       transfer=@uv
       repository=@t
+      pages=@ud
       objects=(list [oid:git object:git])
   ==
 +$  peer-receive
@@ -1573,12 +1574,6 @@
     /g/x/(scot %ud revision)/urgit//1/browse/(scot %uv request)
   [%pass /peer/browse-cancel/(scot %uv request)/(scot %ud revision) %arvo %a %yawn [peer scry-path]]
 ::
-++  peer-transfer-pages
-  |=  objects=@ud
-  ^-  @ud
-  ?:  =(objects 0)  1
-  (div (add objects 15) 16)
-::
 ++  peer-fine-name
   |=  transfer=@uv
   ^-  @ta
@@ -1697,17 +1692,26 @@
   =/  page=(map oid:git object:git)  ~
   =/  pages=(list (map oid:git object:git))  ~
   =/  count=@ud  0
+  =/  bytes=@ud  0
   |-
   ?~  remaining
     ?:  =(count 0)
       ?~  pages  [page ~]
       (flop pages)
     (flop [page pages])
+  =/  object-bytes=@ud  (add 64 p.data.+.i.remaining)
+  =/  page-full=?
+    |(=(count 1.024) ?&((gth count 0) (gth (add bytes object-bytes) 4.194.304)))
+  ?:  page-full
+    $(page ~, pages [page pages], count 0, bytes 0)
   =/  next-page=(map oid:git object:git)
     (~(put by page) -.i.remaining +.i.remaining)
-  ?:  =(count 15)
-    $(remaining t.remaining, page ~, pages [next-page pages], count 0)
-  $(remaining t.remaining, page next-page, count +(count))
+  %=  $
+    remaining  t.remaining
+    page       next-page
+    count      +(count)
+    bytes      (add bytes object-bytes)
+  ==
 ::
 ++  peer-browse-pages
   |=  result=json
@@ -2158,12 +2162,12 @@
     |=  entry=[oid:git object:git]
     ?:  (~(has in haves.req) -.entry)  ~
     `entry
-  =/  flight=peer-serve  [src.bowl transfer.req repository.req objects]
+  =/  pages=(list (map oid:git object:git))  (peer-object-pages objects)
+  =/  flight=peer-serve  [src.bowl transfer.req repository.req (lent pages) objects]
   =.  peer-serving  (~(put by peer-serving) transfer.req flight)
   =.  peer-activities
     (peer-activity-start transfer.req %serve %incoming src.bowl repository.req 'repository snapshot requested')
   =/  snapshot-path=path  /fine/(peer-fine-name transfer.req)
-  =/  pages=(list (map oid:git object:git))  (peer-object-pages objects)
   =/  object-pages=(list card)
     %+  turn  pages
     |=  page=(map oid:git object:git)
@@ -2194,9 +2198,11 @@
           =(repository.msg source-repository.u.found)
       ==
     `this
-  ?.  =((peer-transfer-pages objects.msg) pages.msg)
+  ?.  ?&  (gth pages.msg 0)
+          (lte pages.msg (max 1 objects.msg))
+      ==
     :_  this
-    :~  [%pass /peer/begin-error/(scot %uv transfer.msg) %agent [our.bowl %urgit] %poke %git-peer !>([%snapshot-error transfer.msg 'peer announced an inconsistent Fine page count'])]
+    :~  [%pass /peer/begin-error/(scot %uv transfer.msg) %agent [our.bowl %urgit] %poke %git-peer !>([%snapshot-error transfer.msg 'peer announced an invalid Fine page count'])]
     ==
   =/  next=peer-receive
     u.found(head head.msg, refs refs.msg, expected objects.msg, pages pages.msg, completed ~)
@@ -2227,7 +2233,7 @@
   ?~  found  `this
   ?.  =(src.bowl target.u.found)  `this
   =.  peer-activities  (peer-activity-finish transfer %.y 'repository snapshot delivered')
-  =/  count=@ud  (lent (peer-object-pages objects.u.found))
+  =/  count=@ud  pages.u.found
   =/  culls=(list card)
     ?:  =(0 count)  ~
     %+  turn  (gulf 1 count)
@@ -7002,12 +7008,12 @@
       |=  event=peer-activity
       ?:  !=(u.transfer id.event)  event
       event(status %failure, message 'repository snapshot expired before release', when now.bowl)
-    =/  count=@ud  (lent objects.u.found)
+    =/  count=@ud  pages.u.found
     =/  culls=(list card)
       ?:  =(0 count)  ~
       %+  turn  (gulf 1 count)
       |=  revision=@ud
-      [%pass /peer/cull/(scot %uv u.transfer)/(scot %ud revision) %cull [%ud revision] /fine/(scot %uv (cut 0 [0 64] u.transfer))]
+      [%pass /peer/cull/(scot %uv u.transfer)/(scot %ud revision) %cull [%ud revision] /fine/(peer-fine-name u.transfer)]
     :_  this(peer-serving (~(del by peer-serving) u.transfer))
     culls
   ::

@@ -43,7 +43,7 @@
 - branch-aware file browsing, text and image blob views, authenticated text editing, per-file history, commit identities, and commit detail
 - bounded occurrence-aware line blame across Git first-parent commits and native Clay revisions, with attributed source gutters in authenticated and public file views
 - mounted-desk discovery and first-class desk-to-repository publication
-- Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, an eight-read sliding window, exact-path `%yawn` cancellation, progress-based idle detection, status pruning, object-count checks, and per-object OID verification
+- Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, byte-bounded 4 MiB object pages, an eight-read sliding window, exact-path `%yawn` cancellation, progress-based idle detection, status pruning, object-count checks, and per-object OID verification
 - two-ship Fine conformance: bidirectional native forks reconstructed complete repositories and passed stock Git clone and `git fsck --full`
 - on-demand Ames peer discovery with bounded public-repository catalogs, writer hints, expiry, cancellation, and status pruning
 - persistent peer bookmarks with expandable public repositories in the sidebar
