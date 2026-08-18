@@ -61,6 +61,9 @@ export const api = {
   peerForgeComment: (ship, repository, kind, number, body) => request('/peer/forge', {
     method: 'POST', body: JSON.stringify({ ship, repository, kind, number, body }),
   }),
+  peerCreateIssue: (ship, repository, title, body) => request('/peer/issues', {
+    method: 'POST', body: JSON.stringify({ ship, repository, title, body }),
+  }),
   peerDeleteForgeRequest: (requestId) => request('/peer/forge', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
   clearPeerActivity: () => request('/peer/activity', { method: 'DELETE' }),
   peerDiscover: (ship) => request('/peer/discover', { method: 'POST', body: JSON.stringify({ ship }) }),

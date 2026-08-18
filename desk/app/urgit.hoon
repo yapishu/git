@@ -1982,6 +1982,9 @@
       %forge-comment
     (peer-forge-comment comment.packet)
   ::
+      %forge-create-issue
+    (peer-forge-create-issue issue.packet)
+  ::
       %forge-result
     (peer-forge-result request.packet repository.packet kind.packet number.packet ok.packet message.packet result.packet)
   ::
@@ -2209,6 +2212,31 @@
   ?~  result
     (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'comment was added but pull request detail could not be rendered' ~)
   (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.y 'comment added' `u.result)
+::
+++  peer-forge-create-issue
+  |=  msg=forge-create-issue:git-peer
+  ^-  (quip card _this)
+  =/  found=(unit repository:git)  (~(get by repositories) repository.msg)
+  ?.  ?&(?=(^ found) public-read.u.found)
+    (peer-forge-reply src.bowl request.msg repository.msg %issue 0 %.n 'repository is unavailable or not public' ~)
+  ?.  ?&  !=('' title.msg)
+          (lte (met 3 title.msg) 200)
+          (lte (met 3 body.msg) 65.536)
+      ==
+    (peer-forge-reply src.bowl request.msg repository.msg %issue 0 %.n 'title is required and limited to 200 bytes; body is limited to 64 KiB' ~)
+  =/  number=@ud  (add 1 (lent native-issues.u.found))
+  =/  issue=native-issue:git
+    [number src.bowl title.msg body.msg %open ~ ~ now.bowl now.bowl ~]
+  =.  repositories
+    (~(put by repositories) repository.msg u.found(native-issues [issue native-issues.u.found]))
+  =/  result=json  (native-issue-json issue %.y)
+  =/  dispatched=(quip card _this)
+    (dispatch-webhooks repository.msg %issue result)
+  =/  reply-cards=(list card)
+    :~  (peer-card src.bowl /peer/forge-result/(scot %uv request.msg) [%forge-result request.msg repository.msg %issue 0 %.y 'issue opened' `result])
+    ==
+  :_  +.dispatched
+  (weld -.dispatched reply-cards)
 ::
 ++  peer-forge-result
   |=  [request=@uv repository=@t kind=forge-kind:git-peer number=@ud ok=? message=@t result=(unit json)]
@@ -3188,6 +3216,38 @@
     ==
   (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
 ::
+++  start-peer-forge-issue
+  |=  [eyre-id=@ta peer=ship repository=@t title=@t body=@t]
+  ^-  (quip card _this)
+  =/  duplicate=(unit [@uv peer-forge])
+    =/  matches=(list [@uv peer-forge])
+      %+  murn  ~(tap by peer-forges)
+      |=  entry=[@uv peer-forge]
+      =/  forge=peer-forge  +.entry
+      ?.  ?&  active.forge
+              =(peer peer.forge)
+              =(repository repository.forge)
+              =(%issue kind.forge)
+              =(0 number.forge)
+          ==
+        ~
+      `entry
+    ?~(matches ~ `i.matches)
+  ?^  duplicate
+    :_  this
+    (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv -.u.duplicate)] ['deduplicated' b+%.y]]))
+  =/  request=@uv
+    `@uv`(shas %git-peer-issue (cat 3 eny.bowl request-count))
+  =.  request-count  +(request-count)
+  =.  peer-forges
+    (~(put by peer-forges) request [peer repository %issue 0 %.y %.n 'opening issue on repository owner' ~])
+  :_  this
+  %+  weld
+    :~  (peer-card peer /peer/forge-issue/(scot %uv request) [%forge-create-issue request repository title body])
+        [%pass /peer/forge-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s30)]
+    ==
+  (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
+::
 ++  peer-activities-json
   ^-  json
   =/  entries=(list json)
@@ -4093,6 +4153,33 @@
     =.  peer-forges  (~(del by peer-forges) u.request)
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %peer %issues ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    =/  repository=(unit @t)  (string-at 'repository' u.jon)
+    =/  title=(unit @t)  (string-at 'title' u.jon)
+    =/  body=(unit @t)  (string-at 'body' u.jon)
+    ?.  ?&  ?=(^ ship-text)
+            ?=(^ repository)
+            ?=(^ title)
+            ?=(^ body)
+            !=('' u.title)
+            (lte (met 3 u.title) 200)
+            (lte (met 3 u.body) 65.536)
+            (valid-repository-name u.repository)
+        ==
+      :_  this
+      (api-error eyre-id 422 'ship, repository, and a title up to 200 bytes are required; body is limited to 64 KiB')
+    =/  peer=(unit @p)  (slaw %p u.ship-text)
+    ?~  peer
+      :_  this
+      (api-error eyre-id 422 'ship must be a valid Urbit ID')
+    (start-peer-forge-issue eyre-id u.peer u.repository u.title u.body)
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %peer %forge ~] site)
       ==
@@ -7476,7 +7563,7 @@
     ?~  found  `this
     ?.  active.u.found  `this
     =.  peer-forges
-      (~(put by peer-forges) u.request u.found(active %.n, ok %.n, message 'peer did not answer the forge comment request'))
+      (~(put by peer-forges) u.request u.found(active %.n, ok %.n, message 'peer did not answer the forge request'))
     `this
   ::
       [%peer %discovery-timeout @ ~]

@@ -49,7 +49,7 @@
 - persistent peer bookmarks with expandable public repositories in the sidebar
 - bounded remote repository overviews over Ames, with request-scoped Fine overview reads accepted and every unanswered browse terminated explicitly
 - remote forge summaries expose native and cached GitHub issues and pull requests alongside code, branches, and history
-- request-scoped Fine detail reads expose native issue bodies and comments plus pull-request diffs and review discussion; authenticated Ames comment requests append origin-authoritative ship-authored comments to both native issues and pull requests
+- request-scoped Fine detail reads expose native issue bodies and comments plus pull-request diffs and review discussion; authenticated Ames requests create native issues and append origin-authoritative ship-authored comments to both native issues and pull requests
 - bounded peer activity notifications for incoming and outgoing forks, snapshot reads, native updates, and pull requests
 - public native forks, explicit pull-from-origin refresh, and origin metadata
 - ship writer ACLs with fast-forward-only push-back from native forks
@@ -86,7 +86,7 @@
 
 ## Next
 
-1. Add origin-authoritative cross-ship issue creation plus pull-request line-comment and resolution operations.
+1. Add origin-authoritative cross-ship pull-request line-comment and resolution operations.
 2. Add peer notifications and explicit subscriptions for issue and pull-request lifecycle activity.
 3. Add cross-ship close, reopen, label, assignment, review resolution, and merge operations.
 4. Add webhook delivery redelivery and editable webhook configuration.

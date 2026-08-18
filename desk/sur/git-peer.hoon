@@ -57,6 +57,12 @@
       number=@ud
       body=@t
   ==
++$  forge-create-issue
+  $:  request=@uv
+      repository=@t
+      title=@t
+      body=@t
+  ==
 +$  offer
   $:  transfer=@uv
       repository=@t
@@ -80,6 +86,7 @@
       [%browse-release request=@uv]
       [%browse-error request=@uv message=@t]
       [%forge-comment comment=forge-comment]
+      [%forge-create-issue issue=forge-create-issue]
       [%forge-result request=@uv repository=@t kind=forge-kind number=@ud ok=? message=@t result=(unit json)]
       [%offer offer=offer]
       [%release transfer=@uv]
