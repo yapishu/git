@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, publicApi, waitForPeerBrowse, waitForPeerTransfer } from './api'
 import ForkPeer from './components/ForkPeer'
+import { ConfirmProvider } from './components/ConfirmDialog'
 import GitHubImport from './components/GitHubImport'
 import { ActivityIcon, RefreshIcon } from './components/Icons'
 import PeerActivity from './components/PeerActivity'
@@ -196,15 +197,15 @@ function PrivateApp() {
     }
   }
 
-  async function forkRemote(ship, repository, onProgress, onStarted) {
+  async function forkRemote(ship, repository, localName, publicRead, onProgress, onStarted) {
     setError('')
     try {
-      const started = await api.peerFork(ship, repository, repository, true)
+      const started = await api.peerFork(ship, repository, localName, publicRead)
       onStarted?.(started.transfer)
       const result = await waitForPeerTransfer(started.transfer, { onProgress })
       await api.peerDeleteTransfer(started.transfer).catch(() => {})
       if (!result.ok) throw new Error(result.message)
-      await refresh(repository); choose(repository); return true
+      await refresh(localName); choose(localName); return true
     } catch (cause) {
       if (cause.message !== 'transfer cancelled') setError(cause.message)
       return false
@@ -291,7 +292,7 @@ function PrivateApp() {
         ) : publishingDesk ? (
           <PublishDesk repositories={repositories} onComplete={published} onCancel={() => setPublishingDesk(false)} />
         ) : remoteSelected ? (
-          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} data={remoteData} onFork={forkRemote} onCancelTransfer={cancelTransfer} /> : remoteError ? <main className="content"><div className="empty remote-browse-failure"><strong>Could not load {remoteSelected.ship}/{remoteSelected.name}</strong><span>{remoteError}</span><button className="button primary" onClick={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false)}>Retry</button></div></main> : <main className="content"><div className="empty remote-browse-loading"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…<small>{remoteStatus}</small><BrowseProgress progress={remoteProgress} /></div></main>
+          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} repositories={repositories} data={remoteData} onFork={forkRemote} onCancelTransfer={cancelTransfer} /> : remoteError ? <main className="content"><div className="empty remote-browse-failure"><strong>Could not load {remoteSelected.ship}/{remoteSelected.name}</strong><span>{remoteError}</span><button className="button primary" onClick={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false)}>Retry</button></div></main> : <main className="content"><div className="empty remote-browse-loading"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…<small>{remoteStatus}</small><BrowseProgress progress={remoteProgress} /></div></main>
         ) : repo ? (
           <RepositoryView repo={repo} onRefresh={refresh} onOpenOrigin={chooseRemote} />
         ) : (
@@ -340,5 +341,5 @@ function PublicApp({ name }) {
 
 export default function App() {
   const match = location.pathname.match(/^\/apps\/urgit\/public\/([^/]+)\/?$/)
-  return match ? <PublicApp name={decodeURIComponent(match[1])} /> : <PrivateApp />
+  return <ConfirmProvider>{match ? <PublicApp name={decodeURIComponent(match[1])} /> : <PrivateApp />}</ConfirmProvider>
 }

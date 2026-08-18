@@ -2134,6 +2134,7 @@
   =.  peer-receiving  (~(put by peer-receiving) transfer.offer flight)
   :_  this
   :~  (peer-card src.bowl /peer/request/(scot %uv transfer.offer) [%request transfer.offer source-repository.offer haves])
+      [%pass /peer/request-timeout/(scot %uv transfer.offer) %arvo %b %wait (add now.bowl ~s45)]
   ==
 ::
 ++  peer-result-received
@@ -3948,6 +3949,7 @@
     :_  this
     %+  weld
       :~  (peer-card u.source /peer/request/(scot %uv transfer) [%request transfer u.source-repository haves])
+          [%pass /peer/request-timeout/(scot %uv transfer) %arvo %b %wait (add now.bowl ~s45)]
       ==
     (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['transfer' s+(scot %uv transfer)]]))
   ?:  ?&  =(%'POST' method)
@@ -6993,6 +6995,21 @@
       [%snapshot-error u.transfer 'Fine repository read stalled without object progress']
     :_  this
     :~  [%pass /peer/stall-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
+    ==
+  ::
+      [%peer %request-timeout @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  transfer  `this
+    =/  found=(unit peer-receive)  (~(get by peer-receiving) u.transfer)
+    ?~  found  `this
+    ?.  =('' head.u.found)  `this
+    =/  packet=packet:git-peer
+      [%snapshot-error u.transfer 'peer did not answer the repository transfer request']
+    :_  this
+    :~  [%pass /peer/request-timeout-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ==
   ::
       [%peer %serve-timeout @ ~]

@@ -117,7 +117,9 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
     onCancel()
   }
 
-  const collision = repositories.some((repo) => repo.name === name.trim())
+  const existing = repositories.find((repo) => repo.name === name.trim())
+  const sameOrigin = existing?.peerOrigin?.ship === ship.trim() && existing?.peerOrigin?.repository === repository.trim() && !existing?.binding?.bound
+  const blockedCollision = Boolean(existing && !sameOrigin)
 
   return (
     <main className="content centered">
@@ -130,9 +132,10 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
         {!!catalog.length && <div className="peer-catalog">{catalog.map((repo) => <button type="button" key={repo.name} className={repository === repo.name ? 'peer-repo selected' : 'peer-repo'} onClick={() => selectRemote(repo)}><span><strong>{repo.name}</strong><small>{repo.head}</small></span><span className="peer-repo-meta">{repo.refs} refs · {repo.objects} objects{repo.writable ? ' · write' : ''}</span></button>)}</div>}
         <label><span>Source repository</span><input value={repository} onChange={(event) => { setRepository(event.target.value); if (!name) setName(event.target.value) }} placeholder="project" /></label>
         <label><span>Local repository name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="project" /></label>
-        {collision && <small className="field-note">An existing peer fork with the same origin will be updated.</small>}
+        {sameOrigin && <small className="field-note">The existing fork from this origin will be updated without discarding local objects.</small>}
+        {blockedCollision && <small className="field-error">That name belongs to another repository. Choose a different local name.</small>}
         <label className="check-row"><input type="checkbox" checked={publicRead} onChange={(event) => setPublicRead(event.target.checked)} /><span><strong>Public local fork</strong><small>Allow other ships and Git clients to fetch this copy.</small></span></label>
-        <div className="form-actions split"><button type="button" className="button ghost" onClick={cancel}>Cancel</button><button className="button primary" disabled={busy || !ship.trim() || !repository.trim() || !name.trim()}>{busy ? 'Transferring…' : collision ? 'Update fork' : 'Fork repository'}</button></div>
+        <div className="form-actions split"><button type="button" className="button ghost" onClick={cancel}>Cancel</button><button className="button primary" disabled={busy || blockedCollision || !ship.trim() || !repository.trim() || !name.trim()}>{busy ? 'Transferring…' : sameOrigin ? 'Update fork' : 'Fork repository'}</button></div>
       </form>
     </main>
   )

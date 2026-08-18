@@ -3,6 +3,7 @@ import { api, waitForPeerTransfer } from '../api'
 import { exactBytes, formatBytes } from '../format'
 import { comparisonPatch } from '../patch'
 import FileTree from './FileTree'
+import { useConfirm } from './ConfirmDialog'
 import { HighlightedCode, HighlightedEditor } from './HighlightedCode'
 import { CopyIcon } from './Icons'
 
@@ -135,6 +136,7 @@ function SearchResults({ data, query, loading, error, onOpen }) {
 }
 
 function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, onSelectLine, onOpenCommit, editable, onBack, onSaved, onDeleted, client = api }) {
+  const confirmAction = useConfirm()
   const [file, setFile] = useState(null)
   const [history, setHistory] = useState(null)
   const [view, setView] = useState('file')
@@ -188,7 +190,7 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
   }
 
   async function remove() {
-    if (!window.confirm(`Delete ${path}?`)) return
+    if (!await confirmAction({ title: 'Delete file?', message: path, detail: 'This creates a commit that removes the file from the selected branch.', confirmLabel: 'Delete file' })) return
     setBusy(true)
     setError('')
     try {
@@ -306,6 +308,7 @@ function downloadComparison(repo, base, head, patch) {
 }
 
 function Branches({ repo, publicMode, onBrowse, onMutate, client = api }) {
+  const confirmAction = useConfirm()
   const branches = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/'))
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -328,7 +331,7 @@ function Branches({ repo, publicMode, onBrowse, onMutate, client = api }) {
 
   async function remove(branch) {
     const label = branch.replace('refs/heads/', '')
-    if (!confirm(`Delete branch ${label}?`)) return
+    if (!await confirmAction({ title: 'Delete branch?', message: label, detail: 'The branch reference will be removed. Objects reachable from other refs remain available.', confirmLabel: 'Delete branch' })) return
     setBusy(branch); setError('')
     try { await api.deleteBranch(repo.name, label); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
   }
@@ -379,6 +382,7 @@ function Branches({ repo, publicMode, onBrowse, onMutate, client = api }) {
 }
 
 function Tags({ repo, publicMode, onMutate, initialTarget = '', initialKind = '', onTargetConsumed }) {
+  const confirmAction = useConfirm()
   const tags = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/tags/'))
   const branches = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/'))
   const defaultKind = repo.binding?.bound ? 'revision' : 'commit'
@@ -427,7 +431,7 @@ function Tags({ repo, publicMode, onMutate, initialTarget = '', initialKind = ''
   }
 
   async function remove(tag) {
-    if (!confirm(`Delete tag ${tag}?`)) return
+    if (!await confirmAction({ title: 'Delete tag?', message: tag, detail: 'The referenced commit or Clay revision is not deleted.', confirmLabel: 'Delete tag' })) return
     setBusy(tag); setError('')
     try { await api.deleteTag(repo.name, tag); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
   }
@@ -450,6 +454,7 @@ function Tags({ repo, publicMode, onMutate, initialTarget = '', initialKind = ''
 }
 
 function Releases({ repo, publicMode, onMutate, client = api }) {
+  const confirmAction = useConfirm()
   const tags = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/tags/')).map((ref) => ref.name.replace('refs/tags/', ''))
   const used = new Set((repo.releases || []).map((release) => release.tag))
   const available = tags.filter((tag) => !used.has(tag))
@@ -479,7 +484,7 @@ function Releases({ repo, publicMode, onMutate, client = api }) {
   }
 
   async function remove(releaseTag) {
-    if (!confirm(`Delete release ${releaseTag}? The Git tag will remain.`)) return
+    if (!await confirmAction({ title: 'Delete release?', message: releaseTag, detail: 'Release notes are removed; the Git tag remains.', confirmLabel: 'Delete release' })) return
     setBusy(releaseTag); setError('')
     try { await api.deleteRelease(repo.name, releaseTag); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
   }
@@ -952,6 +957,7 @@ function CommitDetail({ data, onBack, onOpenGit, onCreateTag }) {
 }
 
 function Settings({ repo, onMutate }) {
+  const confirmAction = useConfirm()
   const publicUrl = `${window.location.origin}/apps/urgit/public/${encodeURIComponent(repo.name)}`
   const [description, setDescription] = useState(repo.description || '')
   const [desk, setDesk] = useState(repo.binding?.desk || '')
@@ -1071,7 +1077,7 @@ function Settings({ repo, onMutate }) {
   }
 
   async function collectLfs() {
-    if (!window.confirm(`Delete ${lfsGc?.candidateCount || 0} unreferenced LFS objects from ship storage?`)) return
+    if (!await confirmAction({ title: 'Delete unreferenced LFS objects?', message: `${lfsGc?.candidateCount || 0} object${lfsGc?.candidateCount === 1 ? '' : 's'} will be removed from ship storage.`, detail: 'Only payloads not reachable from an advertised ref are eligible.', confirmLabel: 'Delete objects' })) return
     setBusy('lfs-gc'); setError('')
     try {
       const started = await api.lfsGc(repo.name)
@@ -1177,7 +1183,7 @@ function Settings({ repo, onMutate }) {
       </section>
       <section className="panel danger-zone">
         <div><h2>Delete repository</h2><p>Remove refs, Git objects, binding metadata, and LFS pointers held by this repository.</p></div>
-        <button className="button danger" onClick={() => { if (window.confirm(`Delete ${repo.name}? This cannot be undone.`)) act('delete', () => api.remove(repo.name)) }}>Delete</button>
+        <button className="button danger" onClick={async () => { if (await confirmAction({ title: 'Delete repository?', message: repo.name, detail: 'Refs, Git objects, binding metadata, and LFS pointers held by this repository will be removed.', confirmLabel: 'Delete repository' })) act('delete', () => api.remove(repo.name)) }}>Delete</button>
       </section>
     </div>
   )

@@ -43,7 +43,7 @@
 - branch-aware file browsing, text and image blob views, authenticated text editing, per-file history, commit identities, and commit detail
 - bounded occurrence-aware line blame across Git first-parent commits and native Clay revisions, with attributed source gutters in authenticated and public file views
 - mounted-desk discovery and first-class desk-to-repository publication
-- Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, byte-bounded 4 MiB object pages, an eight-read sliding window, exact-path `%yawn` cancellation, progress-based idle detection, status pruning, object-count checks, and per-object OID verification
+- Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, a bounded initial-response deadline, byte-bounded 4 MiB object pages, an eight-read sliding window, exact-path `%yawn` cancellation, progress-based idle detection, status pruning, object-count checks, and per-object OID verification
 - two-ship Fine conformance: bidirectional native forks reconstructed complete repositories and passed stock Git clone and `git fsck --full`
 - on-demand Ames peer discovery with bounded public-repository catalogs, writer hints, expiry, cancellation, and status pruning
 - persistent peer bookmarks with expandable public repositories in the sidebar
@@ -69,7 +69,7 @@
 - optional server-side GitHub token for private repositories and authenticated REST operations
 - bounded five-page GitHub issue and pull-request synchronization with refresh, conditional load-more, and number deduplication; request-scoped null-safe detail and unified-diff reads; and GitHub fork and pull-request creation
 - request-scoped, size-checked upstream GitHub file views for linked repositories without persisting response bodies
-- consolidated new-repository flow for blank repositories, Clay desks, peer forks, and GitHub imports
+- consolidated new-repository flow for blank repositories, Clay desks, peer forks, and GitHub imports; peer forks accept an explicit local name, distinguish safe same-origin refreshes from collisions, and use in-app confirmation dialogs for destructive actions
 - repository navigation and filtering: repository search, code, issues, pull requests, branches, 50-item commit or Clay-revision history pages, expandable file trees, deep-linked line ranges, syntax-highlighted file editing/history, and settings
 - web branch management with source-tip creation, default-branch selection, guarded deletion, and create/edit/delete commits on any selected branch
 - authenticated and public branch comparison with bounded tree diffs and downloadable unified patches for text-only changes
