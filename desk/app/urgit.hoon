@@ -973,7 +973,7 @@
   =/  count=@ud  0
   =/  total=@ud  (first-parent-count repo ref)
   =/  finish
-    |=  more=?
+    |=  [more=? page-count=@ud page-entries=(list json)]
     ^-  json
     %-  pairs:enjs:format
     :~  ['repository' s+name]
@@ -981,16 +981,16 @@
         ['historyKind' s+'git']
         ['commitCount' n+(decimal total)]
         ['offset' n+(decimal offset)]
-        ['nextOffset' n+(decimal (add offset count))]
+        ['nextOffset' n+(decimal (add offset page-count))]
         ['hasMore' b+more]
-        ['commits' [%a (flop entries)]]
+        ['commits' [%a (flop page-entries)]]
     ==
   |-
-  ?~  current  (finish %.n)
-  ?:  (gte count limit)  (finish %.y)
+  ?~  current  (finish %.n count entries)
+  ?:  (gte count limit)  (finish %.y count entries)
   =/  found=(unit object:git)  (~(get by objects.repo) u.current)
-  ?~  found  (finish %.n)
-  ?.  =(%commit kind.u.found)  (finish %.n)
+  ?~  found  (finish %.n count entries)
+  ?.  =(%commit kind.u.found)  (finish %.n count entries)
   =/  parent=(unit oid:git)  (commit-parent data.u.found)
   ?:  (lth scanned offset)
     $(current parent, scanned +(scanned))
@@ -1701,8 +1701,8 @@
   %+  murn  (gulf 1 pages)
   |=  revision=@ud
   =/  issued=?
-    ?:  (lte revision 8)  %.y
-    (~(has in completed) (sub revision 8))
+    ?:  =(revision 1)  %.y
+    (~(has in completed) (sub revision 1))
   ?.  ?&(issued !(~(has in completed) revision))  ~
   =/  scry-path=path
     /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer)
@@ -1724,7 +1724,7 @@
     (flop [page pages])
   =/  object-bytes=@ud  (add 64 p.data.+.i.remaining)
   =/  page-full=?
-    |(=(count 1.024) ?&((gth count 0) (gth (add bytes object-bytes) 4.194.304)))
+    |(=(count 256) ?&((gth count 0) (gth (add bytes object-bytes) 524.288)))
   ?:  page-full
     $(page ~, pages [page pages], count 0, bytes 0)
   =/  next-page=(map oid:git object:git)
@@ -2183,6 +2183,36 @@
     (peer-fail src.bowl transfer.req 'repository is not public')
   ?:  (~(has by peer-serving) transfer.req)
     (peer-fail src.bowl transfer.req 'transfer identifier is already active')
+  =/  superseded=(list [@uv peer-serve])
+    %+  skim  ~(tap by peer-serving)
+    |=  entry=[@uv peer-serve]
+    =/  prior=peer-serve  +.entry
+    ?&  =(src.bowl target.prior)
+        =(repository.req repository.prior)
+    ==
+  =/  superseded-ids=(set @uv)
+    (silt (turn superseded |=(entry=[@uv peer-serve] -.entry)))
+  =/  cleanup-cards=(list card)
+    %-  zing
+    %+  turn  superseded
+    |=  entry=[@uv peer-serve]
+    =/  old-transfer=@uv  -.entry
+    =/  old=peer-serve  +.entry
+    ?:  =(pages.old 0)  ~
+    %+  turn  (gulf 1 pages.old)
+    |=  revision=@ud
+    [%pass /peer/cull/(scot %uv old-transfer)/(scot %ud revision) %cull [%ud revision] /fine/(peer-fine-name old-transfer)]
+  =.  peer-serving
+    %-  malt
+    %+  murn  ~(tap by peer-serving)
+    |=  entry=[@uv peer-serve]
+    ?:  (~(has in superseded-ids) -.entry)  ~
+    `entry
+  =.  peer-activities
+    %+  turn  peer-activities
+    |=  event=peer-activity
+    ?.  (~(has in superseded-ids) id.event)  event
+    event(status %failure, message 'repository snapshot superseded by a newer request', when now.bowl)
   =/  objects=(list [oid:git object:git])
     %+  murn  ~(tap by objects.u.found)
     |=  entry=[oid:git object:git]
@@ -2203,7 +2233,7 @@
         [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl ~m10)]
     ==
   :_  this
-  (weld object-pages final-cards)
+  (weld cleanup-cards (weld object-pages final-cards))
 ::
 ++  peer-ready
   |=  msg=ready:git-peer
@@ -2243,7 +2273,7 @@
   :_  this
   =/  object-reads=(list card)
     %-  zing
-    %+  turn  (gulf 1 (min 8 pages.msg))
+    %+  turn  (gulf 1 (min 1 pages.msg))
     |=  revision=@ud
     =/  scry-path=path
       /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer.msg)
@@ -6923,7 +6953,7 @@
     =.  peer-receiving
       (~(put by peer-receiving) u.transfer u.found(completed (~(put in completed.u.found) u.revision)))
     :_  this
-    =/  next-revision=@ud  (add u.revision 8)
+    =/  next-revision=@ud  +(u.revision)
     ?:  (gth next-revision pages.u.found)  [snapshot-card ~]
     =/  next-path=path
       /g/x/(scot %ud next-revision)/urgit//1/fine/(peer-fine-name u.transfer)
