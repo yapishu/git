@@ -196,15 +196,19 @@ function PrivateApp() {
     }
   }
 
-  async function forkRemote(ship, repository, onProgress) {
+  async function forkRemote(ship, repository, onProgress, onStarted) {
     setError('')
     try {
       const started = await api.peerFork(ship, repository, repository, true)
+      onStarted?.(started.transfer)
       const result = await waitForPeerTransfer(started.transfer, { onProgress })
       await api.peerDeleteTransfer(started.transfer).catch(() => {})
       if (!result.ok) throw new Error(result.message)
       await refresh(repository); choose(repository); return true
-    } catch (cause) { setError(cause.message); return false }
+    } catch (cause) {
+      if (cause.message !== 'transfer cancelled') setError(cause.message)
+      return false
+    }
   }
 
   async function published(name) {
@@ -237,6 +241,15 @@ function PrivateApp() {
     }
   }
 
+  async function cancelTransfer(transfer) {
+    try {
+      await api.peerDeleteTransfer(transfer)
+      await refreshActivity()
+    } catch (cause) {
+      if (!/not found/i.test(cause.message)) setError(cause.message)
+    }
+  }
+
   function openSettings(pushHistory = true) {
     remoteBrowseRef.current.generation += 1
     if (remoteBrowseRef.current.request) api.peerDeleteBrowse(remoteBrowseRef.current.request).catch(() => {})
@@ -262,7 +275,7 @@ function PrivateApp() {
           <div className="topbar-actions">
             <div className="activity-anchor">
               <button className="icon-button activity-button" onClick={() => { setActivityOpen((open) => !open); refreshActivity() }} title="Peer activity"><ActivityIcon />{activePeers > 0 && <span className="activity-badge">{activePeers}</span>}</button>
-              {activityOpen && <PeerActivity activity={peerActivity} onClear={clearActivity} />}
+              {activityOpen && <PeerActivity activity={peerActivity} onClear={clearActivity} onCancel={cancelTransfer} />}
             </div>
             <button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button>
             <button className="icon-button" onClick={() => refresh(selected)} title="Refresh"><RefreshIcon /></button>
@@ -278,7 +291,7 @@ function PrivateApp() {
         ) : publishingDesk ? (
           <PublishDesk repositories={repositories} onComplete={published} onCancel={() => setPublishingDesk(false)} />
         ) : remoteSelected ? (
-          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} data={remoteData} onFork={forkRemote} /> : remoteError ? <main className="content"><div className="empty remote-browse-failure"><strong>Could not load {remoteSelected.ship}/{remoteSelected.name}</strong><span>{remoteError}</span><button className="button primary" onClick={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false)}>Retry</button></div></main> : <main className="content"><div className="empty remote-browse-loading"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…<small>{remoteStatus}</small><BrowseProgress progress={remoteProgress} /></div></main>
+          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} data={remoteData} onFork={forkRemote} onCancelTransfer={cancelTransfer} /> : remoteError ? <main className="content"><div className="empty remote-browse-failure"><strong>Could not load {remoteSelected.ship}/{remoteSelected.name}</strong><span>{remoteError}</span><button className="button primary" onClick={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false)}>Retry</button></div></main> : <main className="content"><div className="empty remote-browse-loading"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…<small>{remoteStatus}</small><BrowseProgress progress={remoteProgress} /></div></main>
         ) : repo ? (
           <RepositoryView repo={repo} onRefresh={refresh} onOpenOrigin={chooseRemote} />
         ) : (

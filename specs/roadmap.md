@@ -43,7 +43,7 @@
 - branch-aware file browsing, text and image blob views, authenticated text editing, per-file history, commit identities, and commit detail
 - bounded occurrence-aware line blame across Git first-parent commits and native Clay revisions, with attributed source gutters in authenticated and public file views
 - mounted-desk discovery and first-class desk-to-repository publication
-- Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, transfer expiry and cancellation, status pruning, object-count checks, and per-object OID verification
+- Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, an eight-read sliding window, exact-path `%yawn` cancellation, progress-based idle detection, status pruning, object-count checks, and per-object OID verification
 - two-ship Fine conformance: bidirectional native forks reconstructed complete repositories and passed stock Git clone and `git fsck --full`
 - on-demand Ames peer discovery with bounded public-repository catalogs, writer hints, expiry, cancellation, and status pruning
 - persistent peer bookmarks with expandable public repositories in the sidebar
@@ -67,10 +67,10 @@
 - direct GitHub Smart HTTP import and update with authentic refs, canonical OIDs, delta-pack decoding, reachable-graph validation, and 64 MiB/25,000-object bounds
 - fast-forward-only GitHub pulls that preserve local-only refs and authenticated branch-selectable receive-pack pushes with report-status validation
 - optional server-side GitHub token for private repositories and authenticated REST operations
-- bounded five-page GitHub issue and pull-request synchronization with refresh, append, and number deduplication; request-scoped full detail reads; and GitHub fork and pull-request creation
+- bounded five-page GitHub issue and pull-request synchronization with refresh, conditional load-more, and number deduplication; request-scoped null-safe detail and unified-diff reads; and GitHub fork and pull-request creation
 - request-scoped, size-checked upstream GitHub file views for linked repositories without persisting response bodies
 - consolidated new-repository flow for blank repositories, Clay desks, peer forks, and GitHub imports
-- repository navigation and filtering: repository search, code, issues, pull requests, branches, commits or Clay revisions, expandable file trees, deep-linked line ranges, syntax-highlighted file editing/history, and settings
+- repository navigation and filtering: repository search, code, issues, pull requests, branches, 50-item commit or Clay-revision history pages, expandable file trees, deep-linked line ranges, syntax-highlighted file editing/history, and settings
 - web branch management with source-tip creation, default-branch selection, guarded deletion, and create/edit/delete commits on any selected branch
 - authenticated and public branch comparison with bounded tree diffs and downloadable unified patches for text-only changes
 - bounded branch-aware code search with line-level deep links for authenticated and public repository views

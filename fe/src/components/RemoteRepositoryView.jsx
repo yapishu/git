@@ -7,7 +7,7 @@ const formatDate = (timestamp) => {
   return Number.isFinite(value) && value > 0 ? new Date(value).toLocaleString() : ''
 }
 
-export default function RemoteRepositoryView({ ship, repository, data, onFork }) {
+export default function RemoteRepositoryView({ ship, repository, data, onFork, onCancelTransfer }) {
   const repo = data?.repository
   const routeTab = () => {
     const query = location.hash.split('?')[1] || ''
@@ -16,6 +16,8 @@ export default function RemoteRepositoryView({ ship, repository, data, onFork })
   }
   const [tab, setTab] = useState(routeTab)
   const [forking, setForking] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [transfer, setTransfer] = useState('')
   const [progress, setProgress] = useState(null)
   useEffect(() => {
     const restore = () => setTab(routeTab())
@@ -31,15 +33,20 @@ export default function RemoteRepositoryView({ ship, repository, data, onFork })
     if (forking) return
     setForking(true)
     setProgress({ received: 0, expected: 0, message: 'Contacting peer' })
-    const complete = await onFork(ship, repository, setProgress)
-    if (!complete) { setForking(false); setProgress(null) }
+    const complete = await onFork(ship, repository, setProgress, setTransfer)
+    if (!complete) { setForking(false); setCancelling(false); setTransfer(''); setProgress(null) }
+  }
+  async function cancelFork() {
+    if (!transfer || cancelling) return
+    setCancelling(true)
+    await onCancelTransfer(transfer)
   }
   if (!repo) return <main className="content"><div className="empty">Repository data is unavailable.</div></main>
   const commits = data.commits?.commits || []
   const pulls = repo.pullRequests || []
   return <main className="content">
     <header className="repo-header"><div><div className="repo-breadcrumb"><span>{ship}</span><b>/</b><h1>{repository}</h1><span className="visibility-badge">Peer</span></div>{repo.description && <p className="repo-description">{repo.description}</p>}</div><button className={`button primary ${forking ? 'is-busy' : ''}`} disabled={forking} onClick={fork}>{forking && <span className="spinner" />}{forking ? 'Forking to this ship…' : 'Fork to this ship'}</button></header>
-    {forking && <TransferProgress ship={ship} repository={repository} progress={progress} />}
+    {forking && <TransferProgress ship={ship} repository={repository} progress={progress} cancelling={cancelling} onCancel={cancelFork} />}
     <div className="repo-meta"><span><b>{repo.fileCount || 0}</b> files</span><span><b>{repo.commitCount || 0}</b> commits</span><span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span></div>
     <nav className="tabs"><button className={tab === 'code' ? 'active' : ''} onClick={() => chooseTab('code')}>Code</button><button className={tab === 'pulls' ? 'active' : ''} onClick={() => chooseTab('pulls')}>Pull requests <span className="tab-count">{pulls.length}</span></button><button className={tab === 'commits' ? 'active' : ''} onClick={() => chooseTab('commits')}>Commits <span className="tab-count">{commits.length}</span></button><button className={tab === 'branches' ? 'active' : ''} onClick={() => chooseTab('branches')}>Branches <span className="tab-count">{repo.branchCount || 0}</span></button></nav>
     <section className="repo-body">
@@ -51,13 +58,13 @@ export default function RemoteRepositoryView({ ship, repository, data, onFork })
   </main>
 }
 
-function TransferProgress({ ship, repository, progress }) {
+function TransferProgress({ ship, repository, progress, cancelling, onCancel }) {
   const received = Number(progress?.received || 0)
   const expected = Number(progress?.expected || 0)
   const percent = expected > 0 ? Math.min(100, Math.round((received / expected) * 100)) : 0
   return <div className="peer-transfer-progress" role="status" aria-live="polite">
     <div><strong>Forking {ship}/{repository}</strong><span>{expected > 0 ? `${received} / ${expected} objects · ${percent}%` : progress?.message || 'Preparing repository snapshot…'}</span></div>
     {expected > 0 ? <progress max="100" value={percent}>{percent}%</progress> : <div className="progress-track indeterminate"><i /></div>}
-    <small>The transfer continues while this view is open.</small>
+    <div className="peer-transfer-footer"><small>You can leave this view and follow the transfer from peer activity.</small><button className="text-button" disabled={cancelling} onClick={onCancel}>{cancelling ? 'Cancelling…' : 'Cancel transfer'}</button></div>
   </div>
 }

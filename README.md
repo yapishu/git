@@ -34,7 +34,7 @@
 - unauthenticated read-only repository pages for public projects, including branches, files, history, and commit diffs
 - repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
 - one-click publication of any mounted Clay desk as a Git repository
-- verified, incremental native forks with explicit pull-from-origin refresh: Ames coordinates access and refs while Fine carries only the missing immutable object snapshot
+- verified, incremental native forks with explicit pull-from-origin refresh: Ames coordinates access and refs while a bounded Fine read window carries only the missing immutable object snapshot; duplicate requests coalesce and active transfers can be cancelled
 - persistent ship peers in the sidebar, with on-demand public repository discovery and bounded remote browsing over Ames or request-scoped Fine
 - ship write ACLs with fast-forward-only native push-back from authorized forks
 - native pull requests between ships or local branches, with close/reopen lifecycle, per-file red/green diffs, resolvable general and line-anchored review comments, fast-forward or conflict-checked three-way merges, and Clay gating
@@ -42,7 +42,8 @@
 - explicit Clay revision-to-commit history for both pushed Git trees and published desk snapshots
 - bidirectional GitHub synchronization through Git Smart HTTP: safe fast-forward pulls and branch-selectable pushes preserving canonical object IDs
 - optional GitHub token support for private imports, GitHub forks, and opening pull requests
-- paginated, deduplicated GitHub issue and pull-request lists, with full bodies, pull-request change metadata, and upstream file contents fetched on demand
+- paginated, deduplicated GitHub issue and pull-request lists with conditional load-more controls, request-scoped full bodies and unified pull-request diffs, and upstream file contents fetched on demand
+- Git and Clay histories loaded in pages of 50, with commit and revision detail available from every displayed identifier
 - JSON scries and HTTP APIs for repository summaries, refs, first-parent history, and file trees
 - Git LFS batch uploads and downloads backed by the ship's configured object storage
 - Git LFS file locking compatible with stock `git lfs lock`, `locks`, and `unlock`

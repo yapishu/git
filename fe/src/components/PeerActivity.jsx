@@ -5,7 +5,7 @@ const labels = {
   'pull-request': 'Pull request',
 }
 
-export default function PeerActivity({ activity, onClear }) {
+export default function PeerActivity({ activity, onClear, onCancel }) {
   return (
     <section className="activity-popover" aria-label="Peer activity">
       <header>
@@ -21,7 +21,9 @@ export default function PeerActivity({ activity, onClear }) {
                 <strong>{labels[event.kind] || event.kind} · {event.repository}</strong>
                 <small>{event.direction} {event.ship} · {event.message}</small>
               </div>
-              <span className={`activity-state ${event.status}`}>{event.status}</span>
+              {event.status === 'active' && event.kind !== 'serve' ? (
+                <button className="activity-cancel" onClick={() => onCancel(event.id)}>Cancel</button>
+              ) : <span className={`activity-state ${event.status}`}>{event.status}</span>}
             </div>
           ))}
         </div>

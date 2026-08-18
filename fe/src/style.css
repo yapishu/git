@@ -100,6 +100,8 @@ button { color: inherit; }
 .activity-state.active { color: #9a6700; }
 .activity-state.success { color: #1a7f37; }
 .activity-state.failure { color: var(--danger); }
+.activity-cancel { min-height: 25px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--danger); font-size: 10px; cursor: pointer; }
+.activity-cancel:hover { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); background: color-mix(in srgb, var(--danger) 8%, var(--panel)); }
 .activity-empty { padding: 42px 16px; color: var(--muted); font-size: 12px; text-align: center; }
 .icon-button, .theme-button { width: 32px; height: 32px; display: inline-grid; place-items: center; border: 0; border-radius: 7px; background: transparent; cursor: pointer; }
 .icon-button:hover, .theme-button:hover { background: var(--soft); }
@@ -273,6 +275,8 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .peer-transfer-progress strong { color: var(--text); }
 .peer-transfer-progress small { color: var(--muted); }
 .peer-transfer-progress progress { width: 100%; height: 6px; accent-color: var(--accent); }
+.peer-transfer-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.peer-transfer-footer .text-button { padding: 0; color: var(--danger); }
 .progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--accent) 15%, var(--panel)); }
 .progress-track i { display: block; width: 35%; height: 100%; border-radius: inherit; background: var(--accent); }
 .progress-track.indeterminate i { animation: progress-slide 1.35s ease-in-out infinite; }
@@ -458,6 +462,9 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .github-detail-body > header span { color: var(--muted); }
 .github-detail-body > p { margin: 0; padding: 18px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.55; }
 .github-detail-footer { margin: 0; }
+.github-open-link { flex: 0 0 auto; white-space: nowrap; }
+.github-diff { display: grid; gap: 14px; }
+.github-diff .hunk-head { display: block; }
 .pull-detail { display: grid; gap: 14px; }
 .pull-detail-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .pull-detail-header h2 { margin: 0 0 8px; font-size: 18px; }
@@ -475,6 +482,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .diff-line > b { padding-left: 6px; font-weight: 500; user-select: none; }.diff-line > code { padding-right: 18px; white-space: pre; }
 .diff-line.add { background: color-mix(in srgb, #1a7f37 13%, var(--panel)); }.diff-line.add > b { color: #1a7f37; }
 .diff-line.delete { background: color-mix(in srgb, #cf222e 12%, var(--panel)); }.diff-line.delete > b { color: #cf222e; }
+.diff-line.meta { color: var(--muted); background: var(--soft); }
 .diff-line.commentable { cursor: pointer; }
 .diff-line.commentable:hover { box-shadow: inset 3px 0 var(--accent); filter: brightness(.97); }
 .review-discussion { display: grid; gap: 10px; margin-top: 22px; }
@@ -494,6 +502,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .review-composer textarea { width: 100%; min-height: 110px; resize: vertical; border: 1px solid var(--line); border-radius: 7px; padding: 10px 11px; background: var(--bg); color: var(--text); font: inherit; line-height: 1.5; outline: none; }
 .review-composer textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent); }
 .review-composer .form-actions { margin-top: 10px; }
+.history-load-more { display: flex; justify-content: center; padding: 16px; border-top: 1px solid var(--line); }
 .forge-toolbar { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
 .forge-toolbar > input { width: min(360px, 48%); height: 34px; background: var(--panel); }
 .forge-toolbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 1; }

@@ -48,6 +48,8 @@
       refs=(map @t oid:git)
       expected=@ud
       received=@ud
+      pages=@ud
+      completed=(set @ud)
       objects=(map oid:git object:git)
   ==
 +$  peer-result  [status=? message=@t repository=@t]
@@ -88,7 +90,7 @@
       when=@da
   ==
 +$  blame-table  [sources=(list json) remap=(map @ud @ud)]
-+$  github-kind  ?(%import %update %push %push-send %issues %pulls %issue-detail %pull-detail %file-detail %fork %open-pull)
++$  github-kind  ?(%import %update %push %push-send %issues %pulls %issue-detail %pull-detail %pull-diff %file-detail %fork %open-pull)
 +$  github-request
   $:  job=@uv
       kind=github-kind
@@ -506,7 +508,7 @@
   |=  [name=@t repo=repository:git]
   ^-  json
   =/  full=json  (repository-json name repo)
-  ?>  ?=(%o -.full)
+  ?>  ?=([%o *] full)
   =/  fields=(map @t json)  p.full
   =.  fields  (~(del by fields) 'writeTokenSet')
   =.  fields  (~(del by fields) 'writers')
@@ -939,54 +941,53 @@
   ==
 ::
 ++  repository-commits-json
-  |=  [name=@t repo=repository:git ref=@t]
+  |=  [name=@t repo=repository:git ref=@t offset=@ud limit=@ud]
   ^-  json
   =/  current=(unit oid:git)  (revision-oid repo ref)
   =/  entries=(list json)  ~
+  =/  scanned=@ud  0
   =/  count=@ud  0
+  =/  total=@ud  (first-parent-count repo ref)
+  =/  finish
+    |=  more=?
+    ^-  json
+    %-  pairs:enjs:format
+    :~  ['repository' s+name]
+        ['head' s+ref]
+        ['historyKind' s+'git']
+        ['commitCount' n+(decimal total)]
+        ['offset' n+(decimal offset)]
+        ['nextOffset' n+(decimal (add offset count))]
+        ['hasMore' b+more]
+        ['commits' [%a (flop entries)]]
+    ==
   |-
-  ?:  |(?=(~ current) (gte count 100))
-    %-  pairs:enjs:format
-    :~  ['repository' s+name]
-        ['head' s+ref]
-        ['historyKind' s+'git']
-        ['commitCount' n+(decimal count)]
-        ['commits' [%a (flop entries)]]
-    ==
+  ?~  current  (finish %.n)
+  ?:  (gte count limit)  (finish %.y)
   =/  found=(unit object:git)  (~(get by objects.repo) u.current)
-  ?~  found
-    %-  pairs:enjs:format
-    :~  ['repository' s+name]
-        ['head' s+ref]
-        ['historyKind' s+'git']
-        ['commitCount' n+(decimal count)]
-        ['commits' [%a (flop entries)]]
-    ==
-  ?.  =(%commit kind.u.found)
-    %-  pairs:enjs:format
-    :~  ['repository' s+name]
-        ['head' s+ref]
-        ['historyKind' s+'git']
-        ['commitCount' n+(decimal count)]
-        ['commits' [%a (flop entries)]]
-    ==
+  ?~  found  (finish %.n)
+  ?.  =(%commit kind.u.found)  (finish %.n)
   =/  parent=(unit oid:git)  (commit-parent data.u.found)
+  ?:  (lth scanned offset)
+    $(current parent, scanned +(scanned))
   =/  entry=json  (commit-summary-json u.current data.u.found)
-  $(current parent, entries [entry entries], count +(count))
+  $(current parent, entries [entry entries], scanned +(scanned), count +(count))
 ::
 ++  repository-history-json
-  |=  [name=@t repo=repository:git ref=@t who=@p now=@da]
+  |=  [name=@t repo=repository:git ref=@t who=@p now=@da offset=@ud limit=@ud]
   ^-  json
   ?~  binding.repo
-    (repository-commits-json name repo ref)
+    (repository-commits-json name repo ref offset limit)
   ?.  =(ref branch.u.binding.repo)
-    (repository-commits-json name repo ref)
+    (repository-commits-json name repo ref offset limit)
   =/  native=(unit history:git-clay-history)
-    (desk-history:git-clay-history who desk-name.u.binding.repo now 100)
+    (desk-history:git-clay-history who desk-name.u.binding.repo now (add offset +(limit)))
   ?~  native
-    (repository-commits-json name repo ref)
+    (repository-commits-json name repo ref offset limit)
+  =/  page=(list revision:git-clay-history)
+    (scag limit (slag offset revisions.u.native))
   =/  entries=(list json)
-    %+  turn  revisions.u.native
+    %+  turn  page
     |=  revision=revision:git-clay-history
     (clay-revision-summary-json who desk-name.u.binding.repo revision u.binding.repo)
   %-  pairs:enjs:format
@@ -994,6 +995,9 @@
       ['head' s+ref]
       ['historyKind' s+'clay']
       ['revisionCount' n+(decimal latest.u.native)]
+      ['offset' n+(decimal offset)]
+      ['nextOffset' n+(decimal (add offset (lent page)))]
+      ['hasMore' b+(gth (lent revisions.u.native) (add offset limit))]
       ['commits' [%a entries]]
   ==
 ::
@@ -1003,7 +1007,7 @@
   %-  pairs:enjs:format
   :~  ['repository' (repository-json name repo)]
       ['files' (repository-files-json name repo)]
-      ['commits' (repository-commits-json name repo head.repo)]
+      ['commits' (repository-commits-json name repo head.repo 0 50)]
   ==
 ::
 ++  repository-commit-json
@@ -1135,7 +1139,7 @@
     (clay-file-octs who desk-name number.revision u.here now)
   =/  summary=json
     (clay-revision-summary-json who desk-name revision u.binding.repo)
-  ?>  ?=(%o -.summary)
+  ?>  ?=([%o *] summary)
   =/  fields=(map @t json)  p.summary
   =.  fields  (~(put by fields) 'present' b+?=(^ here))
   =.  fields  (~(put by fields) 'size' n+(decimal ?~(data 0 p.u.data)))
@@ -1568,6 +1572,17 @@
   =/  scry-path=path
     /g/x/(scot %ud revision)/urgit//1/browse/(scot %uv request)
   [%pass /peer/browse-cancel/(scot %uv request)/(scot %ud revision) %arvo %a %yawn [peer scry-path]]
+::
+++  peer-transfer-pages
+  |=  objects=@ud
+  ^-  @ud
+  ?:  =(objects 0)  1
+  (div (add objects 15) 16)
+::
+++  peer-fine-name
+  |=  transfer=@uv
+  ^-  @ta
+  (scot %uv (cut 0 [0 64] transfer))
 --
 ::
 %-  agent:dbug
@@ -1662,10 +1677,18 @@
   ?:  !=(id id.event)  event
   event(status ?:(ok %success %failure), message message, when now.bowl)
 ::
-++  peer-fine-name
-  |=  transfer=@uv
-  ^-  @ta
-  (scot %uv (cut 0 [0 64] transfer))
+++  peer-transfer-yawns
+  |=  [transfer=@uv peer=ship pages=@ud completed=(set @ud)]
+  ^-  (list card)
+  %+  murn  (gulf 1 pages)
+  |=  revision=@ud
+  =/  issued=?
+    ?:  (lte revision 8)  %.y
+    (~(has in completed) (sub revision 8))
+  ?.  ?&(issued !(~(has in completed) revision))  ~
+  =/  scry-path=path
+    /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer)
+  `[%pass /peer/fine-cancel/(scot %uv transfer)/(scot %ud revision) %arvo %a %yawn [peer scry-path]]
 ::
 ++  peer-object-pages
   |=  objects=(list [oid:git object:git])
@@ -1857,10 +1880,13 @@
   =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer)
   ?~  found  `this
   ?.  =(src.bowl source.u.found)  `this
+  =/  flight=peer-receive  u.found
   =.  peer-receiving  (~(del by peer-receiving) transfer)
   =.  peer-results  (~(put by peer-results) transfer [%.n message local-repository.u.found])
   =.  peer-activities  (peer-activity-finish transfer %.n message)
-  `this
+  :_  this
+  ?:  =('' head.flight)  ~
+  (peer-transfer-yawns transfer source.flight pages.flight completed.flight)
 ::
 ++  handle-peer
   |=  packet=packet:git-peer
@@ -1997,13 +2023,13 @@
       ==
     `this
   =/  valid=?
-    ?.  ?=(%o -.result)  %.n
+    ?.  ?=([%o *] result)  %.n
     =/  repository-json=(unit json)  (~(get by p.result) 'repository')
     ?~  repository-json  %.n
-    ?.  ?=(%o -.u.repository-json)  %.n
+    ?.  ?=([%o *] u.repository-json)  %.n
     =/  name-json=(unit json)  (~(get by p.u.repository-json) 'name')
     ?~  name-json  %.n
-    ?&(?=(%s -.u.name-json) =(p.u.name-json repository))
+    ?&(?=([%s *] u.name-json) =(p.u.name-json repository))
   ?.  valid
     =.  peer-browses
       (~(put by peer-browses) request u.found(active %.n, ok %.n, message 'peer browse result has the wrong repository identity'))
@@ -2097,6 +2123,8 @@
         ~
         0
         0
+        0
+        ~
         objects.u.found
     ==
   =.  peer-receiving  (~(put by peer-receiving) transfer.offer flight)
@@ -2166,8 +2194,12 @@
           =(repository.msg source-repository.u.found)
       ==
     `this
+  ?.  =((peer-transfer-pages objects.msg) pages.msg)
+    :_  this
+    :~  [%pass /peer/begin-error/(scot %uv transfer.msg) %agent [our.bowl %urgit] %poke %git-peer !>([%snapshot-error transfer.msg 'peer announced an inconsistent Fine page count'])]
+    ==
   =/  next=peer-receive
-    u.found(head head.msg, refs refs.msg, expected objects.msg)
+    u.found(head head.msg, refs refs.msg, expected objects.msg, pages pages.msg, completed ~)
   =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
   =.  peer-results
     (~(put by peer-results) transfer.msg [%.n 'reading repository over Fine' local-repository.u.found])
@@ -2178,15 +2210,15 @@
     (peer-snapshot transfer.msg (silt objects.u.serving))
   :_  this
   =/  object-reads=(list card)
-    %+  turn  (gulf 1 pages.msg)
+    %+  turn  (gulf 1 (min 8 pages.msg))
     |=  revision=@ud
     =/  scry-path=path
       /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer.msg)
     [%pass /peer/fine/(scot %uv transfer.msg)/(scot %ud revision) %keen %.n src.bowl scry-path]
-  =/  timeout-cards=(list card)
-    :~  [%pass /peer/timeout/(scot %uv transfer.msg) %arvo %b %wait (add now.bowl ~m10)]
+  =/  stall-cards=(list card)
+    :~  [%pass /peer/stall/(scot %uv transfer.msg)/0 %arvo %b %wait (add now.bowl ~m2)]
     ==
-  (weld object-reads timeout-cards)
+  (weld object-reads stall-cards)
 ::
 ++  peer-release
   |=  transfer=@uv
@@ -2215,14 +2247,19 @@
   =.  peer-activities  (peer-activity-finish transfer %.n message)
   =/  release=card
     (peer-card source.flight /peer/release/(scot %uv transfer) [%release transfer])
+  =/  cancel-cards=(list card)
+    ?:  =('' head.flight)  ~
+    (peer-transfer-yawns transfer source.flight pages.flight completed.flight)
   ?:  =(%fork purpose.flight)
     =.  peer-results
       (~(put by peer-results) transfer [%.n message local-repository.flight])
-    [[release ~] this]
+    [(weld cancel-cards [release ~]) this]
+  =/  result-cards=(list card)
+    :~  release
+        (peer-card source.flight /peer/result/(scot %uv transfer) [%result transfer %.n message])
+    ==
   :_  this
-  :~  release
-      (peer-card source.flight /peer/result/(scot %uv transfer) [%result transfer %.n message])
-  ==
+  (weld cancel-cards result-cards)
 ::
 ++  peer-snapshot
   |=  [transfer=@uv incoming=(map oid:git object:git)]
@@ -2255,7 +2292,9 @@
     flight(objects (merge-objects objects.flight incoming), received (add received.flight count))
   =.  peer-receiving  (~(put by peer-receiving) transfer next)
   ?.  =(received.next expected.next)
-    `this
+    :_  this
+    :~  [%pass /peer/stall/(scot %uv transfer)/(scot %ud received.next) %arvo %b %wait (add now.bowl ~m2)]
+    ==
   =/  finished=(quip card _this)  (peer-finish transfer)
   =/  release=card
     (peer-card source.flight /peer/release/(scot %uv transfer) [%release transfer])
@@ -2471,7 +2510,7 @@
 ++  json-at
   |=  [key=@t jon=json]
   ^-  (unit json)
-  ?.  ?=(%o -.jon)  ~
+  ?.  ?=([%o *] jon)  ~
   (~(get by p.jon) key)
 ::
 ++  string-at
@@ -2479,7 +2518,7 @@
   ^-  (unit @t)
   =/  value=(unit json)  (json-at key jon)
   ?~  value  ~
-  ?.  ?=(%s -.u.value)  ~
+  ?.  ?=([%s *] u.value)  ~
   `p.u.value
 ::
 ++  parse-decimal
@@ -2500,7 +2539,7 @@
   ^-  (unit @ud)
   =/  value=(unit json)  (json-at key jon)
   ?~  value  ~
-  ?.  ?=(%n -.u.value)  ~
+  ?.  ?=([%n *] u.value)  ~
   (parse-decimal p.u.value)
 ::
 ++  bool-at
@@ -2508,7 +2547,7 @@
   ^-  (unit ?)
   =/  value=(unit json)  (json-at key jon)
   ?~  value  ~
-  ?.  ?=(%b -.u.value)  ~
+  ?.  ?=([%b *] u.value)  ~
   `p.u.value
 ::
 ++  string-list-at
@@ -2516,12 +2555,12 @@
   ^-  (unit (list @t))
   =/  value=(unit json)  (json-at key jon)
   ?~  value  ~
-  ?.  ?=(%a -.u.value)  ~
+  ?.  ?=([%a *] u.value)  ~
   =/  items=(list json)  p.u.value
   =/  out=(list @t)  ~
   |-
   ?~  items  `(flop out)
-  ?.  ?=(%s -.i.items)  ~
+  ?.  ?=([%s *] i.items)  ~
   $(items t.items, out [p.i.items out])
 ::
 ++  webhook-events-at
@@ -2643,7 +2682,7 @@
   ^-  (unit (list lfs-spec))
   =/  value=(unit json)  (json-at 'objects' jon)
   ?~  value  ~
-  ?.  ?=(%a -.u.value)  ~
+  ?.  ?=([%a *] u.value)  ~
   =/  items=(list json)  p.u.value
   =/  out=(list lfs-spec)  ~
   |-
@@ -3178,8 +3217,15 @@
     ?~  (revision-oid u.found ref)
       :_  this
       (api-error eyre-id 404 'ref not found')
+    =/  offset-text=(unit @t)  (query-value 'offset' args.line)
+    =/  offset=(unit @ud)  ?~(offset-text `0 (slaw %ud u.offset-text))
+    =/  limit-text=(unit @t)  (query-value 'limit' args.line)
+    =/  limit=(unit @ud)  ?~(limit-text `50 (slaw %ud u.limit-text))
+    ?.  ?&(?=(^ offset) ?=(^ limit) (lte u.offset 10.000) (gth u.limit 0) (lte u.limit 50))
+      :_  this
+      (api-error eyre-id 422 'offset must be at most 10000 and limit must be between 1 and 50')
     :_  this
-    (api-json eyre-id 200 (repository-history-json name u.found ref our.bowl now.bowl))
+    (api-json eyre-id 200 (repository-history-json name u.found ref our.bowl now.bowl u.offset u.limit))
   ?:  ?=([%apps %urgit %api %public %repository @ %compare ~] site)
     =/  name=@t  i.t.t.t.t.t.site
     =/  found=(unit repository:git)  (~(get by repositories) name)
@@ -3443,6 +3489,30 @@
       [0v0 %pull-detail name owner remote public-read.u.found '' ~ 0 `eyre-id u.number]
     =/  request=request:http
       [%'GET' (api-url:git-github owner remote suffix) (api-headers:git-github github-token) ~]
+    (github-start ctx request)
+  ?:  ?&  =(%'GET' method)
+          ?=([%apps %urgit %api %repository @ %github %pulls @ %diff ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ?~  found
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    ?~  github-origin.u.found
+      :_  this
+      (api-error eyre-id 409 'repository has no GitHub origin')
+    =/  raw-number=@t  i.t.t.t.t.t.t.t.site
+    =/  number=(unit @ud)  (parse-decimal raw-number)
+    ?.  ?&(?=(^ number) (gth u.number 0))
+      :_  this
+      (api-error eyre-id 422 'positive GitHub pull-request number required')
+    =/  owner=@t  owner.u.github-origin.u.found
+    =/  remote=@t  repository.u.github-origin.u.found
+    =/  suffix=@t  (rap 3 ~['/pulls/' (decimal u.number)])
+    =/  ctx=github-request
+      [0v0 %pull-diff name owner remote public-read.u.found '' ~ 0 `eyre-id u.number]
+    =/  request=request:http
+      [%'GET' (api-url:git-github owner remote suffix) (diff-headers:git-github github-token) ~]
     (github-start ctx request)
   ?:  ?&  =(%'GET' method)
           ?=([%apps %urgit %api %repository @ %github %file *] site)
@@ -3784,10 +3854,7 @@
     ?:  active
       =/  canceled=(quip card _this)
         (peer-snapshot-fail u.transfer 'transfer cancelled')
-      =/  next=_this  +.canceled
-      =/  cleaned=_this
-        next(peer-results (~(del by peer-results.next) u.transfer))
-      :_  cleaned
+      :_  +.canceled
       (weld -.canceled (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]])))
     =.  peer-results  (~(del by peer-results) u.transfer)
     :_  this
@@ -3864,6 +3931,8 @@
           ~
           0
           0
+          0
+          ~
           base-objects
       ==
     =.  peer-receiving  (~(put by peer-receiving) transfer flight)
@@ -4200,8 +4269,15 @@
     ?~  (revision-oid u.found ref)
       :_  this
       (api-error eyre-id 404 'ref not found')
+    =/  offset-text=(unit @t)  (query-value 'offset' args.line)
+    =/  offset=(unit @ud)  ?~(offset-text `0 (slaw %ud u.offset-text))
+    =/  limit-text=(unit @t)  (query-value 'limit' args.line)
+    =/  limit=(unit @ud)  ?~(limit-text `50 (slaw %ud u.limit-text))
+    ?.  ?&(?=(^ offset) ?=(^ limit) (lte u.offset 10.000) (gth u.limit 0) (lte u.limit 50))
+      :_  this
+      (api-error eyre-id 422 'offset must be at most 10000 and limit must be between 1 and 50')
     :_  this
-    (api-json eyre-id 200 (repository-history-json name u.found ref our.bowl now.bowl))
+    (api-json eyre-id 200 (repository-history-json name u.found ref our.bowl now.bowl u.offset u.limit))
   ?:  ?&  =(%'GET' method)
           ?=([%apps %urgit %api %repository @ %compare ~] site)
       ==
@@ -5014,7 +5090,7 @@
     ?~  diff
       :_  this
       (api-error eyre-id 409 'pull request objects are incomplete')
-    ?>  ?=(%o -.u.diff)
+    ?>  ?=([%o *] u.diff)
     =/  fields=(map @t json)  p.u.diff
     =.  fields
       (~(put by fields) 'comments' [%a (turn comments.pull review-comment-json)])
@@ -6672,7 +6748,7 @@
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?~  found  [~ ~]
     ?.  public-read.u.found  [~ ~]
-    ``json+!>((repository-history-json name u.found head.u.found our.bowl now.bowl))
+    ``json+!>((repository-history-json name u.found head.u.found our.bowl now.bowl 0 50))
   ::
       [%x %repository @ %browse ~]
     =/  name=@t  i.t.t.path
@@ -6739,17 +6815,21 @@
       [%peer %fine @ @ ~]
     =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
     ?~  transfer  `this
+    =/  revision=(unit @ud)  (slaw %ud i.t.t.t.wire)
+    ?~  revision  `this
+    =/  found=(unit peer-receive)
+      (~(get by peer-receiving) u.transfer)
+    ?~  found  `this
     =/  fail
       |=  message=@t
       ^-  packet:git-peer
       [%snapshot-error u.transfer message]
+    ?:  (~(has in completed.u.found) u.revision)  `this
     =/  packet=packet:git-peer
+      ?.  ?&((gth u.revision 0) (lte u.revision pages.u.found))
+        (fail 'Fine repository response used an invalid page revision')
       ?.  ?=([%ames %sage *] sign-arvo)
         (fail 'Fine repository read failed')
-      =/  found=(unit peer-receive)
-        (~(get by peer-receiving) u.transfer)
-      ?~  found
-        (fail 'Fine repository transfer is no longer active')
       =/  =sage:mess:ames  sage.sign-arvo
       ?.  =(ship.p.sage source.u.found)
         (fail 'Fine response came from the wrong ship')
@@ -6763,8 +6843,21 @@
       ?~  decoded
         (fail 'Fine repository object page is malformed')
       [%snapshot u.transfer u.decoded]
+    =/  snapshot-card=card
+      [%pass /peer/snapshot/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
+    ?.  ?=([%snapshot *] packet)
+      :_  this
+      :~  snapshot-card
+      ==
+    =.  peer-receiving
+      (~(put by peer-receiving) u.transfer u.found(completed (~(put in completed.u.found) u.revision)))
     :_  this
-    :~  [%pass /peer/snapshot/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
+    =/  next-revision=@ud  (add u.revision 8)
+    ?:  (gth next-revision pages.u.found)  [snapshot-card ~]
+    =/  next-path=path
+      /g/x/(scot %ud next-revision)/urgit//1/fine/(peer-fine-name u.transfer)
+    :~  snapshot-card
+        [%pass /peer/fine/(scot %uv u.transfer)/(scot %ud next-revision) %keen %.n source.u.found next-path]
     ==
   ::
       [%peer %browse @ @ ~]
@@ -6820,13 +6913,13 @@
       (fail 'peer overview Fine pages did not decode as JSON')
     =/  expected-repository=@t  repository.u.found
     =/  valid=?
-      ?.  ?=(%o -.u.result)  %.n
+      ?.  ?=([%o *] u.result)  %.n
       =/  repository-json=(unit json)  (~(get by p.u.result) 'repository')
       ?~  repository-json  %.n
-      ?.  ?=(%o -.u.repository-json)  %.n
+      ?.  ?=([%o *] u.repository-json)  %.n
       =/  name-json=(unit json)  (~(get by p.u.repository-json) 'name')
       ?~  name-json  %.n
-      ?&(?=(%s -.u.name-json) =(p.u.name-json expected-repository))
+      ?&(?=([%s *] u.name-json) =(p.u.name-json expected-repository))
     ?.  valid
       (fail 'peer browse result has the wrong repository identity')
     =.  peer-browses
@@ -6879,16 +6972,21 @@
       ==
     (weld cancel-cards release-cards)
   ::
-      [%peer %timeout @ ~]
+      [%peer %stall @ @ ~]
     ?.  ?=([%behn %wake *] sign-arvo)
       (on-arvo:def wire sign-arvo)
     ?^  error.sign-arvo  `this
     =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
     ?~  transfer  `this
+    =/  checkpoint=(unit @ud)  (slaw %ud i.t.t.t.wire)
+    ?~  checkpoint  `this
+    =/  found=(unit peer-receive)  (~(get by peer-receiving) u.transfer)
+    ?~  found  `this
+    ?.  =(u.checkpoint received.u.found)  `this
     =/  packet=packet:git-peer
-      [%snapshot-error u.transfer 'Fine repository read timed out']
+      [%snapshot-error u.transfer 'Fine repository read stalled without object progress']
     :_  this
-    :~  [%pass /peer/timeout-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
+    :~  [%pass /peer/stall-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ==
   ::
       [%peer %serve-timeout @ ~]
@@ -7133,6 +7231,21 @@
       :_  this
       %+  give-simple-payload:app:server  u.api-response.u.context
       [[200 ~[['content-type' 'application/json; charset=utf-8'] ['cache-control' 'no-store']]] `(json-to-octs:server u.detail)]
+    ?:  =(%pull-diff kind.u.context)
+      ?:  (gth p.body 4.194.304)
+        (fail 'GitHub pull-request diff exceeds the 4 MiB display limit')
+      =/  result=json
+        %-  pairs:enjs:format
+        :~  ['encoding' s+'base64']
+            ['size' n+(decimal p.body)]
+            ['content' s+(en:base64:mimes:html body)]
+        ==
+      =.  github-results
+        (~(put by github-results) job.u.context [%.n %.y %pull-diff repository.u.context 'GitHub pull-request diff loaded'])
+      ?~  api-response.u.context  `this
+      :_  this
+      %+  give-simple-payload:app:server  u.api-response.u.context
+      [[200 ~[['content-type' 'application/json; charset=utf-8'] ['cache-control' 'no-store']]] `(json-to-octs:server result)]
     ?:  ?|  =(%issue-detail kind.u.context)
             =(%pull-detail kind.u.context)
         ==
@@ -7347,7 +7460,13 @@
           u.found(github-issues merged-items)
         u.found(github-pulls merged-items)
       =.  repositories  (~(put by repositories) repository.u.context repo)
-      =/  label=@t  ?:(=(%issues kind.u.context) 'GitHub issues synchronized' 'GitHub pull requests synchronized')
+      =/  received=@ud  ?:(?=([%a *] u.jon) (lent p.u.jon) 0)
+      =/  label=@t
+        %+  rap  3
+        :~  ?:(=(%issues kind.u.context) 'GitHub issues synchronized · ' 'GitHub pull requests synchronized · ')
+            (decimal received)
+            ' received'
+        ==
       =.  github-results
         (~(put by github-results) job.u.context [%.n %.y kind.u.context repository.u.context label])
       `this

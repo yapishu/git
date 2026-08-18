@@ -13,7 +13,7 @@
 ++  json-at
   |=  [key=@t jon=json]
   ^-  (unit json)
-  ?.  ?=(%o -.jon)  ~
+  ?.  ?=([%o *] jon)  ~
   (~(get by p.jon) key)
 ::
 ++  string-at
@@ -21,7 +21,7 @@
   ^-  (unit @t)
   =/  value=(unit json)  (json-at key jon)
   ?~  value  ~
-  ?.  ?=(%s -.u.value)  ~
+  ?.  ?=([%s *] u.value)  ~
   `p.u.value
 ::
 ++  signature

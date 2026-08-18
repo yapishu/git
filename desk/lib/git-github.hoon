@@ -11,7 +11,7 @@
 ++  json-at
   |=  [key=@t jon=json]
   ^-  (unit json)
-  ?.  ?=(%o -.jon)  ~
+  ?.  ?=([%o *] jon)  ~
   (~(get by p.jon) key)
 ::
 ++  string-at
@@ -19,7 +19,7 @@
   ^-  (unit @t)
   =/  value=(unit json)  (json-at key jon)
   ?~  value  ~
-  ?.  ?=(%s -.u.value)  ~
+  ?.  ?=([%s *] u.value)  ~
   `p.u.value
 ::
 ++  parse-decimal
@@ -40,7 +40,7 @@
   ^-  (unit @ud)
   =/  value=(unit json)  (json-at key jon)
   ?~  value  ~
-  ?.  ?=(%n -.u.value)  ~
+  ?.  ?=([%n *] u.value)  ~
   (parse-decimal p.u.value)
 ::
 ++  bool-at
@@ -48,7 +48,7 @@
   ^-  (unit ?)
   =/  value=(unit json)  (json-at key jon)
   ?~  value  ~
-  ?.  ?=(%b -.u.value)  ~
+  ?.  ?=([%b *] u.value)  ~
   `p.u.value
 ::
 ++  nested-string
@@ -155,6 +155,17 @@
   ^-  (list [@t @t])
   =/  headers=(list [@t @t])
     :~  ['accept' 'application/vnd.github+json']
+        ['x-github-api-version' '2022-11-28']
+        ['user-agent' 'urgit']
+    ==
+  ?~  token  headers
+  [['authorization' (rap 3 ~['Bearer ' u.token])] headers]
+::
+++  diff-headers
+  |=  token=(unit @t)
+  ^-  (list [@t @t])
+  =/  headers=(list [@t @t])
+    :~  ['accept' 'application/vnd.github.diff']
         ['x-github-api-version' '2022-11-28']
         ['user-agent' 'urgit']
     ==
@@ -359,7 +370,7 @@
 ++  forge-items
   |=  [jon=json include-pulls=?]
   ^-  (unit (list forge-item:git))
-  ?.  ?=(%a -.jon)  ~
+  ?.  ?=([%a *] jon)  ~
   =/  items=(list json)  p.jon
   =/  out=(list forge-item:git)  ~
   |-
