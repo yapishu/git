@@ -52,6 +52,7 @@
   ==
 +$  peer-result  [status=? message=@t repository=@t]
 +$  webhook-flight  [repository=@t hook=@ud delivery=@uv]
++$  peer-browse-serve  [target=ship pages=@ud]
 +$  peer-discovery
   $:  peer=ship
       active=?
@@ -63,9 +64,15 @@
   $:  peer=ship
       repository=@t
       view=?(%overview %file)
+      phase=?(%request %fine)
       active=?
       ok=?
       message=@t
+      progress=(unit [boq=@ud fag=@ud tot=@ud])
+      progress-at=@da
+      expected=@ud
+      received=@ud
+      parts=(map @ud [length=@ud data=@])
       result=(unit json)
   ==
 +$  peer-activity-kind  ?(%fork %serve %push %pull-request)
@@ -1516,6 +1523,33 @@
     remaining  t.remaining
     settled    (~(put by settled) -.i.remaining (settle-webhook-repository +.i.remaining))
   ==
+::
+++  peer-browse-join
+  |=  [pages=(map @ud [length=@ud data=@]) expected=@ud]
+  ^-  (unit @)
+  =/  revision=@ud  1
+  =/  offset=@ud  0
+  =/  encoded=@  0
+  |-
+  ?:  (gth revision expected)  `encoded
+  =/  page=(unit [length=@ud data=@])  (~(get by pages) revision)
+  ?~  page  ~
+  =/  page-length=@ud  -.u.page
+  =/  page-data=@  +.u.page
+  %=  $
+    revision  +(revision)
+    offset    (add offset page-length)
+    encoded   (mix encoded (lsh [3 offset] page-data))
+  ==
+::
+++  peer-browse-yawns
+  |=  [request=@uv peer=ship pages=@ud]
+  ^-  (list card)
+  %+  turn  (gulf 1 pages)
+  |=  revision=@ud
+  =/  scry-path=path
+    /g/x/(scot %ud revision)/urgit//1/browse/(scot %uv request)
+  [%pass /peer/browse-cancel/(scot %uv request)/(scot %ud revision) %arvo %a %yawn [peer scry-path]]
 --
 ::
 %-  agent:dbug
@@ -1531,6 +1565,7 @@
 =/  peer-results  *(map @uv peer-result)
 =/  peer-discoveries  *(map @uv peer-discovery)
 =/  peer-browses  *(map @uv peer-browse)
+=/  peer-browse-serving  *(map @uv peer-browse-serve)
 =/  peer-activities  *(list peer-activity)
 =/  github-in-flight  *(map @uv github-request)
 =/  github-results  *(map @uv github-result)
@@ -1554,7 +1589,7 @@
   |=  old=vase
   ^-  (quip card _this)
   =/  loaded=state-0:git  (settle-webhook-state !<(state-0:git old))
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -1632,6 +1667,19 @@
   ?:  =(count 15)
     $(remaining t.remaining, page ~, pages [next-page pages], count 0)
   $(remaining t.remaining, page next-page, count +(count))
+::
+++  peer-browse-pages
+  |=  result=json
+  ^-  (list [length=@ud data=@])
+  =/  encoded=@  (jam result)
+  =/  size=@ud  (met 3 encoded)
+  =/  offset=@ud  0
+  =/  pages=(list [length=@ud data=@])  ~
+  |-
+  ?:  =(offset size)  (flop pages)
+  =/  length=@ud  (min 65.536 (sub size offset))
+  =/  data=@  (cut 3 [offset length] encoded)
+  $(offset (add offset length), pages [[length data] pages])
 ::
 ++  peer-fail
   |=  [target=ship transfer=@uv message=@t]
@@ -1821,11 +1869,14 @@
       %browse-request
     (peer-browse-request request.packet repository.packet)
   ::
+      %browse-ready
+    (peer-browse-ready request.packet repository.packet target.packet pages.packet)
+  ::
       %browse-response
     (peer-browse-response request.packet repository.packet result.packet)
   ::
       %browse-begin
-    (peer-browse-begin request.packet repository.packet)
+    (peer-browse-begin request.packet repository.packet pages.packet)
   ::
       %browse-release
     (peer-browse-release request.packet)
@@ -1894,8 +1945,27 @@
     :_  this
     :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or not public'])
     ==
+  =/  browse-path=path  /browse/(scot %uv request)
+  =/  result=json  (repository-browse-json repository u.found)
+  =/  pages=(list [length=@ud data=@])  (peer-browse-pages result)
+  =.  peer-browse-serving
+    (~(put by peer-browse-serving) request [src.bowl (lent pages)])
   :_  this
-  :~  (peer-card src.bowl /peer/browse-response/(scot %uv request) [%browse-response request repository (repository-browse-json repository u.found)])
+  =/  page-cards=(list card)
+    %+  turn  pages
+    |=  page=[length=@ud data=@]
+    [%pass /peer/browse-grow/(scot %uv request) %grow browse-path noun+!>(page)]
+  =/  ready-cards=(list card)
+    :~  [%pass /peer/browse-ready/(scot %uv request) %agent [our.bowl %urgit] %poke %git-peer !>([%browse-ready request repository src.bowl (lent pages)])]
+    ==
+  (weld page-cards ready-cards)
+::
+++  peer-browse-ready
+  |=  [request=@uv repository=@t target=ship pages=@ud]
+  ^-  (quip card _this)
+  ?.  =(src.bowl our.bowl)  `this
+  :_  this
+  :~  (peer-card target /peer/browse-begin/(scot %uv request) [%browse-begin request repository pages])
   ==
 ::
 ++  peer-browse-response
@@ -1925,7 +1995,7 @@
   `this
 ::
 ++  peer-browse-begin
-  |=  [request=@uv repository=@t]
+  |=  [request=@uv repository=@t pages=@ud]
   ^-  (quip card _this)
   =/  found=(unit peer-browse)  (~(get by peer-browses) request)
   ?~  found  `this
@@ -1934,18 +2004,37 @@
           =(repository repository.u.found)
       ==
     `this
+  ?:  =(%fine phase.u.found)  `this
+  ?.  (gth pages 0)
+    =.  peer-browses
+      (~(put by peer-browses) request u.found(active %.n, ok %.n, message 'peer browse announced an empty Fine transfer'))
+    `this
   =.  peer-browses
-    (~(put by peer-browses) request u.found(message 'reading peer overview over Fine'))
-  =/  scry-path=path
-    /g/x/1/urgit//1/browse/(scot %uv request)
+    (~(put by peer-browses) request u.found(phase %fine, message 'reading peer overview over Fine', progress [~ [16 0 pages]], progress-at now.bowl, expected pages, received 0, parts ~))
   :_  this
-  :~  [%pass /peer/browse/(scot %uv request) %keen %.n src.bowl scry-path]
-  ==
+  =/  page-reads=(list card)
+    %+  turn  (gulf 1 pages)
+    |=  revision=@ud
+    =/  scry-path=path
+      /g/x/(scot %ud revision)/urgit//1/browse/(scot %uv request)
+    [%pass /peer/browse/(scot %uv request)/(scot %ud revision) %keen %.n src.bowl scry-path]
+  =/  stall-cards=(list card)
+    :~  [%pass /peer/browse-stall/(scot %uv request) %arvo %b %wait (add now.bowl ~s30)]
+    ==
+  (weld page-reads stall-cards)
 ::
 ++  peer-browse-release
   |=  request=@uv
   ^-  (quip card _this)
-  `this
+  =/  found=(unit peer-browse-serve)  (~(get by peer-browse-serving) request)
+  ?~  found  `this
+  ?.  =(src.bowl target.u.found)  `this
+  =/  culls=(list card)
+    %+  turn  (gulf 1 pages.u.found)
+    |=  revision=@ud
+    [%pass /peer/browse-cull/(scot %uv request)/(scot %ud revision) %cull [%ud revision] /browse/(scot %uv request)]
+  :_  this(peer-browse-serving (~(del by peer-browse-serving) request))
+  culls
 ::
 ++  peer-browse-error
   |=  [request=@uv message=@t]
@@ -2709,9 +2798,17 @@
         ['ship' s+(scot %p peer.browse)]
         ['repository' s+repository.browse]
         ['view' s+view.browse]
+        ['phase' s+phase.browse]
         ['active' b+active.browse]
         ['ok' b+ok.browse]
         ['message' s+message.browse]
+        :-  'progress'
+        ?~  progress.browse  ~
+        %-  pairs:enjs:format
+        :~  ['blockExponent' n+(decimal boq.u.progress.browse)]
+            ['received' n+(decimal fag.u.progress.browse)]
+            ['expected' n+(decimal tot.u.progress.browse)]
+        ==
         ['result' ?~(result.browse ~ u.result.browse)]
     ==
   (pairs:enjs:format ~[['browses' [%a entries]]])
@@ -2739,7 +2836,7 @@
     `@uv`(shas %git-peer-browse (cat 3 eny.bowl request-count))
   =.  request-count  +(request-count)
   =.  peer-browses
-    (~(put by peer-browses) request [peer repository view %.y %.n 'reading from peer' ~])
+    (~(put by peer-browses) request [peer repository view %request %.y %.n 'reading from peer' ~ now.bowl 0 0 ~ ~])
   :_  this
   %+  weld
     :~  (peer-card peer /peer/browse-request/(scot %uv request) [%browse-request request repository])
@@ -3539,7 +3636,15 @@
       (api-error eyre-id 404 'browse request not found')
     =.  peer-browses  (~(del by peer-browses) u.request)
     :_  this
-    (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
+    =/  response=(list card)
+      (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
+    ?.  =(%fine phase.u.found)  response
+    =/  cancel-cards=(list card)
+      (peer-browse-yawns u.request peer.u.found expected.u.found)
+    =/  release-cards=(list card)
+      :~  [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
+      ==
+    (weld cancel-cards (weld release-cards response))
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %peer %browse @ @ ~] site)
       ==
@@ -6621,28 +6726,57 @@
     :~  [%pass /peer/snapshot/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ==
   ::
-      [%peer %browse @ ~]
+      [%peer %browse @ @ ~]
     =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
     ?~  request  `this
+    =/  revision=(unit @ud)  (slaw %ud i.t.t.t.wire)
+    ?~  revision  `this
     =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
     ?~  found  `this
-    ?.  active.u.found  `this
+    ?.  ?&(active.u.found =(%fine phase.u.found))  `this
     =/  release-card=card
       [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
-    =/  result=(unit json)
+    =/  fail
+      |=  message=@t
+      ^-  (quip card _this)
+      =.  peer-browses
+        (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message message))
+      :_  this
+      :~  release-card
+      ==
+    ?.  ?&((gth u.revision 0) (lte u.revision expected.u.found))
+      (fail 'peer overview Fine response used an invalid page revision')
+    ?:  (~(has by parts.u.found) u.revision)  `this
+    =/  page=(unit [length=@ud data=@])
       ?.  ?=([%ames %sage *] sign-arvo)  ~
       =/  =sage:mess:ames  sage.sign-arvo
       ?.  =(ship.p.sage peer.u.found)  ~
       ?~  q.sage  ~
-      ?.  =(%json p.q.sage)  ~
+      ?.  =(%noun p.q.sage)  ~
       %-  mole
-      |.(;;(json +.q.q.sage))
+      |.(;;([@ud @] +.q.q.sage))
+    ?~  page
+      (fail 'peer overview Fine page was unavailable or malformed')
+    ?.  ?&  (gth length.u.page 0)
+            (lte length.u.page 65.536)
+            (lte (met 3 data.u.page) length.u.page)
+        ==
+      (fail 'peer overview Fine page had an invalid size')
+    =/  next-parts=(map @ud [length=@ud data=@])
+      (~(put by parts.u.found) u.revision u.page)
+    =/  next-received=@ud  +(received.u.found)
+    =/  next=peer-browse
+      u.found(parts next-parts, received next-received, progress [~ [16 next-received expected.u.found]], progress-at now.bowl, message (rap 3 ~['received ' (decimal next-received) ' of ' (decimal expected.u.found) ' Fine pages']))
+    =.  peer-browses  (~(put by peer-browses) u.request next)
+    ?.  =(next-received expected.next)  `this
+    =/  encoded=(unit @)  (peer-browse-join parts.next expected.next)
+    ?~  encoded
+      (fail 'peer overview Fine pages were incomplete')
+    =/  result=(unit json)
+      %-  mole
+      |.(;;(json (cue u.encoded)))
     ?~  result
-      =.  peer-browses
-        (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer overview Fine response was unavailable or malformed'))
-      :_  this
-      :~  release-card
-      ==
+      (fail 'peer overview Fine pages did not decode as JSON')
     =/  expected-repository=@t  repository.u.found
     =/  valid=?
       ?.  ?=(%o -.u.result)  %.n
@@ -6653,13 +6787,9 @@
       ?~  name-json  %.n
       ?&(?=(%s -.u.name-json) =(p.u.name-json expected-repository))
     ?.  valid
-      =.  peer-browses
-        (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer browse result has the wrong repository identity'))
-      :_  this
-      :~  release-card
-      ==
+      (fail 'peer browse result has the wrong repository identity')
     =.  peer-browses
-      (~(put by peer-browses) u.request u.found(active %.n, ok %.y, message 'complete', result `u.result))
+      (~(put by peer-browses) u.request next(active %.n, ok %.y, message 'complete', result `u.result))
     :_  this
     :~  release-card
     ==
@@ -6673,13 +6803,40 @@
     =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
     ?~  found  `this
     ?.  active.u.found  `this
-    =/  message=@t
-      ?:  =('reading peer overview over Fine' message.u.found)
-        'the peer Fine overview did not resolve; update %urgit on the source ship'
-      'peer did not answer the repository browse request'
+    ?:  =(%fine phase.u.found)  `this
     =.  peer-browses
-      (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message message))
+      (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer did not answer the repository browse request'))
     `this
+  ::
+      [%peer %browse-stall @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  request  `this
+    =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
+    ?~  found  `this
+    ?.  ?&  active.u.found
+            =(%fine phase.u.found)
+        ==
+      `this
+    ?~  progress.u.found
+      :_  this
+      :~  [%pass /peer/browse-stall/(scot %uv u.request) %arvo %b %wait (add now.bowl ~s30)]
+      ==
+    ?.  (gte (sub now.bowl progress-at.u.found) ~m2)
+      :_  this
+      :~  [%pass /peer/browse-stall/(scot %uv u.request) %arvo %b %wait (add now.bowl ~s30)]
+      ==
+    =.  peer-browses
+      (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'Fine transfer stalled without page progress'))
+    :_  this
+    =/  cancel-cards=(list card)
+      (peer-browse-yawns u.request peer.u.found expected.u.found)
+    =/  release-cards=(list card)
+      :~  [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
+      ==
+    (weld cancel-cards release-cards)
   ::
       [%peer %timeout @ ~]
     ?.  ?=([%behn %wake *] sign-arvo)
