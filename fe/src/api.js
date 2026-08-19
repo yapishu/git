@@ -55,6 +55,9 @@ export const api = {
   peerDetail: (ship, repository, kind, number) => request('/peer/detail', {
     method: 'POST', body: JSON.stringify({ ship, repository, kind, number }),
   }),
+  peerCommit: (ship, repository, oid) => request('/peer/commit', {
+    method: 'POST', body: JSON.stringify({ ship, repository, oid }),
+  }),
   peerFile: (ship, repository, path) => request(`/peer/file/${encodeURIComponent(ship)}/${encodeURIComponent(repository)}/${path.split('/').filter(Boolean).map(encodeURIComponent).join('/')}`, { method: 'POST', body: '{}' }),
   peerBrowses: () => request('/peer/browses'),
   peerDeleteBrowse: (requestId) => request('/peer/browses', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),

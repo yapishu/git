@@ -46,7 +46,7 @@
   $:  request=@uv
       repositories=(list catalog-repository)
   ==
-+$  browse-view  ?(%overview %issue %pull %file)
++$  browse-view  ?(%overview %issue %pull %commit %file)
 ::
 +$  forge-kind  ?(%issue %pull)
 ::

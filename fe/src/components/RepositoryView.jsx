@@ -966,7 +966,7 @@ function Commits({ data, loading, loadingMore, onLoadMore, onSelect, onCreateTag
   )
 }
 
-function CommitDetail({ data, onBack, onOpenGit, onCreateTag }) {
+export function CommitDetail({ data, onBack, onOpenGit, onCreateTag }) {
   if (!data) return <div className="empty">Loading commit…</div>
   const commit = data.commit
   const clay = data.historyKind === 'clay' || commit.kind === 'clay'

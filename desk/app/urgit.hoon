@@ -2208,6 +2208,9 @@
       =/  pull-json=(unit json)  (native-pull-detail-json repository u.found u.pull)
       ?~  pull-json  ~
       `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['pull' u.pull-json]])
+    ?:  =(%commit view)
+      ?~  file-path  ~
+      (repository-history-detail-json repository u.found i.file-path our.bowl now.bowl)
     =/  data=(unit octs)  (repository-file u.found file-path)
     ?~  data  ~
     ?:  (gth p.u.data 4.194.304)  ~
@@ -4386,6 +4389,29 @@
       :_  this
       (api-error eyre-id 422 'valid ship, repository, and file path are required')
     (start-peer-browse eyre-id u.peer repository %file 0 u.file-path)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %peer %commit ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    =/  repository=(unit @t)  (string-at 'repository' u.jon)
+    =/  identifier=(unit @t)  (string-at 'oid' u.jon)
+    ?.  ?&  ?=(^ ship-text)
+            ?=(^ repository)
+            ?=(^ identifier)
+            (valid-repository-name u.repository)
+            (lte (met 3 u.identifier) 128)
+        ==
+      :_  this
+      (api-error eyre-id 422 'ship, repository, and commit are required')
+    =/  peer=(unit @p)  (slaw %p u.ship-text)
+    ?~  peer
+      :_  this
+      (api-error eyre-id 422 'ship must be valid')
+    (start-peer-browse eyre-id u.peer u.repository %commit 0 [u.identifier ~])
   ?:  ?&  =(%'GET' method)
           ?=([%apps %urgit %api %peer %forge ~] site)
       ==
