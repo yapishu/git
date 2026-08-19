@@ -8,7 +8,7 @@ const source = readFileSync(
 )
 
 test('does not put extensionless SPA shells in the Eyre response cache', () => {
-  const routeStart = source.indexOf('?.  =(woot (scag (lent woot) site))')
+  const routeStart = source.indexOf('=/  request-root=(unit path)')
   const assetStart = source.indexOf('=/  =path', routeStart)
   assert.notEqual(routeStart, -1)
   assert.notEqual(assetStart, -1)
@@ -31,5 +31,18 @@ test('evicts known SPA shell entries on init and upgrade', () => {
   for (const lifecycle of [onInit, onLoad]) {
     assert.match(lifecycle, /\(store '\/apps\/urgit' ~\)/)
     assert.match(lifecycle, /\(store '\/apps\/urgit\/' ~\)/)
+    assert.match(lifecycle, /\(store '\/urgit' ~\)/)
+    assert.match(lifecycle, /\(store '\/urgit\/' ~\)/)
+  }
+})
+
+test('binds the public profile shell at /urgit on init and upgrade', () => {
+  const onInitStart = source.indexOf('++  on-init')
+  const onLoadStart = source.indexOf('++  on-load', onInitStart)
+  const onPokeStart = source.indexOf('++  on-poke', onLoadStart)
+  const onInit = source.slice(onInitStart, onLoadStart)
+  const onLoad = source.slice(onLoadStart, onPokeStart)
+  for (const lifecycle of [onInit, onLoad]) {
+    assert.match(lifecycle, /%connect \[~ \/urgit\]/)
   }
 })

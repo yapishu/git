@@ -11,6 +11,7 @@ import NewRepositoryModal from './components/NewRepositoryModal'
 import RemoteRepositoryView from './components/RemoteRepositoryView'
 import Settings from './components/Settings'
 import Sidebar from './components/Sidebar'
+import { exactTime, relativeTime } from './format'
 import { readRemoteCache, remoteCacheIsUsable, writeRemoteCache } from './remoteCache'
 
 function routeFromHash() {
@@ -382,7 +383,63 @@ function PublicApp({ name }) {
   </div>
 }
 
+const profileColor = (value) => {
+  const raw = String(value || '').replace(/^0x/, '')
+  return /^[0-9a-f]+$/i.test(raw) ? `#${raw.padStart(6, '0').slice(-6)}` : ''
+}
+
+function PublicProfileApp() {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const [theme, setTheme] = useState(() => localStorage.getItem('urgit-theme') || 'system')
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('urgit-theme', theme)
+  }, [theme])
+  useEffect(() => {
+    publicApi.profile().then((profile) => {
+      setData(profile)
+      document.title = `${profile.profile?.nickname || profile.ship} · urgit`
+    }).catch((cause) => setError(cause.message))
+  }, [])
+
+  const nextTheme = { system: 'light', light: 'dark', dark: 'system' }[theme]
+  const profile = data?.profilePublished ? data.profile : null
+  const name = profile?.nickname || data?.ship || ''
+  const repositories = [...(data?.repositories || [])].sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
+  const accent = profileColor(profile?.color)
+
+  return <div className="public-shell profile-shell">
+    <div className="workspace">
+      <div className="topbar profile-topbar"><a className="public-brand" href="/urgit">urgit</a><button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button></div>
+      {error ? <main className="profile-page"><div className="empty">{error}</div></main> : !data ? <main className="profile-page"><div className="empty">Loading profile…</div></main> : <main className="profile-page">
+        <section className={`profile-hero${profile?.cover ? ' with-cover' : ''}`} style={accent ? { '--profile-accent': accent } : undefined}>
+          {profile?.cover && <img className="profile-cover" src={profile.cover} alt="" onError={(event) => { event.currentTarget.hidden = true }} />}
+          <div className="profile-identity">
+            {profile?.avatar ? <img className="profile-avatar" src={profile.avatar} alt={`${name} avatar`} onError={(event) => { event.currentTarget.hidden = true }} /> : <div className="profile-avatar fallback" aria-hidden="true">{name.slice(0, 1).toUpperCase() || '~'}</div>}
+            <div><h1>{name}</h1>{profile?.nickname && <code>{data.ship}</code>}{profile?.status && <span className="profile-status">{profile.status}</span>}</div>
+          </div>
+          {profile?.bio && <p className="profile-bio">{profile.bio}</p>}
+        </section>
+
+        <section className="profile-repositories">
+          <header><div><h2>My repos</h2><p>{repositories.length} public {repositories.length === 1 ? 'repository' : 'repositories'}</p></div></header>
+          {!repositories.length ? <div className="empty compact">No public repositories.</div> : <div className="profile-repo-list">{repositories.map((repository) => {
+            const updated = relativeTime(repository.updatedAt)
+            return <a className="profile-repo-row" href={`/apps/urgit/public/${encodeURIComponent(repository.name)}`} key={repository.name}>
+              <div className="profile-repo-main"><h3>{repository.name}</h3>{repository.description && <p>{repository.description}</p>}</div>
+              <div className="profile-repo-meta">{updated && <time title={exactTime(repository.updatedAt)}>Updated {updated}</time>}<span>{repository.branchCount} {Number(repository.branchCount) === 1 ? 'branch' : 'branches'}</span>{Number(repository.tagCount) > 0 && <span>{repository.tagCount} {Number(repository.tagCount) === 1 ? 'tag' : 'tags'}</span>}</div>
+            </a>
+          })}</div>}
+        </section>
+      </main>}
+    </div>
+  </div>
+}
+
 export default function App() {
   const match = location.pathname.match(/^\/apps\/urgit\/public\/([^/]+)\/?$/)
-  return <ConfirmProvider>{match ? <PublicApp name={decodeURIComponent(match[1])} /> : <PrivateApp />}</ConfirmProvider>
+  const profile = /^\/urgit\/?$/.test(location.pathname)
+  return <ConfirmProvider>{profile ? <PublicProfileApp /> : match ? <PublicApp name={decodeURIComponent(match[1])} /> : <PrivateApp />}</ConfirmProvider>
 }

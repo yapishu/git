@@ -4,6 +4,8 @@
 /+  dbug, default-agent, git-archive, git-blame, git-clay, git-clay-history, git-codec, git-github, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
 |%
 +$  card  card:agent:gall
++$  profile-value  $@(~ [kind=@tas value=*])
++$  profile-contact  (map @tas profile-value)
 +$  lfs-spec  [oid=@t size=@ud]
 +$  lfs-request  [eyre-id=@ta repository=@t oid=@t upload=lfs-upload:git]
 +$  lfs-delete  [repository=@t oid=@t]
@@ -461,6 +463,88 @@
   =.  events  (~(put in events) %issue-comment)
   =.  events  (~(put in events) %pull-request)
   (~(put in events) %pull-comment)
+::
+++  profile-field
+  |=  [contact=profile-contact field=@tas kind=@tas]
+  ^-  @t
+  =/  found=(unit profile-value)  (~(get by contact) field)
+  ?~  found  ''
+  ?@  u.found  ''
+  ?.  =(kind kind.u.found)  ''
+  ?@  value.u.found  `@t`value.u.found
+  ''
+::
+++  profile-color
+  |=  contact=profile-contact
+  ^-  @t
+  =/  found=(unit profile-value)  (~(get by contact) %color)
+  ?~  found  ''
+  ?@  u.found  ''
+  ?.  =(%tint kind.u.found)  ''
+  ?@  value.u.found  (scot %ux `@ux`value.u.found)
+  ''
+::
+++  repository-updated-at
+  |=  repo=repository:git
+  ^-  @t
+  =/  head-oid=(unit oid:git)  (~(get by refs.repo) head.repo)
+  ?~  head-oid  ''
+  =/  found=(unit object:git)  (~(get by objects.repo) u.head-oid)
+  ?.  ?&(?=(^ found) =(%commit kind.u.found))  ''
+  =/  identity=(unit commit-identity)  (commit-identity-at data.u.found 'committer ')
+  ?~  identity  ''
+  timestamp.u.identity
+::
+++  profile-repository-json
+  |=  [name=@t repo=repository:git]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['name' s+name]
+      ['description' s+description.repo]
+      ['head' s+head.repo]
+      ['updatedAt' s+(repository-updated-at repo)]
+      ['branchCount' n+(decimal (ref-count-prefix refs.repo 'refs/heads/'))]
+      ['tagCount' n+(decimal (ref-count-prefix refs.repo 'refs/tags/'))]
+  ==
+::
+++  public-profile-json
+  |=  [who=@p now=@da repos=(map @t repository:git)]
+  ^-  json
+  =/  result=(each [bound=? contact=profile-contact] tang)
+    %-  mule  |.
+    =/  bound=?
+      .^(? %gx /(scot %p who)/profile/(scot %da now)/bound/loob)
+    =/  contact=profile-contact
+      ?.  bound  *profile-contact
+      .^(profile-contact %gx /(scot %p who)/contacts/(scot %da now)/v1/self/contact-1)
+    [bound contact]
+  =/  published=?
+    ?:  ?=(%| -.result)  %.n
+    bound.p.result
+  =/  contact=profile-contact
+    ?:  ?=(%| -.result)  *profile-contact
+    contact.p.result
+  =/  public-repositories=(list json)
+    %+  murn  ~(tap by repos)
+    |=  entry=[@t repository:git]
+    ?.  public-read.+.entry  ~
+    `(profile-repository-json -.entry +.entry)
+  =/  profile-json=json
+    ?.  published  ~
+    %-  pairs:enjs:format
+    :~  ['nickname' s+(profile-field contact %nickname %text)]
+        ['bio' s+(profile-field contact %bio %text)]
+        ['status' s+(profile-field contact %status %text)]
+        ['avatar' s+(profile-field contact %avatar %look)]
+        ['cover' s+(profile-field contact %cover %look)]
+        ['color' s+(profile-color contact)]
+    ==
+  %-  pairs:enjs:format
+  :~  ['ship' s+(scot %p who)]
+      ['profilePublished' b+published]
+      ['profile' profile-json]
+      ['repositories' [%a public-repositories]]
+  ==
 ::
 ++  repository-json
   |=  [name=@t repo=repository:git]
@@ -3729,6 +3813,9 @@
   ?.  =(%'GET' method)
     :_  this
     (api-error eyre-id 405 'public repository API is read-only')
+  ?:  ?=([%apps %urgit %api %public %profile ~] site)
+    :_  this
+    (api-json eyre-id 200 (public-profile-json our.bowl now.bowl repositories))
   ?:  ?=([%apps %urgit %api %public %repository @ ~] site)
     =/  name=@t  (api-terminal-name i.t.t.t.t.t.site ext.line)
     =/  found=(unit repository:git)  (~(get by repositories) name)

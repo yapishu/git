@@ -74,6 +74,33 @@ button { color: inherit; }
 .public-brand { color: var(--text); font-weight: 750; font-size: 16px; text-decoration: none; letter-spacing: -.03em; }
 .public-read-label { align-self: center; color: var(--muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
 .public-url { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.profile-topbar { padding-right: max(26px, calc((100vw - 1040px) / 2)); padding-left: max(26px, calc((100vw - 1040px) / 2)); }
+.profile-page { width: min(1040px, calc(100% - 40px)); margin: 34px auto 80px; }
+.profile-hero { --profile-accent: var(--accent); position: relative; min-height: 236px; display: flex; flex-direction: column; justify-content: flex-end; padding: 32px; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: linear-gradient(135deg, color-mix(in srgb, var(--profile-accent) 12%, var(--panel)), var(--panel) 58%); box-shadow: var(--shadow); isolation: isolate; }
+.profile-hero.with-cover { min-height: 310px; color: white; border-color: transparent; background: #20251f; }
+.profile-hero.with-cover::after { position: absolute; inset: 0; z-index: -1; content: ''; background: linear-gradient(to top, rgba(8, 11, 8, .86), rgba(8, 11, 8, .05) 70%); }
+.profile-cover { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; }
+.profile-identity { display: flex; align-items: center; gap: 20px; }
+.profile-avatar { width: 92px; height: 92px; flex: 0 0 auto; border: 3px solid color-mix(in srgb, var(--panel) 82%, transparent); border-radius: 18px; background: var(--panel); object-fit: cover; box-shadow: 0 8px 28px rgba(0, 0, 0, .15); }
+.profile-avatar.fallback { display: grid; place-items: center; background: var(--profile-accent); color: white; font-size: 34px; font-weight: 750; }
+.profile-identity h1 { margin: 0 0 6px; font-size: 29px; }
+.profile-identity code { display: block; color: var(--muted); font-size: 13px; }
+.profile-hero.with-cover .profile-identity code, .profile-hero.with-cover .profile-bio { color: rgba(255, 255, 255, .76); }
+.profile-status { display: inline-block; margin-top: 9px; padding: 4px 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 999px; color: var(--muted); font-size: 10px; }
+.profile-hero.with-cover .profile-status { color: rgba(255, 255, 255, .82); }
+.profile-bio { max-width: 650px; margin: 20px 0 0 112px; white-space: pre-wrap; font-size: 13px; }
+.profile-repositories { margin-top: 34px; }
+.profile-repositories > header { display: flex; align-items: end; justify-content: space-between; margin-bottom: 12px; }
+.profile-repositories > header h2 { margin: 0; font-size: 17px; }
+.profile-repositories > header p { margin: 4px 0 0; font-size: 11px; }
+.profile-repo-list { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+.profile-repo-row { min-height: 96px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 28px; padding: 18px 20px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
+.profile-repo-row:last-child { border-bottom: 0; }
+.profile-repo-row:hover { background: var(--soft); }
+.profile-repo-main { min-width: 0; }
+.profile-repo-main h3 { margin: 0; color: var(--accent); font-size: 15px; }
+.profile-repo-main p { max-width: 700px; margin: 7px 0 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.profile-repo-meta { display: flex; align-items: flex-end; flex-direction: column; gap: 5px; color: var(--muted); font-size: 10px; white-space: nowrap; }
 .topbar { height: 58px; padding: 0 26px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 5; }
 .topbar-navigation { min-width: 0; display: flex; align-items: center; gap: 2px; }
 .topbar-navigation .topbar-label, .topbar-navigation .public-brand { margin-left: 8px; }
@@ -629,4 +656,12 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
   .issue-layout { grid-template-columns: 1fr; }
   .release-card > header { flex-direction: column; }
   .release-actions { width: 100%; justify-content: space-between; }
+  .profile-page { width: min(100% - 24px, 1040px); margin-top: 18px; }
+  .profile-hero, .profile-hero.with-cover { min-height: 260px; padding: 22px; }
+  .profile-avatar { width: 72px; height: 72px; border-radius: 14px; }
+  .profile-identity { gap: 14px; }
+  .profile-identity h1 { font-size: 23px; }
+  .profile-bio { margin-left: 0; }
+  .profile-repo-row { grid-template-columns: 1fr; gap: 12px; }
+  .profile-repo-meta { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
 }

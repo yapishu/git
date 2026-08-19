@@ -85,10 +85,13 @@
   ::  and await next file change
   ::
   :~  [%pass /eyre/connect %arvo %e %connect [~ woot] dap.bowl]
+      [%pass /eyre/connect %arvo %e %connect [~ /urgit] dap.bowl]
       (set-norm [our q.byk]:bowl foot |)
       (read-next [our q.byk now]:bowl foot)
       (store '/apps/urgit' ~)
       (store '/apps/urgit/' ~)
+      (store '/urgit' ~)
+      (store '/urgit/' ~)
   ==
 ::
 ++  on-save
@@ -122,6 +125,8 @@
       ::
       :~  (store '/apps/urgit' ~)
           (store '/apps/urgit/' ~)
+          (store '/urgit' ~)
+          (store '/urgit/' ~)
       ==
     ::
       ::  if the file root changed, remove tombstoning from the old root.
@@ -134,15 +139,17 @@
       ::  revives even when web-root is unchanged.
       ::
       ^-  (list card)
-      ?:  =(woot.old web-root)
+      =/  root-cards=(list card)
+        ?:  =(woot.old web-root)
         ::  same root: unconditional rebind
-        [[%pass /eyre/connect %arvo %e %connect [~ web-root] dap.bowl] ~]
-      ::  web-root changed: disconnect the old, bind the new
-      ::NOTE  re-bind first to avoid duct shenanigans.
-      :~  [%pass /eyre/connect %arvo %e %connect [~ woot.old] dap.bowl]
-          [%pass /eyre/connect %arvo %e %disconnect [~ woot.old]]
-          [%pass /eyre/connect %arvo %e %connect [~ web-root] dap.bowl]
-      ==
+          [[%pass /eyre/connect %arvo %e %connect [~ web-root] dap.bowl] ~]
+        ::  web-root changed: disconnect the old, bind the new
+        ::NOTE  re-bind first to avoid duct shenanigans.
+        :~  [%pass /eyre/connect %arvo %e %connect [~ woot.old] dap.bowl]
+            [%pass /eyre/connect %arvo %e %disconnect [~ woot.old]]
+            [%pass /eyre/connect %arvo %e %connect [~ web-root] dap.bowl]
+        ==
+      (snoc root-cards [%pass /eyre/connect %arvo %e %connect [~ /urgit] dap.bowl])
   ==
 ::
 ++  on-poke
@@ -176,6 +183,8 @@
   ?.  ?|  authenticated
           (~(has in pwa-paths) url.request)
           (starts-with '/apps/urgit/public/' url.request)
+          =('/urgit' url.request)
+          =('/urgit/' url.request)
       ==
     [| [403 ~] `(as-octs:mimes:html 'unauthenticated')]
   ?.  ?=(%'GET' method.request)
@@ -183,7 +192,11 @@
   =+  ^-  [[ext=(unit @ta) site=(list @t)] args=(list [key=@t value=@t])]
     =-  (fall - [[~ ~] ~])
     (rush url.request ;~(plug apat:de-purl:html yque:de-purl:html))
-  ?.  =(woot (scag (lent woot) site))
+  =/  request-root=(unit path)
+    ?:  =(woot (scag (lent woot) site))  `woot
+    ?:  =(/urgit (scag 1 site))  `/urgit
+    ~
+  ?~  request-root
     [| [500 ~] `(as-octs:mimes:html 'bad route')]
   ::  Cache versioned asset paths, but always read extensionless SPA shells
   ::  fresh.  The shell carries the current asset digest, so an Eyre cache
@@ -211,7 +224,7 @@
     :*  (scot %p our.bowl)
         q.byk.bowl
         (scot %da now.bowl)
-        (weld foot (snoc (slag (lent woot) site) u.ext))
+        (weld foot (snoc (slag (lent u.request-root) site) u.ext))
     ==
   ?.  .^(? %cu path)
     ~&  [dap.bowl %not-found path=path]
@@ -226,7 +239,7 @@
   =/  cache-val=@t
     ?+  u.ext  'max-age=3600'
       %css  'max-age=3600'
-      %js   ?:  =('sw' (rear (slag (lent woot) site)))
+      %js   ?:  =('sw' (rear (slag (lent u.request-root) site)))
               'no-cache'
             'max-age=3600'
       %svg  'max-age=86400'

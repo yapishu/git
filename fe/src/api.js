@@ -30,6 +30,7 @@ const publicFileRoute = (name, path) => {
 }
 
 export const publicApi = {
+  profile: () => request('/public/profile'),
   repository: (name) => request(`/public/repository/${encodeURIComponent(name)}`),
   issue: (name, number) => request(`/public/repository/${encodeURIComponent(name)}/issues/${number}`),
   files: (name, ref) => request(atRef(`/public/repository/${encodeURIComponent(name)}/files`, ref)),
