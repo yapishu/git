@@ -40,14 +40,14 @@
 - authenticated web API for repository lifecycle, access policy, write tokens, Clay bindings, and publication
 - componentized React interface with repository navigation, clone URLs, file trees, commit history, and settings
 - GitHub-style repository summaries with file, commit, branch, tag, and LFS counts rather than internal object counts
-- branch-aware file browsing, text and image blob views, authenticated text editing, per-file history, commit identities, and commit detail
+- branch-aware file browsing, text and image blob views, safe rendered Markdown READMEs, authenticated text editing, per-file history, commit identities, and commit detail
 - bounded occurrence-aware line blame across Git first-parent commits and native Clay revisions, with attributed source gutters in authenticated and public file views
 - mounted-desk discovery and first-class desk-to-repository publication
 - Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, a bounded initial-response deadline, byte-bounded checksummed Git-pack pages, one verified sequential Fine read in flight, exact-path `%yawn` cancellation, Dojo transfer diagnostics, status pruning, pack checksum and object-count checks, and per-object OID verification
 - two-ship Fine conformance: bidirectional native forks reconstructed complete repositories and passed stock Git clone and `git fsck --full`
 - on-demand Ames peer discovery with bounded public-repository catalogs, writer hints, expiry, cancellation, and status pruning
 - persistent peer bookmarks with expandable public repositories in the sidebar
-- bounded remote repository overviews over Ames, with request-scoped Fine overview reads accepted and every unanswered browse terminated explicitly
+- bounded remote repository overviews over Ames, with request-scoped Fine overview and individual-file reads accepted and every unanswered browse terminated explicitly
 - remote forge summaries expose native and cached GitHub issues and pull requests alongside code, branches, and history
 - request-scoped Fine detail reads expose native issue bodies and comments plus pull-request diffs and review discussion; authenticated Ames requests create native issues and append origin-authoritative ship-authored comments to both native issues and pull requests
 - bounded peer activity notifications for incoming and outgoing forks, snapshot reads, native updates, and pull requests
@@ -73,6 +73,7 @@
 - request-scoped, size-checked upstream GitHub file views for linked repositories without persisting response bodies
 - consolidated new-repository flow for blank repositories, Clay desks, peer forks, and GitHub imports; peer forks accept an explicit local name, distinguish safe same-origin refreshes from collisions, and use in-app confirmation dialogs for destructive actions
 - repository navigation and filtering: repository search, code, issues, pull requests, branches, 50-item commit or Clay-revision history pages, expandable file trees, deep-linked line ranges, syntax-highlighted file editing/history, and settings
+- browser-local drafts scoped to each repository, branch, file, issue, pull request, and peer discussion, cleared only after successful submission
 - web branch management with source-tip creation, default-branch selection, guarded deletion, and create/edit/delete commits on any selected branch
 - authenticated and public branch comparison with bounded tree diffs and downloadable unified patches for text-only changes
 - bounded branch-aware code search with line-level deep links for authenticated and public repository views

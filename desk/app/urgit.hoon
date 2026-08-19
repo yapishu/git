@@ -92,6 +92,7 @@
       repository=@t
       view=browse-view:git-peer
       number=@ud
+      file-path=path
       phase=?(%request %fine)
       active=?
       ok=?
@@ -2031,7 +2032,7 @@
     (peer-catalog-error request.packet message.packet)
   ::
       %browse-request
-    (peer-browse-request request.packet repository.packet view.packet number.packet)
+    (peer-browse-request request.packet repository.packet view.packet number.packet file-path.packet)
   ::
       %browse-ready
     (peer-browse-ready request.packet repository.packet target.packet pages.packet)
@@ -2111,7 +2112,7 @@
   `this
 ::
 ++  peer-browse-request
-  |=  [request=@uv repository=@t view=browse-view:git-peer number=@ud]
+  |=  [request=@uv repository=@t view=browse-view:git-peer number=@ud file-path=path]
   ^-  (quip card _this)
   =/  found=(unit repository:git)  (~(get by repositories) repository)
   ?.  ?&(?=(^ found) public-read.u.found)
@@ -2125,14 +2126,19 @@
       =/  issue=(unit native-issue:git)  (native-issue-at u.found number)
       ?~  issue  ~
       `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['issue' (native-issue-json u.issue %.y)]])
-    =/  pull=(unit native-pull:git)  (native-pull-at u.found number)
-    ?~  pull  ~
-    =/  pull-json=(unit json)  (native-pull-detail-json repository u.found u.pull)
-    ?~  pull-json  ~
-    `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['pull' u.pull-json]])
+    ?:  =(%pull view)
+      =/  pull=(unit native-pull:git)  (native-pull-at u.found number)
+      ?~  pull  ~
+      =/  pull-json=(unit json)  (native-pull-detail-json repository u.found u.pull)
+      ?~  pull-json  ~
+      `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['pull' u.pull-json]])
+    =/  data=(unit octs)  (repository-file u.found file-path)
+    ?~  data  ~
+    ?:  (gth p.u.data 4.194.304)  ~
+    `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['file' (repository-file-json repository u.found head.u.found file-path u.data)]])
   ?~  detail
     :_  this
-    :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'forge item not found or its Git objects are incomplete'])
+    :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'requested item is unavailable, incomplete, or too large to preview'])
     ==
   =/  browse-path=path  /browse/(scot %uv request)
   =/  result=json  u.detail
@@ -3234,6 +3240,7 @@
         ['repository' s+repository.browse]
         ['view' s+view.browse]
         ['number' n+(decimal number.browse)]
+        ['path' s+(spat file-path.browse)]
         ['phase' s+phase.browse]
         ['active' b+active.browse]
         ['ok' b+ok.browse]
@@ -3250,7 +3257,7 @@
   (pairs:enjs:format ~[['browses' [%a entries]]])
 ::
 ++  start-peer-browse
-  |=  [eyre-id=@ta peer=ship repository=@t view=browse-view:git-peer number=@ud]
+  |=  [eyre-id=@ta peer=ship repository=@t view=browse-view:git-peer number=@ud file-path=path]
   ^-  (quip card _this)
   =/  duplicate=(unit [@uv peer-browse])
     =/  matches=(list [@uv peer-browse])
@@ -3262,6 +3269,7 @@
               =(repository repository.browse)
               =(view view.browse)
               =(number number.browse)
+              =(file-path file-path.browse)
           ==
         ~
       `entry
@@ -3273,10 +3281,10 @@
     `@uv`(shas %git-peer-browse (cat 3 eny.bowl request-count))
   =.  request-count  +(request-count)
   =.  peer-browses
-    (~(put by peer-browses) request [peer repository view number %request %.y %.n 'reading from peer' ~ now.bowl 0 0 ~ ~])
+    (~(put by peer-browses) request [peer repository view number file-path %request %.y %.n 'reading from peer' ~ now.bowl 0 0 ~ ~])
   :_  this
   %+  weld
-    :~  (peer-card peer /peer/browse-request/(scot %uv request) [%browse-request request repository view number])
+    :~  (peer-card peer /peer/browse-request/(scot %uv request) [%browse-request request repository view number file-path])
         [%pass /peer/browse-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s45)]
     ==
   (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
@@ -4232,7 +4240,7 @@
     ?.  ?&(?=(^ peer) (valid-repository-name repository))
       :_  this
       (api-error eyre-id 422 'valid ship and repository are required')
-    (start-peer-browse eyre-id u.peer repository %overview 0)
+    (start-peer-browse eyre-id u.peer repository %overview 0 ~)
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %peer %detail ~] site)
       ==
@@ -4261,7 +4269,22 @@
     ?.  ?&(?=(^ peer) ?=(^ view))
       :_  this
       (api-error eyre-id 422 'ship and kind must be valid')
-    (start-peer-browse eyre-id u.peer u.repository u.view u.number)
+    (start-peer-browse eyre-id u.peer u.repository u.view u.number ~)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %peer %file @ @ *] site)
+      ==
+    =/  ship-text=@t  i.t.t.t.t.t.site
+    =/  repository=@t  i.t.t.t.t.t.t.site
+    =/  peer=(unit @p)  (slaw %p ship-text)
+    =/  file-path=(unit path)  (api-file-path t.t.t.t.t.t.t.site ext.line)
+    ?.  ?&  ?=(^ peer)
+            (valid-repository-name repository)
+            ?=(^ file-path)
+            !=(~ u.file-path)
+        ==
+      :_  this
+      (api-error eyre-id 422 'valid ship, repository, and file path are required')
+    (start-peer-browse eyre-id u.peer repository %file 0 u.file-path)
   ?:  ?&  =(%'GET' method)
           ?=([%apps %urgit %api %peer %forge ~] site)
       ==

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, waitForPeerTransfer } from '../api'
 import { exactBytes, formatBytes } from '../format'
 import { comparisonPatch } from '../patch'
@@ -6,6 +6,9 @@ import FileTree from './FileTree'
 import { useConfirm } from './ConfirmDialog'
 import { HighlightedCode, HighlightedEditor } from './HighlightedCode'
 import { CopyIcon } from './Icons'
+import Readme from './Readme'
+import Markdown from './Markdown'
+import { clearLocalDraft, readLocalDraft, saveLocalDraft, useLocalDraft } from '../useLocalDraft'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
 const historyId = (commit) => commit?.kind === 'clay' ? `r${commit.revision}` : shortOid(commit?.oid)
@@ -118,11 +121,11 @@ const imageType = (path) => {
   return ({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' })[extension]
 }
 
-function Files({ data, commit, loading, onOpen, onOpenCommit }) {
+function Files({ data, commit, loading, onOpen, onOpenCommit, loadFile }) {
   if (loading) return <div className="empty">Loading tree…</div>
   if (!data?.files?.length) return <div className="empty">This repository has no files yet.</div>
   const header = commit ? <div className="latest-commit"><span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span><span><strong>{commit.subject || 'Untitled commit'}</strong><small>{identityLabel(commit.author)}{dateLabel(commit.committer) ? ` · ${dateLabel(commit.committer)}` : ''}</small></span><button className="commit-hash" title={`View ${commit.kind === 'clay' ? `revision ${commit.revision}` : commit.oid}`} onClick={() => onOpenCommit?.(commit)} disabled={!onOpenCommit}><code>{historyId(commit)}</code></button></div> : null
-  return <FileTree files={data.files} header={header} onOpen={onOpen} />
+  return <><FileTree files={data.files} header={header} onOpen={onOpen} />{loadFile && <Readme files={data.files} loadFile={loadFile} onOpen={onOpen} />}</>
 }
 
 function SearchResults({ data, query, loading, error, onOpen }) {
@@ -149,7 +152,7 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
   const [view, setView] = useState('file')
   const [text, setText] = useState('')
   const [original, setOriginal] = useState('')
-  const [message, setMessage] = useState(`Edit ${path}`)
+  const [message, setMessage] = useState(() => readLocalDraft(`file:${repository}:${branch}:${path}:message`, `Edit ${path}`))
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
@@ -158,8 +161,11 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
   const [upstreamBusy, setUpstreamBusy] = useState(false)
   const [blame, setBlame] = useState(null)
   const [blameBusy, setBlameBusy] = useState(false)
+  const contentDraftKey = `file:${repository}:${branch}:${path}:content`
+  const messageDraftKey = `file:${repository}:${branch}:${path}:message`
 
   useEffect(() => { setRevision(branch); setHistory(null); setUpstream(null); setView('file') }, [branch, path])
+  useEffect(() => { setMessage(readLocalDraft(messageDraftKey, `Edit ${path}`)); setEditing(false) }, [messageDraftKey, path])
   useEffect(() => { setBlame(null) }, [revision, path])
 
   useEffect(() => {
@@ -170,11 +176,11 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
       if (!active) return
       const decoded = decodeBase64(data.content)
       setFile({ ...data, ...decoded })
-      setText(decoded.text ?? '')
+      setText(readLocalDraft(contentDraftKey, decoded.text ?? ''))
       setOriginal(decoded.text ?? '')
     }).catch((cause) => active && setError(cause.message)).finally(() => active && setBusy(false))
     return () => { active = false }
-  }, [repository, path, revision, client])
+  }, [repository, path, revision, client, contentDraftKey])
 
   useEffect(() => {
     if (view !== 'history' || history) return
@@ -187,6 +193,7 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
     try {
       await api.saveFile(repository, path, encodeBase64(text), message.trim(), branch)
       setOriginal(text)
+      clearLocalDraft(contentDraftKey); clearLocalDraft(messageDraftKey)
       setEditing(false)
       await onSaved()
     } catch (cause) {
@@ -263,17 +270,17 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
         upstreamBusy ? <div className="empty">Reading file from GitHub…</div> : upstream ? <><div className="upstream-file-meta"><span>GitHub · <code>{shortOid(upstream.sha)}</code> · {formatBytes(upstream.size)}</span>{upstream.url && <a href={upstream.url} target="_blank" rel="noreferrer">Open on GitHub ↗</a>}</div>{upstream.text !== null ? <HighlightedCode code={upstream.text} path={path} selectedStart={lineStart} selectedEnd={lineEnd} onSelectLine={onSelectLine} /> : <div className="empty" title={exactBytes(upstream.size)}>Binary file · {formatBytes(upstream.size)}</div>}</> : null
       ) : busy && !file ? <div className="empty">Loading file…</div> : editing ? (
         <div className="editor-panel">
-          <HighlightedEditor value={text} path={path} onChange={(event) => setText(event.target.value)} />
+          <HighlightedEditor value={text} path={path} onChange={(event) => { setText(event.target.value); saveLocalDraft(contentDraftKey, event.target.value) }} />
           <div className="editor-footer">
-            <input value={message} onChange={(event) => setMessage(event.target.value)} aria-label="Commit message" />
-            <button className="button" onClick={() => { setText(original); setEditing(false) }}>Cancel</button>
+            <input value={message} onChange={(event) => { setMessage(event.target.value); saveLocalDraft(messageDraftKey, event.target.value) }} aria-label="Commit message" />
+            <button className="button" onClick={() => { clearLocalDraft(contentDraftKey); clearLocalDraft(messageDraftKey); setText(original); setMessage(`Edit ${path}`); setEditing(false) }}>Cancel</button>
             <button className="button primary" disabled={busy || !message.trim() || text === original} onClick={save}>{busy ? 'Committing…' : 'Commit changes'}</button>
           </div>
         </div>
       ) : objectUrl ? (
         <div className="image-view"><img src={objectUrl} alt={path} /></div>
       ) : file?.text !== null ? (
-        <HighlightedCode code={file?.text} path={path} selectedStart={lineStart} selectedEnd={lineEnd} onSelectLine={onSelectLine} />
+        /\.(?:md|markdown)$/i.test(path) ? <section className="readme-panel standalone"><header><span>{path.replace(/^\/+/, '')}</span></header><Markdown>{file.text}</Markdown></section> : <HighlightedCode code={file?.text} path={path} selectedStart={lineStart} selectedEnd={lineEnd} onSelectLine={onSelectLine} />
       ) : file ? (
         <div className="empty" title={exactBytes(file.size)}>Binary file · {formatBytes(file.size)}</div>
       ) : null}
@@ -282,9 +289,9 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
 }
 
 function NewFile({ repository, branch, onCancel, onCreated }) {
-  const [path, setPath] = useState('')
-  const [content, setContent] = useState('')
-  const [message, setMessage] = useState('Create file')
+  const [path, setPath, clearPath] = useLocalDraft(`new-file:${repository}:${branch}:path`)
+  const [content, setContent, clearContent] = useLocalDraft(`new-file:${repository}:${branch}:content`)
+  const [message, setMessage, clearMessage] = useLocalDraft(`new-file:${repository}:${branch}:message`, 'Create file')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const normalized = `/${path.trim().replace(/^\/+/, '')}`
@@ -292,6 +299,7 @@ function NewFile({ repository, branch, onCancel, onCreated }) {
     setBusy(true); setError('')
     try {
       await api.saveFile(repository, normalized, encodeBase64(content), message.trim(), branch)
+      clearPath(); clearContent(); clearMessage()
       await onCreated(normalized)
     } catch (cause) { setError(cause.message); setBusy(false) }
   }
@@ -609,12 +617,12 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
   const [selected, setSelected] = useState(null)
   const [diff, setDiff] = useState(null)
   const [creating, setCreating] = useState(false)
-  const [title, setTitle] = useState('')
+  const [title, setTitle, clearTitle] = useLocalDraft(`new-pull:${repo.name}:title`)
   const [submitBusy, setSubmitBusy] = useState(false)
   const [submitStatus, setSubmitStatus] = useState('')
   const localBranches = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/') && ref.name !== repo.head)
   const [sourceBranch, setSourceBranch] = useState(localBranches[0]?.name || '')
-  const [commentBody, setCommentBody] = useState('')
+  const [commentBody, setCommentBody, clearCommentBody] = useLocalDraft(selected ? `pull-comment:${repo.name}:${selected.number}` : '')
   const [commentTarget, setCommentTarget] = useState(null)
   const [commentBusy, setCommentBusy] = useState(false)
   const [githubPage, setGithubPage] = useState(1)
@@ -671,7 +679,7 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
       if (!repo.peerOrigin) {
         const opened = await api.createPull(repo.name, title.trim(), sourceBranch)
         setSubmitStatus(`Pull request #${opened.number} opened`)
-        setTitle(''); setCreating(false)
+        clearTitle(); setCreating(false)
         await onMutate?.()
         return
       }
@@ -682,7 +690,7 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
       await api.peerDeleteTransfer(started.transfer).catch(() => {})
       if (!transfer.ok) throw new Error(transfer.message)
       setSubmitStatus(transfer.message || 'Pull request opened')
-      setTitle('')
+      clearTitle()
       return
     } catch (cause) {
       setError(cause.message); setSubmitStatus('')
@@ -692,7 +700,7 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
   }
 
   async function inspect(pull) {
-    setSelected(pull); setDiff(null); setGithubDetail(null); setGithubDiff(null); setError(''); setCommentBody(''); setCommentTarget(null)
+    setSelected(pull); setDiff(null); setGithubDetail(null); setGithubDiff(null); setError(''); setCommentTarget(null)
     try {
       if (pull.native) setDiff(await api.pull(repo.name, pull.number))
       else {
@@ -714,7 +722,7 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
     setCommentBusy(true); setError('')
     try {
       await api.addPullComment(repo.name, selected.number, commentBody.trim(), commentTarget?.path || '', commentTarget?.line || 0, commentTarget?.side || '')
-      setCommentBody(''); setCommentTarget(null)
+      clearCommentBody(); setCommentTarget(null)
       setDiff(await api.pull(repo.name, selected.number))
       await onMutate?.()
     } catch (cause) { setError(cause.message) } finally { setCommentBusy(false) }
@@ -800,7 +808,7 @@ function IssueText({ text = '' }) {
 
 function NativeIssueDetail({ repo, issue: initialIssue, publicMode, client, onBack, onMutate }) {
   const [issue, setIssue] = useState(initialIssue)
-  const [comment, setComment] = useState('')
+  const [comment, setComment, clearComment] = useLocalDraft(`issue-comment:${repo.name}:${initialIssue.number}`)
   const [labels, setLabels] = useState((initialIssue.labels || []).join(', '))
   const [assignees, setAssignees] = useState((initialIssue.assignees || []).join(', '))
   const [busy, setBusy] = useState('')
@@ -811,13 +819,12 @@ function NativeIssueDetail({ repo, issue: initialIssue, publicMode, client, onBa
   }
   async function act(kind, operation) {
     setBusy(kind); setError('')
-    try { await operation(); await reload(); await onMutate?.() } catch (cause) { setError(cause.message) } finally { setBusy('') }
+    try { await operation(); await reload(); await onMutate?.(); return true } catch (cause) { setError(cause.message); return false } finally { setBusy('') }
   }
   async function addComment() {
     const body = comment.trim()
     if (!body) return
-    await act('comment', () => api.addIssueComment(repo.name, issue.number, body))
-    setComment('')
+    if (await act('comment', () => api.addIssueComment(repo.name, issue.number, body))) clearComment()
   }
   const parseList = (value) => [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))]
   return <div className="issue-detail">
@@ -844,8 +851,8 @@ function Issues({ repo, onMutate, publicMode = false, client = api }) {
   const [selected, setSelected] = useState(null)
   const [detail, setDetail] = useState(null)
   const [creating, setCreating] = useState(false)
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
+  const [title, setTitle, clearTitle] = useLocalDraft(`new-issue:${repo.name}:title`)
+  const [body, setBody, clearBody] = useLocalDraft(`new-issue:${repo.name}:body`)
   const [githubHasMore, setGithubHasMore] = useState((repo.githubIssues || []).length >= 100)
   const nativeIssues = repo.nativeIssues || []
   const githubIssues = repo.githubIssues || []
@@ -875,7 +882,7 @@ function Issues({ repo, onMutate, publicMode = false, client = api }) {
   async function createIssue() {
     if (!title.trim()) return
     setBusy(true); setError('')
-    try { const created = await api.createIssue(repo.name, title.trim(), body.trim()); setCreating(false); setTitle(''); setBody(''); await onMutate?.(); await inspect({ ...created, source: 'native' }) } catch (cause) { setError(cause.message) } finally { setBusy(false) }
+    try { const created = await api.createIssue(repo.name, title.trim(), body.trim()); setCreating(false); clearTitle(); clearBody(); await onMutate?.(); await inspect({ ...created, source: 'native' }) } catch (cause) { setError(cause.message) } finally { setBusy(false) }
   }
   return <>{!publicMode && creating && <section className="panel issue-composer"><div className="section-title"><div><h2>New issue</h2><p className="quiet">Open an issue under your ship identity.</p></div><button className="text-button" onClick={() => setCreating(false)}>Cancel</button></div><label><span>Title</span><input autoFocus value={title} maxLength="200" onChange={(event) => setTitle(event.target.value)} /></label><label><span>Description</span><textarea value={body} maxLength="65536" onChange={(event) => setBody(event.target.value)} placeholder="Describe the problem or proposal…" /></label><div className="form-actions"><button className="button primary" disabled={busy || !title.trim()} onClick={createIssue}>{busy ? 'Opening…' : 'Open issue'}</button></div></section>}
     <div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><div className="forge-toolbar-actions"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter issues…" />{!publicMode && repo.githubOrigin && <button className="button" disabled={busy} onClick={() => sync(1)}>{busy ? 'Syncing…' : 'Sync GitHub'}</button>}{!publicMode && repo.githubOrigin && githubHasMore && <button className="button" disabled={busy} onClick={() => sync(page + 1)}>{busy ? 'Loading…' : 'Load more'}</button>}{!publicMode && <button className="button primary" onClick={() => setCreating(!creating)}>New issue</button>}</div></div>{error && <div className="inline-error">{error}</div>}{!issues.length ? <div className="empty compact">No issues.</div> : !visible.length ? <div className="empty compact">No issues match this filter.</div> : <div className="issue-list">{visible.map((issue) => <button className="issue-row forge-link row-button" key={`${issue.source}-${issue.number}`} onClick={() => inspect(issue)}><span className={`issue-icon ${issue.state}`}>◉</span><div><h3>{issue.title}</h3><p>#{issue.number} · {issue.state} · {issue.author}{issue.source === 'github' ? ' · GitHub' : ` · ${issue.commentCount || 0} comments`}</p><div className="issue-labels inline">{(issue.labels || []).map((label) => <span key={label}>{label}</span>)}</div></div><span className="external-arrow">{issue.source === 'github' ? '↗' : '›'}</span></button>)}</div>}</>
@@ -1235,6 +1242,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   const historyData = tab === 'code' ? detail?.commits : tab === 'commits' ? detail : null
   const clayHistory = historyData?.historyKind === 'clay' || (repo.binding?.bound && branch === repo.binding.branch)
   const revisionCount = historyData?.revisionCount
+  const loadReadme = useCallback((path) => client.file(repo.name, path, branch), [client, repo.name, branch])
 
   function applyRoute(route) {
     setTab(route.tab)
@@ -1362,7 +1370,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
           : filePath
           ? <FileView repository={repo.name} path={filePath} branch={branch} githubOrigin={!publicMode ? repo.githubOrigin : null} lineStart={lineStart} lineEnd={lineEnd} onSelectLine={(selected, extend, dragAnchor) => { const anchor = extend ? (dragAnchor || lineStart || selected) : selected; navigate({ lineStart: Math.min(anchor, selected), lineEnd: Math.max(anchor, selected) }) }} onOpenCommit={(commit) => commit && navigate({ tab: 'commits', filePath: '', commitOid: commit.oid })} editable={!publicMode} onBack={() => navigate({ filePath: '' })} onSaved={mutate} onDeleted={async () => { await mutate(); navigate({ filePath: '', lineStart: null, lineEnd: null }) }} client={client} />
           : searchQuery ? <SearchResults data={searchData} query={searchQuery} loading={searchLoading} error={searchError} onOpen={(result) => navigate({ tab: 'code', filePath: result.path, lineStart: result.line, lineEnd: result.line, commitOid: '' })} />
-            : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} onOpenCommit={openCommit} />)}
+            : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} onOpenCommit={openCommit} loadFile={loadReadme} />)}
         {tab === 'issues' && <Issues repo={repo} publicMode={publicMode} client={client} onMutate={mutate} />}
         {tab === 'branches' && <Branches repo={repo} publicMode={publicMode} onBrowse={browseBranch} onMutate={mutate} client={client} />}
         {tab === 'tags' && <Tags repo={repo} publicMode={publicMode} onMutate={mutate} initialTarget={tagTarget} initialKind={tagKind} onTargetConsumed={() => navigate({ tagTarget: '', tagKind: '' }, true)} />}
