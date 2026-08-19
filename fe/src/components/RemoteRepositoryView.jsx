@@ -36,7 +36,7 @@ const remoteRoute = () => {
   return { tab, kind: '', number: 0, filePath, commitOid }
 }
 
-export default function RemoteRepositoryView({ ship, repository, repositories, data, onFork, onCancelTransfer }) {
+export default function RemoteRepositoryView({ ship, repository, repositories, data, cacheState, onRefresh, onFork, onCancelTransfer }) {
   const repo = data?.repository
   const [tab, setTab] = useState(() => remoteRoute().tab)
   const [selected, setSelected] = useState(null)
@@ -223,7 +223,7 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
     ...githubIssues.map((issue) => ({ ...issue, source: 'github' })),
   ]
   return <main className="content">
-    <header className="repo-header"><div><div className="repo-breadcrumb"><span>{ship}</span><b>/</b><h1>{repository}</h1><span className="visibility-badge">Peer</span></div>{repo.description && <p className="repo-description">{repo.description}</p>}</div><button className={`button primary ${forking ? 'is-busy' : ''}`} disabled={forking} onClick={() => { setLocalName(repository); setForkDialog(true) }}>{forking && <span className="spinner" />}{forking ? 'Forking to my ship…' : 'Fork to my ship'}</button></header>
+    <header className="repo-header"><div><div className="repo-breadcrumb"><span>{ship}</span><b>/</b><h1>{repository}</h1><span className="visibility-badge">Peer</span></div>{repo.description && <p className="repo-description">{repo.description}</p>}</div><div className="row-actions">{cacheState?.newer && <span className="status good">Update available</span>}{cacheState?.checkFailed && <span className="quiet">Unable to fetch updates</span>}<button className="button" onClick={onRefresh}>Refresh</button><button className={`button primary ${forking ? 'is-busy' : ''}`} disabled={forking} onClick={() => { setLocalName(repository); setForkDialog(true) }}>{forking && <span className="spinner" />}{forking ? 'Forking to my ship…' : 'Fork to my ship'}</button></div></header>
     {forking && <TransferProgress ship={ship} repository={repository} localName={forkTarget} progress={progress} cancelling={cancelling} onCancel={cancelFork} />}
     <div className="repo-meta"><span><b>{repo.fileCount || 0}</b> files</span><span><b>{repo.commitCount || 0}</b> commits</span><span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span></div>
     <nav className="tabs"><button className={tab === 'code' ? 'active' : ''} onClick={() => chooseTab('code')}>Code</button><button className={tab === 'issues' ? 'active' : ''} onClick={() => chooseTab('issues')}>Issues <span className="tab-count">{issues.length}</span></button><button className={tab === 'pulls' ? 'active' : ''} onClick={() => chooseTab('pulls')}>Pull requests <span className="tab-count">{pulls.length}</span></button><button className={tab === 'commits' ? 'active' : ''} onClick={() => chooseTab('commits')}>Commits <span className="tab-count">{repo.commitCount || commits.length}</span></button><button className={tab === 'branches' ? 'active' : ''} onClick={() => chooseTab('branches')}>Branches <span className="tab-count">{repo.branchCount || 0}</span></button></nav>

@@ -11,6 +11,7 @@ import NewRepositoryModal from './components/NewRepositoryModal'
 import RemoteRepositoryView from './components/RemoteRepositoryView'
 import Settings from './components/Settings'
 import Sidebar from './components/Sidebar'
+import { readRemoteCache, remoteCacheIsUsable, writeRemoteCache } from './remoteCache'
 
 function routeFromHash() {
   const raw = location.hash.replace(/^#\/?/, '').split('?')[0]
@@ -40,6 +41,7 @@ function PrivateApp() {
   const [remoteStatus, setRemoteStatus] = useState('')
   const [remoteProgress, setRemoteProgress] = useState(null)
   const [remoteError, setRemoteError] = useState('')
+  const [remoteCacheState, setRemoteCacheState] = useState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 })
   const [creating, setCreating] = useState(false)
   const [publishingDesk, setPublishingDesk] = useState(false)
   const [forkingPeer, setForkingPeer] = useState(false)
@@ -110,7 +112,7 @@ function PrivateApp() {
         const current = remoteSelectedRef.current
         if (!current || current.ship !== route.ship || current.name !== route.name) chooseRemote(route.ship, route.name, false)
       }
-      else { setRemoteSelected(null); setRemoteData(null); setRemoteStatus(''); setRemoteProgress(null); setRemoteError(''); setSelected(route.name) }
+      else { setRemoteSelected(null); setRemoteData(null); setRemoteStatus(''); setRemoteProgress(null); setRemoteError(''); setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 }); setSelected(route.name) }
     }
     addEventListener('popstate', pop)
     if (routeFromHash().kind !== 'repository') pop()
@@ -131,23 +133,55 @@ function PrivateApp() {
     setRemoteStatus('')
     setRemoteProgress(null)
     setRemoteError('')
+    setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 })
     setSelected(name)
     history.pushState({}, '', `#/${encodeURIComponent(name)}`)
   }
 
-  async function chooseRemote(ship, name, pushHistory = true) {
+  async function chooseRemote(ship, name, pushHistory = true, force = false) {
     const current = remoteSelectedRef.current
-    if (current?.ship === ship && current?.name === name && (remoteData || remoteBrowseRef.current.request)) return
+    if (!force && current?.ship === ship && current?.name === name && (remoteData || remoteBrowseRef.current.request)) return
     const previous = remoteBrowseRef.current.request
     const generation = remoteBrowseRef.current.generation + 1
     remoteBrowseRef.current = { generation, request: '' }
     if (previous) api.peerDeleteBrowse(previous).catch(() => {})
     const selection = { ship, name }
     remoteSelectedRef.current = selection
-    setError(''); setRemoteSelected(selection); setRemoteData(null); setRemoteStatus('Contacting peer'); setRemoteProgress(null); setRemoteError(''); setSelected('')
+    setError(''); setRemoteSelected(selection); setRemoteData(null); setRemoteStatus('Checking local cache'); setRemoteProgress(null); setRemoteError(''); setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 }); setSelected('')
     setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setSettingsOpen(false)
     if (pushHistory) history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(name)}`)
     try {
+      if (!force) {
+        const cached = await readRemoteCache(ship, name)
+        if (remoteBrowseRef.current.generation !== generation) return
+        if (remoteCacheIsUsable(cached)) {
+          setRemoteData(cached.data)
+          setRemoteStatus('')
+          setRemoteCacheState({ cached: true, checking: true, newer: false, checkFailed: false, cachedAt: cached.cachedAt })
+          try {
+            const started = await api.peerStamp(ship, name)
+            if (remoteBrowseRef.current.generation !== generation) {
+              await api.peerDeleteBrowse(started.request).catch(() => {})
+              return
+            }
+            remoteBrowseRef.current.request = started.request
+            const found = await waitForPeerBrowse(started.request)
+            await api.peerDeleteBrowse(started.request).catch(() => {})
+            if (remoteBrowseRef.current.generation !== generation) return
+            remoteBrowseRef.current.request = ''
+            const revision = found.result?.revision
+            const valid = found.ok && found.ship === ship && found.repository === name && found.result?.repository?.name === name && revision
+            setRemoteCacheState({ cached: true, checking: false, newer: Boolean(valid && revision !== cached.revision), checkFailed: !valid, cachedAt: cached.cachedAt })
+          } catch {
+            if (remoteBrowseRef.current.generation === generation) {
+              remoteBrowseRef.current.request = ''
+              setRemoteCacheState({ cached: true, checking: false, newer: false, checkFailed: true, cachedAt: cached.cachedAt })
+            }
+          }
+          return
+        }
+      }
+      setRemoteStatus(force ? 'Refreshing from peer' : 'Contacting peer')
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const started = await api.peerBrowse(ship, name)
         if (remoteBrowseRef.current.generation !== generation) {
@@ -187,6 +221,8 @@ function PrivateApp() {
         setRemoteStatus('')
         setRemoteProgress(null)
         setRemoteData(found.result)
+        setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: Date.now() })
+        await writeRemoteCache(ship, name, found.result.revision, found.result)
         return
       }
     } catch (cause) {
@@ -260,7 +296,7 @@ function PrivateApp() {
     remoteBrowseRef.current.request = ''
     remoteSelectedRef.current = null
     setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false)
-    setRemoteSelected(null); setRemoteData(null); setRemoteStatus(''); setRemoteError('')
+    setRemoteSelected(null); setRemoteData(null); setRemoteStatus(''); setRemoteError(''); setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 })
     setSettingsOpen(true)
     if (pushHistory) history.pushState({ urgitSettings: true }, '', '#/settings')
   }
@@ -299,7 +335,7 @@ function PrivateApp() {
         ) : publishingDesk ? (
           <PublishDesk repositories={repositories} onComplete={published} onCancel={() => setPublishingDesk(false)} />
         ) : remoteSelected ? (
-          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} repositories={repositories} data={remoteData} onFork={forkRemote} onCancelTransfer={cancelTransfer} /> : remoteError ? <main className="content"><div className="empty remote-browse-failure"><strong>Could not load {remoteSelected.ship}/{remoteSelected.name}</strong><span>{remoteError}</span><button className="button primary" onClick={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false)}>Retry</button></div></main> : <main className="content"><div className="empty remote-browse-loading"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…<small>{remoteStatus}</small><BrowseProgress progress={remoteProgress} /></div></main>
+          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} repositories={repositories} data={remoteData} cacheState={remoteCacheState} onRefresh={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false, true)} onFork={forkRemote} onCancelTransfer={cancelTransfer} /> : remoteError ? <main className="content"><div className="empty remote-browse-failure"><strong>Could not load {remoteSelected.ship}/{remoteSelected.name}</strong><span>{remoteError}</span><button className="button primary" onClick={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false, true)}>Retry</button></div></main> : <main className="content"><div className="empty remote-browse-loading"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…<small>{remoteStatus}</small><BrowseProgress progress={remoteProgress} /></div></main>
         ) : repo ? (
           <RepositoryView repo={repo} onRefresh={refresh} onOpenOrigin={chooseRemote} />
         ) : (

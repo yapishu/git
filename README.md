@@ -35,7 +35,7 @@
 - repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
 - one-click publication of any mounted Clay desk as a Git repository
 - verified, incremental native forks with explicit pull-from-origin refresh: Ames coordinates access and refs while bounded sequential Fine pages carry checksummed Git pack bytes for only the missing immutable objects; duplicate requests coalesce and active transfers can be cancelled
-- persistent ship peers in the sidebar, with on-demand public repository discovery; bounded remote browsing of code, branches, history, rendered READMEs, and individual file previews; and full native issue and pull-request discussions read through request-scoped Fine
+- persistent ship peers in the sidebar, with on-demand public repository discovery; browser-cached remote code, branches, history, rendered READMEs, and individual file previews; lightweight revision checks with explicit refresh; and full native issue and pull-request discussions read through request-scoped Fine
 - ship write ACLs with fast-forward-only native push-back from authorized forks
 - native pull requests between ships or local branches, with close/reopen lifecycle, per-file red/green diffs, resolvable general and line-anchored review comments, cross-ship discussion at the origin, fast-forward or conflict-checked three-way merges, and Clay gating
 - native issues authored by ship identity, with remote creation, open/close lifecycle, origin-authoritative cross-ship comments, labels, assignees, public read-only views, and linked `~ship/repository#number` references

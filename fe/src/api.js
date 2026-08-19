@@ -52,6 +52,7 @@ export const api = {
   addPeer: (ship) => request('/peer/peers', { method: 'POST', body: JSON.stringify({ ship }) }),
   removePeer: (ship) => request('/peer/peers', { method: 'DELETE', body: JSON.stringify({ ship }) }),
   peerBrowse: (ship, repository) => request(`/peer/browse/${encodeURIComponent(ship)}/${encodeURIComponent(repository)}`, { method: 'POST', body: '{}' }),
+  peerStamp: (ship, repository) => request(`/peer/stamp/${encodeURIComponent(ship)}/${encodeURIComponent(repository)}`, { method: 'POST', body: '{}' }),
   peerDetail: (ship, repository, kind, number) => request('/peer/detail', {
     method: 'POST', body: JSON.stringify({ ship, repository, kind, number }),
   }),

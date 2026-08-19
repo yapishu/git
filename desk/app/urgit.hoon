@@ -1118,10 +1118,40 @@
   |=  [name=@t repo=repository:git]
   ^-  json
   %-  pairs:enjs:format
-  :~  ['repository' (repository-json name repo)]
+  :~  ['revision' s+(repository-revision repo)]
+      ['repository' (repository-json name repo)]
       ['files' (repository-files-json name repo)]
       ['commits' (repository-commits-json name repo head.repo 0 50)]
   ==
+::
+++  repository-revision
+  |=  repo=repository:git
+  ^-  @t
+  =/  visible
+    :*  owner.repo
+        public-read.repo
+        description.repo
+        head.repo
+        refs.repo
+        protected-refs.repo
+        writers.repo
+        binding.repo
+        peer-origin.repo
+        github-origin.repo
+        github-issues.repo
+        github-pulls.repo
+        native-pulls.repo
+        native-issues.repo
+        releases.repo
+    ==
+  (scot %uv (end 7 (shax (jam visible))))
+::
+++  repository-stamp-json
+  |=  [name=@t repo=repository:git]
+  ^-  json
+  =/  identity=json
+    (pairs:enjs:format ~[['name' s+name]])
+  (pairs:enjs:format ~[['repository' identity] ['revision' s+(repository-revision repo)]])
 ::
 ++  repository-commit-json
   |=  [name=@t repo=repository:git oid=oid:git]
@@ -2196,6 +2226,8 @@
     :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or not public'])
     ==
   =/  detail=(unit json)
+    ?:  =(%stamp view)
+      `(repository-stamp-json repository u.found)
     ?:  =(%overview view)
       `(repository-browse-json repository u.found)
     ?:  =(%issue view)
@@ -4345,6 +4377,16 @@
       :_  this
       (api-error eyre-id 422 'valid ship and repository are required')
     (start-peer-browse eyre-id u.peer repository %overview 0 ~)
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %peer %stamp @ @ ~] site)
+      ==
+    =/  ship-text=@t  i.t.t.t.t.t.site
+    =/  repository=@t  (api-terminal-name i.t.t.t.t.t.t.site ext.line)
+    =/  peer=(unit @p)  (slaw %p ship-text)
+    ?.  ?&(?=(^ peer) (valid-repository-name repository))
+      :_  this
+      (api-error eyre-id 422 'valid ship and repository are required')
+    (start-peer-browse eyre-id u.peer repository %stamp 0 ~)
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %peer %detail ~] site)
       ==
