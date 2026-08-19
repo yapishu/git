@@ -2288,6 +2288,8 @@
     ?.  ?=([%o *] result)  %.n
     =/  repository-json=(unit json)  (~(get by p.result) 'repository')
     ?~  repository-json  %.n
+    ?:  ?=([%s *] u.repository-json)
+      =(p.u.repository-json repository)
     ?.  ?=([%o *] u.repository-json)  %.n
     =/  name-json=(unit json)  (~(get by p.u.repository-json) 'name')
     ?~  name-json  %.n
@@ -7765,6 +7767,8 @@
       ?.  ?=([%o *] u.result)  %.n
       =/  repository-json=(unit json)  (~(get by p.u.result) 'repository')
       ?~  repository-json  %.n
+      ?:  ?=([%s *] u.repository-json)
+        =(p.u.repository-json expected-repository)
       ?.  ?=([%o *] u.repository-json)  %.n
       =/  name-json=(unit json)  (~(get by p.u.repository-json) 'name')
       ?~  name-json  %.n
