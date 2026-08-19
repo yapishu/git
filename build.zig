@@ -143,15 +143,14 @@ fn buildDesk(step: *std.Build.Step, allocator: std.mem.Allocator, install_path: 
 }
 
 fn buildFrontend(step: *std.Build.Step) !void {
-    if (!pathExists("fe/node_modules/.bin/vite")) {
-        const install = std.process.Child.run(.{ .allocator = step.owner.allocator, .argv = &.{ "npm", "install", "--prefix", "fe" }, .max_output_bytes = 1024 * 1024 }) catch |err| {
-            if (err == error.FileNotFound) return step.fail("npm was not found; install Node.js 22 (or Node.js >=20.19) and retry", .{});
-            return step.fail("failed to install frontend dependencies: {s}", .{@errorName(err)});
-        };
-        if (install.term != .Exited or install.term.Exited != 0) {
-            std.debug.print("{s}{s}", .{ install.stdout, install.stderr });
-            return step.fail("frontend dependency installation failed", .{});
-        }
+    std.debug.print("Installing frontend dependencies...\n", .{});
+    const install = std.process.Child.run(.{ .allocator = step.owner.allocator, .argv = &.{ "npm", "install", "--prefix", "fe", "--no-audit", "--no-fund" }, .max_output_bytes = 1024 * 1024 }) catch |err| {
+        if (err == error.FileNotFound) return step.fail("npm was not found; install Node.js 22 (or Node.js >=20.19) and retry", .{});
+        return step.fail("failed to install frontend dependencies: {s}", .{@errorName(err)});
+    };
+    if (install.term != .Exited or install.term.Exited != 0) {
+        std.debug.print("{s}{s}", .{ install.stdout, install.stderr });
+        return step.fail("frontend dependency installation failed", .{});
     }
     std.debug.print("Building React frontend...\n", .{});
     const result = std.process.Child.run(.{ .allocator = step.owner.allocator, .argv = &.{ "npm", "run", "build", "--prefix", "fe" }, .max_output_bytes = 1024 * 1024 }) catch |err| {
