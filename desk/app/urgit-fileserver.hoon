@@ -87,6 +87,8 @@
   :~  [%pass /eyre/connect %arvo %e %connect [~ woot] dap.bowl]
       (set-norm [our q.byk]:bowl foot |)
       (read-next [our q.byk now]:bowl foot)
+      (store '/apps/urgit' ~)
+      (store '/apps/urgit/' ~)
   ==
 ::
 ++  on-save
@@ -114,6 +116,13 @@
       ::  always clear old cache entries.
       ::
       (turn ~(tap in cash.old) (curr store ~))
+    ::
+      ::  Clear known shell routes even when Eyre's cache survived without a
+      ::  matching entry in our persisted cache index.
+      ::
+      :~  (store '/apps/urgit' ~)
+          (store '/apps/urgit/' ~)
+      ==
     ::
       ::  if the file root changed, remove tombstoning from the old root.
       ::
@@ -176,11 +185,11 @@
     (rush url.request ;~(plug apat:de-purl:html yque:de-purl:html))
   ?.  =(woot (scag (lent woot) site))
     [| [500 ~] `(as-octs:mimes:html 'bad route')]
-  ::  all of the below responses get put into cache on first-request,
-  ::  even if we can't serve real content. we'll clear cache and retry
-  ::  whenever file-root contents change.
+  ::  Cache versioned asset paths, but always read extensionless SPA shells
+  ::  fresh.  The shell carries the current asset digest, so an Eyre cache
+  ::  entry that survives invalidation can pin browsers to an old bundle.
   ::
-  :-  &
+  :-  ?=(^ ext)
   ?~  ext
     ::  serve index.html for extensionless requests (SPA fallback)
     =/  idx=path
