@@ -36,7 +36,8 @@
 - repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
 - one-click publication of any mounted Clay desk as a Git repository
 - verified, incremental native forks with explicit pull-from-origin refresh: Ames coordinates access and refs while bounded sequential Fine pages carry checksummed Git pack bytes for only the missing immutable objects; duplicate requests coalesce and active transfers can be cancelled
-- persistent ship peers in the sidebar, with on-demand public repository discovery; browser-cached remote code, branches, history, rendered READMEs, and individual file previews; lightweight revision checks with explicit refresh; and full native issue and pull-request discussions read through request-scoped Fine
+- persistent ship peers in the sidebar, with on-demand discovery of public repositories and private repositories shared with that ship
+- per-repository ship reader ACLs for private native browsing, issue and pull-request discussion, and forks without update rights
 - ship write ACLs with fast-forward-only native push-back from authorized forks
 - native pull requests between ships or local branches, with close/reopen lifecycle, per-file red/green diffs, resolvable general and line-anchored review comments, cross-ship discussion at the origin, fast-forward or conflict-checked three-way merges, and Clay gating
 - native issues authored by ship identity, with remote creation, open/close lifecycle, origin-authoritative cross-ship comments, labels, assignees, public read-only views, and linked `~ship/repository#number` references
@@ -58,6 +59,33 @@
 https://ship.example/git/<repository>
 ```
 
+## Repository access
+
+Urgit applies separate read and write rules to native ship traffic.
+
+| Access | Discover, browse, and fork | Open issues and join discussions | Send native branch updates |
+|---|---:|---:|---:|
+| Public visitor | Yes | Yes | No |
+| Reader | Yes | Yes | No |
+| Writer | Yes | Yes | Yes |
+| Owner | Yes | Yes | Yes |
+
+A writer also has reader access. Branch protection still applies to every native update.
+
+These ACLs authenticate Urbit ships on native Ames and Fine requests. They do not authenticate ordinary Git clients over Smart HTTP.
+
+Smart HTTP and Git LFS use the repository write token. Public repositories continue to allow unauthenticated fetches and LFS downloads.
+
+Public pages, public scries, and remote peer responses omit reader lists, writer lists, tokens, and other repository administration fields.
+
+### State compatibility
+
+This branch adds a `readers` field to the persisted repository mold. Fresh installs can use the new shape.
+
+Existing installs cannot load their old `%1` state with the first feature commit. A follow-up commit must preserve `%1` and migrate it to `%2` before live publication.
+
+After that migration, the current upstream build cannot read `%2`. Returning to current upstream requires upstream support or a hard nuke that deletes all Urgit state.
+
 Further protocol work is tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
 
 ## Development
@@ -73,6 +101,7 @@ The build requires Git, Zig, and Node.js 22 (or Node.js 20.19 or newer). It inst
 Then commit the `%urgit` desk and run the protocol vectors:
 
 ```hoon
++urgit!git-access-vector
 +urgit!git-codec-vector
 +urgit!git-pack-vector
 +urgit!git-pack-decode-vector
