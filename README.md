@@ -68,7 +68,7 @@ Build directly into a mounted desk:
 zig build -Ddesk=/path/to/pier/urgit
 ```
 
-The build requires Git, Zig, and Node.js 22 (or Node.js 20.19 or newer). It installs frontend dependencies with `npm` when needed.
+The build requires Git, Zig, and Node.js 22 (or Node.js 20.19 or newer). It installs the locked frontend dependencies with `npm` before building the app.
 
 Then commit the `%urgit` desk and run the protocol vectors:
 

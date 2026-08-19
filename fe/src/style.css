@@ -72,10 +72,9 @@ button { color: inherit; }
 .workspace { min-width: 0; }
 .public-shell { min-height: 100vh; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 .public-brand { color: var(--text); font-weight: 750; font-size: 16px; text-decoration: none; letter-spacing: -.03em; }
-.public-read-label { align-self: center; color: var(--muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
 .public-url { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.fork-urgit-link { min-height: 30px; display: inline-flex; align-items: center; padding: 0 11px; border: 1px solid var(--text); border-radius: 6px; background: var(--text); color: var(--bg); font-size: 10px; font-weight: 700; text-decoration: none; white-space: nowrap; }
-.fork-urgit-link:hover { opacity: .82; }
+.fork-urgit-link { min-height: 30px; display: inline-flex; align-items: center; padding: 0 11px; border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line)); border-radius: 6px; background: color-mix(in srgb, var(--accent) 9%, var(--panel)); color: var(--accent); font-size: 10px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.fork-urgit-link:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); background: color-mix(in srgb, var(--accent) 15%, var(--panel)); }
 .profile-topbar { padding-right: max(26px, calc((100vw - 980px) / 2)); padding-left: max(26px, calc((100vw - 980px) / 2)); }
 .profile-page { width: min(980px, calc(100% - 40px)); margin: 30px auto 48px; }
 .profile-hero { --profile-accent: var(--accent); position: relative; min-height: 220px; display: flex; flex-direction: column; justify-content: flex-end; padding: 30px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: linear-gradient(135deg, color-mix(in srgb, var(--profile-accent) 9%, var(--panel)), var(--panel) 62%); box-shadow: 0 1px 2px rgba(18, 24, 18, .05); isolation: isolate; }
@@ -671,6 +670,5 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
   .profile-bio { margin-left: 0; }
   .profile-repo-row { grid-template-columns: 1fr; gap: 12px; }
   .profile-repo-meta { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
-  .public-read-label { display: none; }
   .fork-urgit-link { max-width: 148px; overflow: hidden; text-overflow: ellipsis; }
 }
