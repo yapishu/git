@@ -80,7 +80,9 @@ export const api = {
   peerFork: (ship, repository, name, publicRead) =>
     request('/peer/fork', { method: 'POST', body: JSON.stringify({ ship, repository, name, publicRead }) }),
   peerPush: (name) => request('/peer/push', { method: 'POST', body: JSON.stringify({ name }) }),
-  peerPullRequest: (name, title) => request('/peer/pull-request', { method: 'POST', body: JSON.stringify({ name, title }) }),
+  peerPullRequest: (name, title, sourceBranch, targetBranch) => request('/peer/pull-request', {
+    method: 'POST', body: JSON.stringify({ name, title, sourceBranch, targetBranch }),
+  }),
   githubStatus: () => request('/github/status'),
   setGithubToken: (token) => request('/github/token', { method: 'POST', body: JSON.stringify({ token }) }),
   clearGithubToken: () => request('/github/token', { method: 'DELETE' }),
@@ -156,6 +158,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ship, allowed }),
     }),
+  setReader: (name, ship, allowed) =>
+    request(`/repository/${encodeURIComponent(name)}/readers`, {
+      method: 'POST',
+      body: JSON.stringify({ ship, allowed }),
+    }),
   setProtected: (name, ref, protectedBranch) =>
     request(`/repository/${encodeURIComponent(name)}/protected`, {
       method: 'POST',
@@ -201,9 +208,9 @@ export const api = {
     request(`/repository/${encodeURIComponent(name)}/upstream-updates`, {
       method: 'DELETE', body: JSON.stringify({ id }),
     }),
-  createPull: (name, title, branch) =>
+  createPull: (name, title, sourceBranch, targetBranch) =>
     request(`/repository/${encodeURIComponent(name)}/pulls`, {
-      method: 'POST', body: JSON.stringify({ title, branch }),
+      method: 'POST', body: JSON.stringify({ title, sourceBranch, targetBranch }),
     }),
   pull: (name, number) => request(`/repository/${encodeURIComponent(name)}/pulls/${number}`),
   addPullComment: (name, number, body, path = '', line = 0, side = '') =>

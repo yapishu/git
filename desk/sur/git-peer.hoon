@@ -70,6 +70,15 @@
       pull-request=?
       title=@t
   ==
++$  offer-branches
+  $:  transfer=@uv
+      repository=@t
+      source-repository=@t
+      source-ref=@t
+      target-ref=@t
+      pull-request=?
+      title=@t
+  ==
 +$  packet
   $%  [%request request=request]
       [%accepted accepted=accepted]
@@ -89,6 +98,7 @@
       [%forge-create-issue issue=forge-create-issue]
       [%forge-result request=@uv repository=@t kind=forge-kind number=@ud ok=? message=@t result=(unit json)]
       [%offer offer=offer]
+      [%offer-branches offer-branches=offer-branches]
       [%release transfer=@uv]
       [%snapshot transfer=@uv objects=(map oid:git object:git)]
       [%snapshot-error transfer=@uv message=@t]

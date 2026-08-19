@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api, waitForPeerTransfer } from '../api'
+import { api, waitForPeerBrowse, waitForPeerTransfer } from '../api'
 import { exactBytes, formatBytes } from '../format'
 import { comparisonPatch } from '../patch'
 import FileTree from './FileTree'
@@ -11,6 +11,7 @@ import MarkdownDocument from './MarkdownDocument'
 import { clearLocalDraft, readLocalDraft, saveLocalDraft, useLocalDraft } from '../useLocalDraft'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
+const pullRefLabel = (ref, oid) => `${ref ? ref.replace('refs/heads/', '') : 'unknown branch'} · ${shortOid(oid)}`
 const historyId = (commit) => commit?.kind === 'clay' ? `r${commit.revision}` : shortOid(commit?.oid)
 const identityLabel = (identity) => identity?.name || identity?.email || 'Unknown author'
 const commitDate = (identity) => {
@@ -628,8 +629,13 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
   const [title, setTitle, clearTitle] = useLocalDraft(`new-pull:${repo.name}:title`)
   const [submitBusy, setSubmitBusy] = useState(false)
   const [submitStatus, setSubmitStatus] = useState('')
-  const localBranches = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/') && ref.name !== repo.head)
-  const [sourceBranch, setSourceBranch] = useState(localBranches[0]?.name || '')
+  const branchRefs = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/'))
+  const [sourceBranch, setSourceBranch] = useState(branchRefs.find((ref) => ref.name !== repo.head)?.name || branchRefs[0]?.name || '')
+  const [targetRepository, setTargetRepository] = useState(repo.peerOrigin ? 'origin' : 'local')
+  const [targetBranch, setTargetBranch] = useState(repo.head || branchRefs[0]?.name || '')
+  const [originBranches, setOriginBranches] = useState([])
+  const [originHead, setOriginHead] = useState('')
+  const [originBranchStatus, setOriginBranchStatus] = useState('')
   const [commentBody, setCommentBody, clearCommentBody] = useLocalDraft(selected ? `pull-comment:${repo.name}:${selected.number}` : '')
   const [commentTarget, setCommentTarget] = useState(null)
   const [commentBusy, setCommentBusy] = useState(false)
@@ -681,17 +687,58 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
     await syncGithubPulls(Math.min(5, githubPage + 1))
   }
 
-  async function openNativePull() {
-    setSubmitBusy(true); setError(''); setSubmitStatus(repo.peerOrigin ? 'Offering changes to the origin…' : 'Opening pull request…')
+  async function beginPullRequest() {
+    const nextSource = branchRefs.find((ref) => ref.name !== repo.head)?.name || branchRefs[0]?.name || ''
+    setSourceBranch(nextSource)
+    setSubmitStatus('')
+    setError('')
+    setCreating(true)
+    setTargetRepository(repo.peerOrigin ? 'origin' : 'local')
+    if (!repo.peerOrigin) {
+      setTargetBranch(repo.head || branchRefs[0]?.name || '')
+      return
+    }
+    setOriginBranches([])
+    setOriginHead('')
+    setTargetBranch('')
+    setOriginBranchStatus('Loading origin branches…')
+    let request = ''
     try {
-      if (!repo.peerOrigin) {
-        const opened = await api.createPull(repo.name, title.trim(), sourceBranch)
+      const started = await api.peerBrowse(repo.peerOrigin.ship, repo.peerOrigin.repository)
+      request = started.request
+      const found = await waitForPeerBrowse(started.request)
+      if (!found.ok) throw new Error(found.message || 'Could not load origin branches')
+      const origin = found.result?.repository
+      const branches = (origin?.refs || []).filter((ref) => ref.name.startsWith('refs/heads/'))
+      if (!branches.length) throw new Error('Could not load origin branches')
+      setOriginBranches(branches)
+      setOriginHead(origin.head || branches[0].name)
+      setTargetBranch(origin.head || branches[0].name)
+      setOriginBranchStatus('')
+    } catch (cause) {
+      setOriginBranchStatus(`Could not load origin branches: ${cause.message}`)
+    } finally {
+      if (request) await api.peerDeleteBrowse(request).catch(() => {})
+    }
+  }
+
+  function chooseTargetRepository(next) {
+    setTargetRepository(next)
+    setTargetBranch(next === 'local' ? repo.head || branchRefs[0]?.name || '' : originHead || originBranches[0]?.name || '')
+  }
+
+  async function openNativePull() {
+    const targetsOrigin = Boolean(repo.peerOrigin && targetRepository === 'origin')
+    setSubmitBusy(true); setError(''); setSubmitStatus(targetsOrigin ? 'Offering changes to the origin…' : 'Opening pull request…')
+    try {
+      if (!repo.peerOrigin || targetRepository === 'local') {
+        const opened = await api.createPull(repo.name, title.trim(), sourceBranch, targetBranch)
         setSubmitStatus(`Pull request #${opened.number} opened`)
         clearTitle(); setCreating(false)
         await onMutate?.()
         return
       }
-      const started = await api.peerPullRequest(repo.name, title.trim())
+      const started = await api.peerPullRequest(repo.name, title.trim(), sourceBranch, targetBranch)
       const transfer = await waitForPeerTransfer(started.transfer, {
         onProgress: (current) => current.message && setSubmitStatus(current.message),
       })
@@ -746,7 +793,7 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
   if (selected && !selected.native) return <GithubDetail detail={githubDetail} diff={githubDiff} fallback={selected} kind="Pull request" error={error} onBack={() => { setSelected(null); setGithubDetail(null); setGithubDiff(null); setError('') }} />
   if (selected) return <div className="pull-detail">
     <button className="text-button file-back" onClick={() => { setSelected(null); setDiff(null); setCommentTarget(null) }}>← Pull requests</button>
-    <header className="pull-detail-header"><div><h2>#{selected.number} {selected.title}</h2><p><span className={`status ${selected.state === 'open' ? 'good' : ''}`}>{selected.state}</span> <code>{selected.sourceShip}/{selected.sourceRepository}</code> wants to merge {shortOid(selected.head)} into {shortOid(selected.base)}</p></div><div className="pr-actions">{selected.state === 'closed' && <button className="button" disabled={busy} onClick={() => setPullState(selected.number, 'open')}>{busy === selected.number ? 'Reopening…' : 'Reopen'}</button>}{selected.state === 'open' && <><button className="button" disabled={busy} onClick={() => setPullState(selected.number, 'closed')}>{busy === selected.number ? 'Closing…' : 'Close'}</button><button className="button primary" disabled={busy} onClick={() => merge(selected.number)}>{busy === selected.number ? 'Validating…' : 'Merge pull request'}</button></>}</div></header>
+    <header className="pull-detail-header"><div><h2>#{selected.number} {selected.title}</h2><p><span className={`status ${selected.state === 'open' ? 'good' : ''}`}>{selected.state}</span> <code>{selected.sourceShip}/{selected.sourceRepository}</code> proposes <code>{pullRefLabel(selected.sourceRef, selected.head)}</code> into <code>{pullRefLabel(selected.targetRef, selected.base)}</code></p></div><div className="pr-actions">{selected.state === 'closed' && <button className="button" disabled={busy} onClick={() => setPullState(selected.number, 'open')}>{busy === selected.number ? 'Reopening…' : 'Reopen'}</button>}{selected.state === 'open' && <><button className="button" disabled={busy} onClick={() => setPullState(selected.number, 'closed')}>{busy === selected.number ? 'Closing…' : 'Close'}</button><button className="button primary" disabled={busy} onClick={() => merge(selected.number)}>{busy === selected.number ? 'Validating…' : 'Merge pull request'}</button></>}</div></header>
     {error && <div className="inline-error">{error}</div>}
     {!diff ? <div className="empty">Loading diff…</div> : <>
       <DiffView diff={diff} onCommentTarget={setCommentTarget} />
@@ -759,23 +806,24 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
     </>}
   </div>
   return <>
-    <div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><div className="forge-toolbar-actions"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter pull requests…" />{repo.githubOrigin && <button className="button" disabled={githubBusy} onClick={() => syncGithubPulls(1)}>{githubBusy ? 'Syncing…' : 'Sync GitHub'}</button>}{repo.githubOrigin && githubHasMore && <button className="button" disabled={githubBusy} onClick={loadMoreGithubPulls}>{githubBusy ? 'Loading…' : 'Load more'}</button>}{(repo.peerOrigin || localBranches.length > 0) && <button className="button primary" onClick={() => { setSourceBranch(localBranches[0]?.name || ''); setCreating(true); setSubmitStatus(''); setError('') }}>New pull request</button>}</div></div>
+    <div className="forge-toolbar"><div className="segmented"><button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button><button className={filter === 'closed' ? 'active' : ''} onClick={() => setFilter('closed')}>Closed</button><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button></div><div className="forge-toolbar-actions"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter pull requests…" />{repo.githubOrigin && <button className="button" disabled={githubBusy} onClick={() => syncGithubPulls(1)}>{githubBusy ? 'Syncing…' : 'Sync GitHub'}</button>}{repo.githubOrigin && githubHasMore && <button className="button" disabled={githubBusy} onClick={loadMoreGithubPulls}>{githubBusy ? 'Loading…' : 'Load more'}</button>}{(repo.peerOrigin ? branchRefs.length > 0 : branchRefs.length > 1) && <button className="button primary" onClick={beginPullRequest}>New pull request</button>}</div></div>
     {creating && <section className="panel pr-composer">
-      <div className="section-title"><div><h2>Open a pull request</h2><p>{repo.peerOrigin ? 'Send this fork’s default branch to its native Urbit origin for review.' : 'Compare a branch with the default branch and start a review.'}</p></div><button className="text-button" disabled={submitBusy} onClick={() => { setCreating(false); setSubmitStatus(''); setError('') }}>Cancel</button></div>
+      <div className="section-title"><div><h2>Open a pull request</h2><p>Select the source branch and the branch that will receive the merge.</p></div><button className="text-button" disabled={submitBusy} onClick={() => { setCreating(false); setSubmitStatus(''); setError('') }}>Cancel</button></div>
       <div className="pr-compare">
-        <div><span>Source</span><strong>{repo.owner}/{repo.name}</strong>{repo.peerOrigin ? <code>{(repo.head || '').replace('refs/heads/', '')} · {shortOid((repo.refs || []).find((ref) => ref.name === repo.head)?.oid)}</code> : <select value={sourceBranch} onChange={(event) => setSourceBranch(event.target.value)}>{localBranches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name.replace('refs/heads/', '')} · {shortOid(branch.oid)}</option>)}</select>}</div>
+        <div><span>Source</span><strong>{repo.owner}/{repo.name}</strong><select value={sourceBranch} onChange={(event) => setSourceBranch(event.target.value)}>{branchRefs.map((branch) => <option key={branch.name} value={branch.name}>{pullRefLabel(branch.name, branch.oid)}</option>)}</select></div>
         <b>→</b>
-        <div><span>Target</span><strong>{repo.peerOrigin ? `${repo.peerOrigin.ship}/${repo.peerOrigin.repository}` : `${repo.owner}/${repo.name}`}</strong><code>{(repo.head || '').replace('refs/heads/', '')}</code></div>
+        <div><span>Target</span>{repo.peerOrigin && <select value={targetRepository} onChange={(event) => chooseTargetRepository(event.target.value)}><option value="local">This repository</option><option value="origin">Origin repository</option></select>}<strong>{repo.peerOrigin && targetRepository === 'origin' ? `${repo.peerOrigin.ship}/${repo.peerOrigin.repository}` : `${repo.owner}/${repo.name}`}</strong><select value={targetBranch} disabled={Boolean(targetRepository === 'origin' && originBranchStatus)} onChange={(event) => setTargetBranch(event.target.value)}>{(targetRepository === 'origin' ? originBranches : branchRefs).map((branch) => <option key={branch.name} value={branch.name}>{pullRefLabel(branch.name, branch.oid)}</option>)}</select></div>
       </div>
+      {targetRepository === 'origin' && originBranchStatus && <div className={originBranchStatus.startsWith('Could not') ? 'inline-error' : 'transfer-status'}>{originBranchStatus}</div>}
       <label><span>Title</span><input autoFocus value={title} maxLength="200" onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && title.trim() && !submitBusy) openNativePull() }} placeholder="Summarize the changes" /></label>
       {error && <div className="inline-error">{error}</div>}
       {submitStatus && <div className={`transfer-status ${!submitBusy ? 'success' : ''}`}>{submitBusy && <span className="spinner" />}{submitStatus}</div>}
-      <div className="form-actions split"><small className="quiet">{repo.peerOrigin ? 'The origin validates every object and records a reviewable diff.' : 'The branch tips are fixed when the review is opened.'}</small><div className="pr-actions">{repo.peerOrigin && submitStatus && !submitBusy && <button className="button" onClick={() => onOpenOrigin?.(repo.peerOrigin.ship, repo.peerOrigin.repository)}>View origin</button>}<button className="button primary" disabled={submitBusy || !title.trim() || (!repo.peerOrigin && !sourceBranch) || (!!submitStatus && !error)} onClick={openNativePull}>{submitBusy ? 'Opening…' : 'Create pull request'}</button></div></div>
+      <div className="form-actions split"><small className="quiet">The selected branch tips are fixed when the review opens.</small><div className="pr-actions">{repo.peerOrigin && targetRepository === 'origin' && submitStatus && !submitBusy && <button className="button" onClick={() => onOpenOrigin?.(repo.peerOrigin.ship, repo.peerOrigin.repository)}>View origin</button>}<button className="button primary" disabled={submitBusy || !title.trim() || !sourceBranch || !targetBranch || (targetRepository === 'local' && sourceBranch === targetBranch) || Boolean(targetRepository === 'origin' && originBranchStatus) || (!!submitStatus && !error)} onClick={openNativePull}>{submitBusy ? 'Opening…' : 'Create pull request'}</button></div></div>
     </section>}
     {!entries.length ? <div className="empty compact">{repo.peerOrigin ? 'No pull requests opened from this repository yet.' : 'No pull requests.'}</div> : !visible.length ? <div className="empty compact">No pull requests match this filter.</div> : <div className="pull-list">
     {error && <div className="inline-error">{error}</div>}
     {visible.map((pull) => pull.native ? <article className="pull-row clickable" key={`native-${pull.number}`} onClick={() => inspect(pull)}>
-      <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.state}</span><h3>#{pull.number} {pull.title}</h3><p><code>{pull.sourceShip}/{pull.sourceRepository}</code> proposes <code>{shortOid(pull.head)}</code></p></div>
+      <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.state}</span><h3>#{pull.number} {pull.title}</h3><p><code>{pull.sourceShip}/{pull.sourceRepository}</code> proposes <code>{pullRefLabel(pull.sourceRef, pull.head)}</code> into <code>{pullRefLabel(pull.targetRef, pull.base)}</code></p></div>
       {pull.state === 'open' && <button className="button primary" disabled={busy} onClick={(event) => { event.stopPropagation(); merge(pull.number) }}>{busy === pull.number ? 'Validating…' : 'Merge'}</button>}
     </article> : <button className="pull-row forge-link clickable row-button" key={`github-${pull.number}`} onClick={() => inspect(pull)}>
       <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.draft ? 'draft' : pull.state}</span><h3>#{pull.number} {pull.title}</h3><p>opened by <strong>{pull.author}</strong> on GitHub</p></div><span className="external-arrow">↗</span>
@@ -987,6 +1035,7 @@ function Settings({ repo, onMutate }) {
   const [message, setMessage] = useState('Publish Clay desk')
   const [token, setToken] = useState('')
   const [writer, setWriter] = useState('')
+  const [reader, setReader] = useState('')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [syncResult, setSyncResult] = useState('')
@@ -1193,6 +1242,14 @@ function Settings({ repo, onMutate }) {
         {repo.publicRead && <div className="form-actions split"><code className="public-url">{publicUrl}</code><div><button className="button" onClick={() => navigator.clipboard.writeText(publicUrl)}>Copy public link</button> <a className="button link-button" href={publicUrl} target="_blank" rel="noreferrer">Open</a></div></div>}
         <label><span>Write token</span><div className="inline-field"><input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={repo.writeTokenSet ? 'Token is set' : 'Set a Git password'} /><button className="button" disabled={busy || !token} onClick={() => act('token', async () => { await api.setToken(repo.name, token); setToken('') })}>Save</button></div></label>
         {repo.writeTokenSet && <button className="text-button danger-text" onClick={() => act('clear-token', () => api.clearToken(repo.name))}>Clear write token</button>}
+        <div className="subsection">
+          <div className="section-title"><div><h3>Ship readers</h3><p>Readers can discover, browse, and fork this private repository through Urgit, but cannot send updates. Writers already have read access.</p></div></div>
+          <div className="inline-field"><input value={reader} onChange={(e) => setReader(e.target.value)} placeholder="~sampel-palnet" /><button className="button" disabled={busy || !reader.trim()} onClick={() => act('reader', async () => { await api.setReader(repo.name, reader.trim(), true); setReader('') })}>Grant</button></div>
+          <div className="writer-list">
+            {(repo.readers || []).map((ship) => <div key={ship}><code>{ship}</code><button className="text-button danger-text" onClick={() => act(`reader-${ship}`, () => api.setReader(repo.name, ship, false))}>Revoke</button></div>)}
+            {!repo.readers?.length && <small className="quiet">No remote readers.</small>}
+          </div>
+        </div>
         <div className="subsection">
           <div className="section-title"><div><h3>Ship writers</h3><p>Authorized ships can send verified, fast-forward updates from native forks.</p></div></div>
           <div className="inline-field"><input value={writer} onChange={(e) => setWriter(e.target.value)} placeholder="~sampel-palnet" /><button className="button" disabled={busy || !writer.trim()} onClick={() => act('writer', async () => { await api.setWriter(repo.name, writer.trim(), true); setWriter('') })}>Grant</button></div>

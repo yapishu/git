@@ -1,7 +1,7 @@
 ::  Native Git object database and Smart HTTP endpoint.
 ::
 /-  git, git-peer
-/+  dbug, default-agent, git-archive, git-blame, git-clay, git-clay-history, git-codec, git-github, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
+/+  dbug, default-agent, git-access, git-archive, git-blame, git-clay, git-clay-history, git-codec, git-github, git-graph, git-migrate, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
 |%
 +$  card  card:agent:gall
 +$  profile-value  $@(~ [kind=@tas value=*])
@@ -46,6 +46,8 @@
       source-repository=@t
       local-repository=@t
       title=@t
+      source-ref=@t
+      target-ref=@t
       public-read=?
       accepted=?
       head=@t
@@ -80,6 +82,11 @@
       objects=@ud
   ==
 +$  peer-result  [status=? message=@t repository=@t]
++$  peer-offer-flight
+  $:  peer=ship
+      repository=@t
+      kind=?(%push %pull-request)
+  ==
 +$  webhook-flight  [repository=@t hook=@ud delivery=@uv]
 +$  peer-browse-serve  [target=ship pages=@ud]
 +$  peer-discovery
@@ -464,6 +471,11 @@
   =.  events  (~(put in events) %pull-request)
   (~(put in events) %pull-comment)
 ::
+++  repository-readable
+  |=  [repo=repository:git requester=@p]
+  ^-  ?
+  (can-read:git-access public-read.repo owner.repo readers.repo writers.repo requester)
+::
 ++  profile-field
   |=  [contact=profile-contact field=@tas kind=@tas]
   ^-  @t
@@ -558,6 +570,8 @@
     ==
   =/  writers-json=(list json)
     (turn ~(tap in writers.repo) |=(writer=@p s+(scot %p writer)))
+  =/  readers-json=(list json)
+    (turn ~(tap in readers.repo) |=(reader=@p s+(scot %p reader)))
   =/  protected-json=(list json)
     (turn ~(tap in protected-refs.repo) |=(ref=@t s+ref))
   =/  notification-events-json=(list json)
@@ -574,6 +588,8 @@
     :~  ['number' n+(decimal number.pull)]
         ['sourceShip' s+(scot %p source-ship.pull)]
         ['sourceRepository' s+source-repository.pull]
+        ['sourceRef' s+source-ref.pull]
+        ['targetRef' s+target-ref.pull]
         ['title' s+title.pull]
         ['state' s+state.pull]
         ['head' s+(oid-text:git-codec head.pull)]
@@ -612,6 +628,7 @@
       ['lfsLockCount' n+(decimal (lent ~(tap by lfs-locks.repo)))]
       ['writeTokenSet' b+?=(^ write-token-hash.repo)]
       ['writers' [%a writers-json]]
+      ['readers' [%a readers-json]]
       ['pullRequests' [%a pulls-json]]
       ['nativeIssues' [%a (turn native-issues.repo |=(issue=native-issue:git (native-issue-json issue %.n)))]]
       ['releases' [%a releases-json]]
@@ -646,6 +663,7 @@
   =/  fields=(map @t json)  p.full
   =.  fields  (~(del by fields) 'writeTokenSet')
   =.  fields  (~(del by fields) 'writers')
+  =.  fields  (~(del by fields) 'readers')
   =.  fields  (~(del by fields) 'binding')
   =.  fields  (~(del by fields) 'peerOrigin')
   =.  fields  (~(del by fields) 'webhooks')
@@ -654,6 +672,17 @@
   =.  fields  (~(del by fields) 'notificationEvents')
   =.  fields  (~(del by fields) 'upstreamUpdates')
   [%o fields]
+::
+++  public-repositories-json
+  |=  repos=(map @t repository:git)
+  ^-  json
+  %-  pairs:enjs:format
+  :~  :-  'repositories'
+      :-  %a
+      %+  turn  ~(tap by repos)
+      |=  [name=@t repo=repository:git]
+      (public-repository-json name repo)
+  ==
 ::
 ++  latest-file-commits
   |=  [repo=repository:git ref=@t]
@@ -1201,6 +1230,16 @@
       ['commits' (repository-commits-json name repo head.repo 0 50)]
   ==
 ::
+++  peer-repository-browse-json
+  |=  [name=@t repo=repository:git]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['revision' s+(repository-revision repo)]
+      ['repository' (public-repository-json name repo)]
+      ['files' (repository-files-json name repo)]
+      ['commits' (repository-commits-json name repo head.repo 0 50)]
+  ==
+::
 ++  repository-revision
   |=  repo=repository:git
   ^-  @t
@@ -1212,6 +1251,7 @@
         refs.repo
         protected-refs.repo
         writers.repo
+        readers.repo
         binding.repo
         peer-origin.repo
         github-origin.repo
@@ -1756,7 +1796,7 @@
 ::
 ++  migrate-repository-0
   |=  repo=repository-0:git
-  ^-  repository:git
+  ^-  repository-1:git
   :*  owner.repo
       public-read.repo
       description.repo
@@ -1788,7 +1828,7 @@
   |=  stored=state-0:git
   ^-  state-1:git
   =/  remaining=(list [@t repository-0:git])  ~(tap by repositories.stored)
-  =/  migrated=(map @t repository:git)  ~
+  =/  migrated=(map @t repository-1:git)  ~
   =.  migrated
     |-
     ?~  remaining  migrated
@@ -1797,9 +1837,23 @@
     $(remaining t.remaining)
   [%1 migrated peers.stored github-token.stored]
 ::
-++  settle-webhook-state
+++  migrate-state-1
   |=  stored=state-1:git
-  ^-  state-1:git
+  ^-  state-2:git
+  =/  remaining=(list [@t repository-1:git])  ~(tap by repositories.stored)
+  =/  migrated=(map @t repository:git)  ~
+  =.  migrated
+    |-
+    ?~  remaining  migrated
+    =.  migrated
+      %+  ~(put by migrated)  -.i.remaining
+      (repository-1-to-2:git-migrate +.i.remaining)
+    $(remaining t.remaining)
+  [%2 migrated peers.stored github-token.stored]
+::
+++  settle-webhook-state
+  |=  stored=state-2:git
+  ^-  state-2:git
   =/  remaining=(list [@t repository:git])  ~(tap by repositories.stored)
   =/  settled=(map @t repository:git)  ~
   |-
@@ -1840,10 +1894,15 @@
   |=  transfer=@uv
   ^-  @ta
   (scot %uv (cut 0 [0 64] transfer))
+::
+++  peer-serve-activity-id
+  |=  transfer=@uv
+  ^-  @uv
+  `@uv`(shas %git-peer-serve-activity transfer)
 --
 ::
 %-  agent:dbug
-=|  state-1:git
+=|  state-2:git
 =*  state  -
 =/  in-flight  *(map @uv lfs-request)
 =/  lfs-deletes  *(map @uv lfs-delete)
@@ -1853,6 +1912,7 @@
 =/  peer-serving  *(map @uv peer-serve)
 =/  peer-receiving  *(map @uv peer-receive)
 =/  peer-results  *(map @uv peer-result)
+=/  peer-outgoing  *(map @uv peer-offer-flight)
 =/  peer-discoveries  *(map @uv peer-discovery)
 =/  peer-browses  *(map @uv peer-browse)
 =/  peer-browse-serving  *(map @uv peer-browse-serve)
@@ -1880,11 +1940,14 @@
 ++  on-load
   |=  old=vase
   ^-  (quip card _this)
-  =/  loaded=state-1:git
-    ?:  ?=([%0 *] q.old)
-      (settle-webhook-state (migrate-state-0 !<(state-0:git old)))
-    (settle-webhook-state !<(state-1:git old))
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  =/  loaded=state-2:git
+    ?+  -.q.old  !!
+      %0  (migrate-state-1 (migrate-state-0 !<(state-0:git old)))
+      %1  (migrate-state-1 !<(state-1:git old))
+      %2  !<(state-2:git old)
+    ==
+  =.  loaded  (settle-webhook-state loaded)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -1938,6 +2001,17 @@
   |=  event=peer-activity
   ?:  !=(id id.event)  event
   event(status ?:(ok %success %failure), message message, when now.bowl)
+::
+++  peer-outgoing-finish
+  |=  [transfer=@uv ok=? message=@t]
+  ^-  (quip card _this)
+  =/  outgoing=(unit peer-offer-flight)  (~(get by peer-outgoing) transfer)
+  ?~  outgoing  `this
+  =.  peer-outgoing  (~(del by peer-outgoing) transfer)
+  =.  peer-results
+    (~(put by peer-results) transfer [ok message repository.u.outgoing])
+  =.  peer-activities  (peer-activity-finish transfer ok message)
+  `this
 ::
 ++  notification-activity-put
   |=  event=notification-activity
@@ -2027,6 +2101,8 @@
           (peer-valid-refs refs.flight objects.flight)
           (~(has by refs.flight) head.flight)
       ==
+    ?:  |(=(%pull purpose.flight) =(%push purpose.flight))
+      (peer-push-finish flight transfer %.n 'received repository graph is incomplete')
     =.  peer-receiving  (~(del by peer-receiving) transfer)
     =.  peer-results  (~(put by peer-results) transfer [%.n 'received repository graph is incomplete' local-repository.flight])
     =.  peer-activities
@@ -2036,19 +2112,23 @@
   ?:  =(%pull purpose.flight)
     ?~  existing
       (peer-push-finish flight transfer %.n 'destination repository disappeared')
-    =/  incoming=(unit oid:git)  (~(get by refs.flight) head.flight)
-    =/  base=(unit oid:git)  (~(get by refs.u.existing) head.u.existing)
+    =/  selected-source-ref=@t
+      ?:(=('' source-ref.flight) head.flight source-ref.flight)
+    =/  incoming=(unit oid:git)  (~(get by refs.flight) selected-source-ref)
+    =/  base=(unit oid:git)  (~(get by refs.u.existing) target-ref.flight)
     ?~  incoming
-      (peer-push-finish flight transfer %.n 'pull request requires source and destination branch heads')
+      (peer-push-finish flight transfer %.n 'source branch not found in received repository')
     ?~  base
-      (peer-push-finish flight transfer %.n 'pull request requires source and destination branch heads')
+      (peer-push-finish flight transfer %.n 'target branch not found')
     ?>  ?=(^ incoming)
     ?>  ?=(^ base)
     =/  incoming-oid=oid:git  u.incoming
     =/  base-oid=oid:git  u.base
+    ?:  =(incoming-oid base-oid)
+      (peer-push-finish flight transfer %.n 'selected branches have identical tips')
     =/  number=@ud  (add 1 (lent native-pulls.u.existing))
     =/  pull=native-pull:git
-      [number source.flight source-repository.flight title.flight %open incoming-oid base-oid ~]
+      [number source.flight source-repository.flight selected-source-ref target-ref.flight title.flight %open incoming-oid base-oid ~]
     =/  updated=repository:git
       u.existing(objects objects.flight, native-pulls [pull native-pulls.u.existing])
     =.  repositories  (~(put by repositories) local-repository.flight updated)
@@ -2142,6 +2222,7 @@
           ~
           ~
           ~
+          ~
           `[[source.flight source-repository.flight]]
           ~
           ~
@@ -2175,15 +2256,19 @@
   |=  [transfer=@uv message=@t]
   ^-  (quip card _this)
   =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer)
-  ?~  found  `this
-  ?.  =(src.bowl source.u.found)  `this
-  =/  flight=peer-receive  u.found
-  =.  peer-receiving  (~(del by peer-receiving) transfer)
-  =.  peer-results  (~(put by peer-results) transfer [%.n message local-repository.u.found])
-  =.  peer-activities  (peer-activity-finish transfer %.n message)
-  :_  this
-  ?:  =('' head.flight)  ~
-  (peer-transfer-yawns transfer source.flight pages.flight completed.flight)
+  ?^  found
+    ?.  =(src.bowl source.u.found)  `this
+    =/  flight=peer-receive  u.found
+    =.  peer-receiving  (~(del by peer-receiving) transfer)
+    =.  peer-results  (~(put by peer-results) transfer [%.n message local-repository.u.found])
+    =.  peer-activities  (peer-activity-finish transfer %.n message)
+    :_  this
+    ?:  =('' head.flight)  ~
+    (peer-transfer-yawns transfer source.flight pages.flight completed.flight)
+  =/  outgoing=(unit peer-offer-flight)  (~(get by peer-outgoing) transfer)
+  ?~  outgoing  `this
+  ?.  =(src.bowl peer.u.outgoing)  `this
+  (peer-outgoing-finish transfer %.n message)
 ::
 ++  handle-peer
   |=  packet=packet:git-peer
@@ -2242,7 +2327,10 @@
     (peer-forge-result request.packet repository.packet kind.packet number.packet ok.packet message.packet result.packet)
   ::
       %offer
-    (peer-offer offer.packet)
+    (peer-offer-legacy offer.packet)
+  ::
+      %offer-branches
+    (peer-offer offer-branches.packet)
   ::
       %release
     (peer-release transfer.packet)
@@ -2263,15 +2351,15 @@
 ++  peer-catalog-request
   |=  msg=catalog-request:git-peer
   ^-  (quip card _this)
-  =/  public-repositories=(list catalog-repository:git-peer)
+  =/  readable-repositories=(list catalog-repository:git-peer)
     %+  murn  ~(tap by repositories)
     |=  entry=[@t repository:git]
     =/  name=@t  -.entry
     =/  repo=repository:git  +.entry
-    ?.  public-read.repo  ~
+    ?.  (repository-readable repo src.bowl)  ~
     `[name head.repo (lent ~(tap by refs.repo)) (lent ~(tap by objects.repo)) (~(has in writers.repo) src.bowl)]
   :_  this
-  :~  (peer-card src.bowl /peer/catalog/(scot %uv request.msg) [%catalog request.msg (scag 200 public-repositories)])
+  :~  (peer-card src.bowl /peer/catalog/(scot %uv request.msg) [%catalog request.msg (scag 200 readable-repositories)])
   ==
 ::
 ++  peer-catalog
@@ -2298,32 +2386,32 @@
   |=  [request=@uv repository=@t view=browse-view:git-peer number=@ud file-path=path]
   ^-  (quip card _this)
   =/  found=(unit repository:git)  (~(get by repositories) repository)
-  ?.  ?&(?=(^ found) public-read.u.found)
+  ?.  ?&(?=(^ found) (repository-readable u.found src.bowl))
     :_  this
-    :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or not public'])
+    :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or requester is not authorized'])
     ==
   =/  detail=(unit json)
     ?:  =(%stamp view)
       `(repository-stamp-json repository u.found)
     ?:  =(%overview view)
-      `(repository-browse-json repository u.found)
+      `(peer-repository-browse-json repository u.found)
     ?:  =(%issue view)
       =/  issue=(unit native-issue:git)  (native-issue-at u.found number)
       ?~  issue  ~
-      `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['issue' (native-issue-json u.issue %.y)]])
+      `(pairs:enjs:format ~[['repository' (public-repository-json repository u.found)] ['issue' (native-issue-json u.issue %.y)]])
     ?:  =(%pull view)
       =/  pull=(unit native-pull:git)  (native-pull-at u.found number)
       ?~  pull  ~
       =/  pull-json=(unit json)  (native-pull-detail-json repository u.found u.pull)
       ?~  pull-json  ~
-      `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['pull' u.pull-json]])
+      `(pairs:enjs:format ~[['repository' (public-repository-json repository u.found)] ['pull' u.pull-json]])
     ?:  =(%commit view)
       ?~  file-path  ~
       (repository-history-detail-json repository u.found i.file-path our.bowl now.bowl)
     =/  data=(unit octs)  (repository-file u.found file-path)
     ?~  data  ~
     ?:  (gth p.u.data 4.194.304)  ~
-    `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['file' (repository-file-json repository u.found head.u.found file-path u.data)]])
+    `(pairs:enjs:format ~[['repository' (public-repository-json repository u.found)] ['file' (repository-file-json repository u.found head.u.found file-path u.data)]])
   ?~  detail
     :_  this
     :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'requested item is unavailable, incomplete, or too large to preview'])
@@ -2442,8 +2530,8 @@
   |=  msg=forge-comment:git-peer
   ^-  (quip card _this)
   =/  found=(unit repository:git)  (~(get by repositories) repository.msg)
-  ?.  ?&(?=(^ found) public-read.u.found)
-    (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'repository is unavailable or not public' ~)
+  ?.  ?&(?=(^ found) (repository-readable u.found src.bowl))
+    (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'repository is unavailable or requester is not authorized' ~)
   ?:  =(%issue kind.msg)
     =/  issue=(unit native-issue:git)  (native-issue-at u.found number.msg)
     ?~  issue
@@ -2512,8 +2600,8 @@
   |=  msg=forge-create-issue:git-peer
   ^-  (quip card _this)
   =/  found=(unit repository:git)  (~(get by repositories) repository.msg)
-  ?.  ?&(?=(^ found) public-read.u.found)
-    (peer-forge-reply src.bowl request.msg repository.msg %issue 0 %.n 'repository is unavailable or not public' ~)
+  ?.  ?&(?=(^ found) (repository-readable u.found src.bowl))
+    (peer-forge-reply src.bowl request.msg repository.msg %issue 0 %.n 'repository is unavailable or requester is not authorized' ~)
   ?.  ?&  !=('' title.msg)
           (lte (met 3 title.msg) 200)
           (lte (met 3 body.msg) 65.536)
@@ -2563,8 +2651,13 @@
     (~(put by peer-forges) request u.found(active %.n, ok ok, message message, result result))
   `this
 ::
-++  peer-offer
+++  peer-offer-legacy
   |=  offer=offer:git-peer
+  ^-  (quip card _this)
+  (peer-offer [transfer.offer repository.offer source-repository.offer '' '' pull-request.offer title.offer])
+::
+++  peer-offer
+  |=  offer=offer-branches:git-peer
   ^-  (quip card _this)
   =/  activity-kind=peer-activity-kind
     ?:(pull-request.offer %pull-request %push)
@@ -2575,10 +2668,47 @@
     =.  peer-activities
       (peer-activity-finish transfer.offer %.n 'destination repository not found')
     (peer-fail src.bowl transfer.offer 'destination repository not found')
-  ?.  |(pull-request.offer (~(has in writers.u.found) src.bowl))
+  =/  selected-target-ref=@t
+    ?:(=('' target-ref.offer) head.u.found target-ref.offer)
+  =.  offer  offer(target-ref selected-target-ref)
+  ?.  ?:  pull-request.offer
+        ?&  ?|  =('' source-ref.offer)
+                ?&  (starts-with 'refs/heads/' source-ref.offer)
+                    (valid-ref:git-protocol source-ref.offer)
+                ==
+            ==
+            (starts-with 'refs/heads/' target-ref.offer)
+            (valid-ref:git-protocol target-ref.offer)
+        ==
+      %.y
     =.  peer-activities
-      (peer-activity-finish transfer.offer %.n 'ship is not authorized to update this repository')
-    (peer-fail src.bowl transfer.offer 'ship is not authorized to update this repository')
+      (peer-activity-finish transfer.offer %.n 'source and target refs must be valid branches')
+    (peer-fail src.bowl transfer.offer 'source and target refs must be valid branches')
+  ?.  ?:  pull-request.offer
+        ?&  !=('' title.offer)
+            (lte (met 3 title.offer) 200)
+        ==
+      %.y
+    =.  peer-activities
+      (peer-activity-finish transfer.offer %.n 'pull request title is required and limited to 200 bytes')
+    (peer-fail src.bowl transfer.offer 'pull request title is required and limited to 200 bytes')
+  =/  authorized=?
+    ?:  pull-request.offer
+      (repository-readable u.found src.bowl)
+    (~(has in writers.u.found) src.bowl)
+  ?.  authorized
+    =/  denied-message=@t
+      ?:(pull-request.offer 'ship is not authorized to read this repository' 'ship is not authorized to update this repository')
+    =.  peer-activities
+      (peer-activity-finish transfer.offer %.n denied-message)
+    (peer-fail src.bowl transfer.offer denied-message)
+  =/  target=(unit oid:git)  (~(get by refs.u.found) target-ref.offer)
+  ?:  ?&  pull-request.offer
+          ?=(~ target)
+      ==
+    =.  peer-activities
+      (peer-activity-finish transfer.offer %.n 'target branch not found')
+    (peer-fail src.bowl transfer.offer 'target branch not found')
   ?:  (~(has by peer-receiving) transfer.offer)
     =.  peer-activities
       (peer-activity-finish transfer.offer %.n 'transfer identifier is already active')
@@ -2591,6 +2721,8 @@
         source-repository.offer
         repository.offer
         title.offer
+        source-ref.offer
+        target-ref.offer
         public-read.u.found
         %.n
         ''
@@ -2612,11 +2744,10 @@
 ++  peer-result-received
   |=  [transfer=@uv ok=? message=@t]
   ^-  (quip card _this)
-  =/  found=(unit peer-result)  (~(get by peer-results) transfer)
-  ?~  found  `this
-  =.  peer-results  (~(put by peer-results) transfer [ok message repository.u.found])
-  =.  peer-activities  (peer-activity-finish transfer ok message)
-  `this
+  =/  outgoing=(unit peer-offer-flight)  (~(get by peer-outgoing) transfer)
+  ?~  outgoing  `this
+  ?.  =(src.bowl peer.u.outgoing)  `this
+  (peer-outgoing-finish transfer ok message)
 ::
 ++  peer-request
   |=  req=request:git-peer
@@ -2626,8 +2757,8 @@
   =/  origin-request=?
     ?~  peer-origin.u.found  %.n
     =(src.bowl ship.u.peer-origin.u.found)
-  ?.  |(public-read.u.found origin-request)
-    (peer-fail src.bowl transfer.req 'repository is not public')
+  ?.  |((repository-readable u.found src.bowl) origin-request)
+    (peer-fail src.bowl transfer.req 'ship is not authorized to read this repository')
   ?:  (~(has by peer-serving) transfer.req)
     :_  this
     :~  (peer-card src.bowl /peer/accepted/(scot %uv transfer.req) [%accepted transfer.req repository.req])
@@ -2662,8 +2793,8 @@
   =/  origin-request=?
     ?~  peer-origin.u.found  %.n
     =(target ship.u.peer-origin.u.found)
-  ?.  |(public-read.u.found origin-request)
-    (peer-fail target transfer.req 'repository is not public')
+  ?.  |((repository-readable u.found target) origin-request)
+    (peer-fail target transfer.req 'ship is not authorized to read this repository')
   ?:  (~(has by peer-serving) transfer.req)
     `this
   =/  superseded=(list [@uv peer-serve])
@@ -2675,6 +2806,8 @@
     ==
   =/  superseded-ids=(set @uv)
     (silt (turn superseded |=(entry=[@uv peer-serve] -.entry)))
+  =/  superseded-activity-ids=(set @uv)
+    (silt (turn superseded |=(entry=[@uv peer-serve] (peer-serve-activity-id -.entry))))
   =/  cleanup-cards=(list card)
     %-  zing
     %+  turn  superseded
@@ -2694,7 +2827,7 @@
   =.  peer-activities
     %+  turn  peer-activities
     |=  event=peer-activity
-    ?.  (~(has in superseded-ids) id.event)  event
+    ?.  (~(has in superseded-activity-ids) id.event)  event
     event(status %failure, message 'repository snapshot superseded by a newer request', when now.bowl)
   =/  objects=(list [oid:git object:git])
     %+  murn  ~(tap by objects.u.found)
@@ -2705,7 +2838,7 @@
   =/  flight=peer-serve  [target transfer.req repository.req (lent pages) objects]
   =.  peer-serving  (~(put by peer-serving) transfer.req flight)
   =.  peer-activities
-    (peer-activity-start transfer.req %serve %incoming target repository.req 'repository snapshot requested')
+    (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req 'repository snapshot requested')
   =/  snapshot-path=path  /fine/(peer-fine-name transfer.req)
   =/  object-pages=(list card)
     %+  turn  pages
@@ -2765,7 +2898,8 @@
   =/  found=(unit peer-serve)  (~(get by peer-serving) transfer)
   ?~  found  `this
   ?.  =(src.bowl target.u.found)  `this
-  =.  peer-activities  (peer-activity-finish transfer %.y 'repository snapshot delivered')
+  =.  peer-activities
+    (peer-activity-finish (peer-serve-activity-id transfer) %.y 'repository snapshot delivered')
   =/  count=@ud  pages.u.found
   =/  culls=(list card)
     ?:  =(0 count)  ~
@@ -2869,6 +3003,7 @@
           ~
           ~
           ~
+          ~
           default-notification-events
       ==
     `this(repositories (~(put by repositories) name.act repo))
@@ -2939,6 +3074,18 @@
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)
     ?~  found  `this
     =/  repo=repository:git  u.found(writers (~(del in writers.u.found) writer.act))
+    `this(repositories (~(put by repositories) repository.act repo))
+  ::
+      %grant-reader
+    =/  found=(unit repository:git)  (~(get by repositories) repository.act)
+    ?~  found  `this
+    =/  repo=repository:git  u.found(readers (~(put in readers.u.found) reader.act))
+    `this(repositories (~(put by repositories) repository.act repo))
+  ::
+      %revoke-reader
+    =/  found=(unit repository:git)  (~(get by repositories) repository.act)
+    ?~  found  `this
+    =/  repo=repository:git  u.found(readers (~(del in readers.u.found) reader.act))
     `this(repositories (~(put by repositories) repository.act repo))
   ::
       %set-write-token
@@ -3180,6 +3327,8 @@
   =.  fields  (~(put by fields) 'state' s+state.pull)
   =.  fields  (~(put by fields) 'sourceShip' s+(scot %p source-ship.pull))
   =.  fields  (~(put by fields) 'sourceRepository' s+source-repository.pull)
+  =.  fields  (~(put by fields) 'sourceRef' s+source-ref.pull)
+  =.  fields  (~(put by fields) 'targetRef' s+target-ref.pull)
   =.  fields  (~(put by fields) 'comments' [%a (turn comments.pull review-comment-json)])
   `[%o fields]
 ::
@@ -3384,9 +3533,10 @@
     =/  transfer=@uv  -.entry
     =/  result=peer-result  +.entry
     =/  flight=(unit peer-receive)  (~(get by peer-receiving) transfer)
+    =/  outgoing=(unit peer-offer-flight)  (~(get by peer-outgoing) transfer)
     %-  pairs:enjs:format
     :~  ['transfer' s+(scot %uv transfer)]
-        ['active' b+?=(^ flight)]
+        ['active' b+|(?=(^ flight) ?=(^ outgoing))]
         ['ok' b+status.result]
         ['message' s+message.result]
         ['repository' s+repository.result]
@@ -4700,10 +4850,14 @@
       :_  this
       (api-error eyre-id 422 'invalid transfer identifier')
     =/  active=?  (~(has by peer-receiving) u.transfer)
+    =/  outgoing=?  (~(has by peer-outgoing) u.transfer)
     =/  recorded=?  (~(has by peer-results) u.transfer)
-    ?.  |(active recorded)
+    ?.  |(active outgoing recorded)
       :_  this
       (api-error eyre-id 404 'transfer not found')
+    ?:  outgoing
+      :_  this
+      (api-error eyre-id 409 'outgoing offer is still active')
     ?:  active
       =/  canceled=(quip card _this)
         (peer-snapshot-fail u.transfer 'transfer cancelled')
@@ -4779,6 +4933,8 @@
           u.source-repository
           u.local-repository
           ''
+          ''
+          ''
           ?^(existing public-read.u.existing u.public)
           %.n
           ''
@@ -4823,11 +4979,14 @@
       `@uv`(shas %git-peer-push (cat 3 eny.bowl request-count))
     =.  request-count  +(request-count)
     =.  peer-results  (~(put by peer-results) transfer [%.n 'offering update' u.name])
+    =.  peer-outgoing
+      (~(put by peer-outgoing) transfer [ship.u.peer-origin.u.found u.name %push])
     =.  peer-activities
       (peer-activity-start transfer %push %outgoing ship.u.peer-origin.u.found u.name 'offering update')
     :_  this
     %+  weld
       :~  (peer-card ship.u.peer-origin.u.found /peer/offer/(scot %uv transfer) [%offer transfer repository.u.peer-origin.u.found u.name %.n ''])
+          [%pass /peer/offer-timeout/(scot %uv transfer) %arvo %b %wait (add now.bowl ~m11)]
       ==
     (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['transfer' s+(scot %uv transfer)]]))
   ?:  ?&  =(%'POST' method)
@@ -4839,13 +4998,29 @@
       (api-error eyre-id 400 'valid JSON body required')
     =/  name=(unit @t)  (string-at 'name' u.jon)
     =/  title=(unit @t)  (string-at 'title' u.jon)
-    ?.  ?&(?=(^ name) ?=(^ title) !=('' u.title))
+    =/  source-ref=(unit @t)  (string-at 'sourceBranch' u.jon)
+    =/  target-ref=(unit @t)  (string-at 'targetBranch' u.jon)
+    ?.  ?&  ?=(^ name)
+            ?=(^ title)
+            ?=(^ source-ref)
+            ?=(^ target-ref)
+            !=('' u.title)
+            (lte (met 3 u.title) 200)
+            (starts-with 'refs/heads/' u.source-ref)
+            (valid-ref:git-protocol u.source-ref)
+            (starts-with 'refs/heads/' u.target-ref)
+            (valid-ref:git-protocol u.target-ref)
+        ==
       :_  this
-      (api-error eyre-id 422 'name and title are required')
+      (api-error eyre-id 422 'name, title, sourceBranch, and targetBranch are required; refs must be valid branches')
     =/  found=(unit repository:git)  (~(get by repositories) u.name)
     ?~  found
       :_  this
       (api-error eyre-id 404 'repository not found')
+    =/  source-head=(unit oid:git)  (~(get by refs.u.found) u.source-ref)
+    ?~  source-head
+      :_  this
+      (api-error eyre-id 404 'source branch not found')
     ?~  peer-origin.u.found
       :_  this
       (api-error eyre-id 409 'repository is not a native fork')
@@ -4853,11 +5028,14 @@
       `@uv`(shas %git-peer-pull (cat 3 eny.bowl request-count))
     =.  request-count  +(request-count)
     =.  peer-results  (~(put by peer-results) transfer [%.n 'opening pull request' u.name])
+    =.  peer-outgoing
+      (~(put by peer-outgoing) transfer [ship.u.peer-origin.u.found u.name %pull-request])
     =.  peer-activities
       (peer-activity-start transfer %pull-request %outgoing ship.u.peer-origin.u.found u.name 'opening pull request')
     :_  this
     %+  weld
-      :~  (peer-card ship.u.peer-origin.u.found /peer/offer/(scot %uv transfer) [%offer transfer repository.u.peer-origin.u.found u.name %.y u.title])
+      :~  (peer-card ship.u.peer-origin.u.found /peer/offer/(scot %uv transfer) [%offer-branches transfer repository.u.peer-origin.u.found u.name u.source-ref u.target-ref %.y u.title])
+          [%pass /peer/offer-timeout/(scot %uv transfer) %arvo %b %wait (add now.bowl ~m11)]
       ==
     (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['transfer' s+(scot %uv transfer)]]))
   ?:  ?&  =(%'GET' method)
@@ -5911,37 +6089,38 @@
       :_  this
       (api-error eyre-id 400 'valid JSON body required')
     =/  title=(unit @t)  (string-at 'title' u.jon)
-    =/  branch=(unit @t)  (string-at 'branch' u.jon)
+    =/  source-ref=(unit @t)  (string-at 'sourceBranch' u.jon)
+    =/  target-ref=(unit @t)  (string-at 'targetBranch' u.jon)
     ?.  ?&  ?=(^ title)
-            ?=(^ branch)
+            ?=(^ source-ref)
+            ?=(^ target-ref)
             !=('' u.title)
             (lte (met 3 u.title) 200)
-            (starts-with 'refs/heads/' u.branch)
-            (valid-ref:git-protocol u.branch)
+            (starts-with 'refs/heads/' u.source-ref)
+            (valid-ref:git-protocol u.source-ref)
+            (starts-with 'refs/heads/' u.target-ref)
+            (valid-ref:git-protocol u.target-ref)
         ==
       :_  this
-      (api-error eyre-id 422 'title and a valid source branch are required')
-    ?:  =(u.branch head.u.found)
-      :_  this
-      (api-error eyre-id 422 'source branch must differ from the default branch')
-    =/  incoming=(unit oid:git)  (~(get by refs.u.found) u.branch)
+      (api-error eyre-id 422 'title, sourceBranch, and targetBranch are required; refs must be valid branches')
+    =/  incoming=(unit oid:git)  (~(get by refs.u.found) u.source-ref)
     ?~  incoming
       :_  this
       (api-error eyre-id 404 'source branch not found')
-    =/  base=(unit oid:git)  (~(get by refs.u.found) head.u.found)
+    =/  base=(unit oid:git)  (~(get by refs.u.found) u.target-ref)
     ?~  base
       :_  this
-      (api-error eyre-id 409 'default branch has no head')
+      (api-error eyre-id 404 'target branch not found')
     ?:  =(u.incoming u.base)
       :_  this
-      (api-error eyre-id 409 'source branch has no changes')
+      (api-error eyre-id 409 'selected branches have identical tips')
     =/  number=@ud  (add 1 (lent native-pulls.u.found))
     =/  pull=native-pull:git
-      [number our.bowl name u.title %open u.incoming u.base ~]
+      [number our.bowl name u.source-ref u.target-ref u.title %open u.incoming u.base ~]
     =.  repositories
       (~(put by repositories) name u.found(native-pulls [pull native-pulls.u.found]))
     =/  event-data=json
-      (pairs:enjs:format ~[['number' n+(decimal number)] ['title' s+u.title] ['branch' s+u.branch] ['state' s+'open']])
+      (pairs:enjs:format ~[['number' n+(decimal number)] ['title' s+u.title] ['sourceRef' s+u.source-ref] ['targetRef' s+u.target-ref] ['state' s+'open']])
     =/  dispatched=(quip card _this)
       (dispatch-webhooks name %pull-request event-data)
     :_  +.dispatched
@@ -5964,16 +6143,12 @@
       :_  this
       (api-error eyre-id 404 'pull request not found')
     =/  pull=native-pull:git  i.matches
-    =/  diff=(unit json)  (repository-diff-json name u.found base.pull head.pull)
-    ?~  diff
+    =/  detail=(unit json)  (native-pull-detail-json name u.found pull)
+    ?~  detail
       :_  this
       (api-error eyre-id 409 'pull request objects are incomplete')
-    ?>  ?=([%o *] u.diff)
-    =/  fields=(map @t json)  p.u.diff
-    =.  fields
-      (~(put by fields) 'comments' [%a (turn comments.pull review-comment-json)])
     :_  this
-    (api-json eyre-id 200 [%o fields])
+    (api-json eyre-id 200 u.detail)
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %repository @ %pulls @ %comments ~] site)
       ==
@@ -6145,7 +6320,7 @@
     ?.  =(%open state.pull)
       :_  this
       (api-error eyre-id 409 'pull request is not open')
-    =/  current=(unit oid:git)  (~(get by refs.u.found) head.u.found)
+    =/  current=(unit oid:git)  (~(get by refs.u.found) target-ref.pull)
     ?~  current
       :_  this
       (api-error eyre-id 409 'destination branch has no head')
@@ -6180,10 +6355,10 @@
         candidate(state %merged)
       candidate
     =/  applied=repository:git
-      u.found(objects objects.u.integrated, refs (~(put by refs.u.found) head.u.found merge-oid), native-pulls pulls)
+      u.found(objects objects.u.integrated, refs (~(put by refs.u.found) target-ref.pull merge-oid), native-pulls pulls)
     =/  clay-linked=?
       ?~  binding.applied  %.n
-      =(head.applied branch.u.binding.applied)
+      =(target-ref.pull branch.u.binding.applied)
     ?.  clay-linked
       =.  repositories  (~(put by repositories) name applied)
       :_  this
@@ -6252,6 +6427,29 @@
     ?:  u.allowed
       (api-with-action eyre-id 200 [%grant-writer name u.writer])
     (api-with-action eyre-id 200 [%revoke-writer name u.writer])
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %repository @ %readers ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    =/  allowed=(unit ?)  (bool-at 'allowed' u.jon)
+    ?.  ?&(?=(^ ship-text) ?=(^ allowed))
+      :_  this
+      (api-error eyre-id 422 'ship and allowed are required')
+    =/  reader=(unit @p)  (slaw %p u.ship-text)
+    ?~  reader
+      :_  this
+      (api-error eyre-id 422 'ship must be a valid Urbit ID')
+    ?:  u.allowed
+      (api-with-action eyre-id 200 [%grant-reader name u.reader])
+    (api-with-action eyre-id 200 [%revoke-reader name u.reader])
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %repository @ %protected ~] site)
       ==
@@ -7634,14 +7832,14 @@
       |=  entry=[@t repository:git]
       ?.  public-read.+.entry  ~
       `entry
-    ``json+!>((repositories-json visible))
+    ``json+!>((public-repositories-json visible))
   ::
       [%x %repository @ ~]
     =/  name=@t  i.t.t.path
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?~  found  [~ ~]
     ?.  public-read.u.found  [~ ~]
-    ``json+!>((repository-json name u.found))
+    ``json+!>((public-repository-json name u.found))
   ::
       [%x %repository @ %files ~]
     =/  name=@t  i.t.t.path
@@ -7662,7 +7860,7 @@
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?~  found  [~ ~]
     ?.  public-read.u.found  [~ ~]
-    ``json+!>((repository-browse-json name u.found))
+    ``json+!>((peer-repository-browse-json name u.found))
   ::
       [%x %fine @ ~]
     =/  transfer=(unit @uv)  (slaw %uv i.t.t.path)
@@ -7926,6 +8124,28 @@
     :~  [%pass /peer/stall-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ==
   ::
+      [%peer %offer-timeout @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  transfer  `this
+    =/  outgoing=(unit peer-offer-flight)  (~(get by peer-outgoing) u.transfer)
+    ?~  outgoing  `this
+    =/  message=@t
+      ?:  =(%push kind.u.outgoing)
+        'peer did not answer the update offer'
+      'peer did not answer the pull request offer'
+    =.  peer-outgoing  (~(del by peer-outgoing) u.transfer)
+    =.  peer-results
+      (~(put by peer-results) u.transfer [%.n message repository.u.outgoing])
+    =.  peer-activities
+      %+  turn  peer-activities
+      |=  event=peer-activity
+      ?:  !=(u.transfer id.event)  event
+      event(status %failure, message message, when now.bowl)
+    `this
+  ::
       [%peer %request-timeout @ ~]
     ?.  ?=([%behn %wake *] sign-arvo)
       (on-arvo:def wire sign-arvo)
@@ -7965,10 +8185,11 @@
     ?~  transfer  `this
     =/  found=(unit peer-serve)  (~(get by peer-serving) u.transfer)
     ?~  found  `this
+    =/  activity-id=@uv  (peer-serve-activity-id u.transfer)
     =.  peer-activities
       %+  turn  peer-activities
       |=  event=peer-activity
-      ?:  !=(u.transfer id.event)  event
+      ?:  !=(activity-id id.event)  event
       event(status %failure, message 'repository snapshot expired before release', when now.bowl)
     =/  count=@ud  pages.u.found
     =/  culls=(list card)
@@ -8390,6 +8611,7 @@
               ~
               combined
               (silt ~[our.bowl])
+              ~
               ~
               ~
               ~

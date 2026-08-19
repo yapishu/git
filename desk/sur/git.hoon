@@ -97,10 +97,23 @@
       resolved=?
   ==
 ::
++$  native-pull-1
+  $:  number=@ud
+      source-ship=ship
+      source-repository=@t
+      title=@t
+      state=?(%open %merged %closed)
+      head=oid
+      base=oid
+      comments=(list review-comment)
+  ==
+::
 +$  native-pull
   $:  number=@ud
       source-ship=ship
       source-repository=@t
+      source-ref=@t
+      target-ref=@t
       title=@t
       state=?(%open %merged %closed)
       head=oid
@@ -228,6 +241,7 @@
       protected-refs=(set @t)
       objects=(map oid object)
       writers=(set @p)
+      readers=(set @p)
       write-token-hash=(unit @)
       lfs-objects=(map @t lfs-object)
       lfs-uploads=(map @t lfs-upload)
@@ -272,7 +286,7 @@
       github-origin=(unit github-origin)
       github-issues=(list forge-item)
       github-pulls=(list forge-item)
-      native-pulls=(list native-pull)
+      native-pulls=(list native-pull-1)
       native-issues=(list native-issue)
       releases=(map @t release)
       webhooks=(map @ud webhook)
@@ -281,8 +295,43 @@
       upstream-updates=(list upstream-update)
   ==
 ::
++$  repository-1
+  $:  owner=@p
+      public-read=?
+      description=@t
+      head=@t
+      refs=(map @t oid)
+      protected-refs=(set @t)
+      objects=(map oid object)
+      writers=(set @p)
+      write-token-hash=(unit @)
+      lfs-objects=(map @t lfs-object)
+      lfs-uploads=(map @t lfs-upload)
+      lfs-locks=(map @ud lfs-lock)
+      binding=(unit desk-binding)
+      peer-origin=(unit peer-origin)
+      github-origin=(unit github-origin)
+      github-issues=(list forge-item)
+      github-pulls=(list forge-item)
+      native-pulls=(list native-pull-1)
+      native-issues=(list native-issue)
+      releases=(map @t release)
+      webhooks=(map @ud webhook)
+      incoming-hook=(unit incoming-hook)
+      webhook-deliveries=(list webhook-delivery)
+      upstream-updates=(list upstream-update)
+      notification-events=(set notification-event)
+  ==
+::
 +$  state-1
   $:  %1
+      repositories=(map @t repository-1)
+      peers=(set @p)
+      github-token=(unit @t)
+  ==
+::
++$  state-2
+  $:  %2
       repositories=(map @t repository)
       peers=(set @p)
       github-token=(unit @t)
@@ -300,6 +349,8 @@
       [%set-description repository=@t description=@t]
       [%grant-writer repository=@t writer=@p]
       [%revoke-writer repository=@t writer=@p]
+      [%grant-reader repository=@t reader=@p]
+      [%revoke-reader repository=@t reader=@p]
       [%set-write-token repository=@t token=@t]
       [%clear-write-token repository=@t]
       [%bind-desk repository=@t desk-name=desk branch=@t]
