@@ -510,20 +510,13 @@
 ++  public-profile-json
   |=  [who=@p now=@da repos=(map @t repository:git)]
   ^-  json
-  =/  result=(each [bound=? contact=profile-contact] tang)
+  =/  result=(each profile-contact tang)
     %-  mule  |.
-    =/  bound=?
-      .^(? %gx /(scot %p who)/profile/(scot %da now)/bound/loob)
-    =/  contact=profile-contact
-      ?.  bound  *profile-contact
-      .^(profile-contact %gx /(scot %p who)/contacts/(scot %da now)/v1/self/contact-1)
-    [bound contact]
-  =/  published=?
-    ?:  ?=(%| -.result)  %.n
-    bound.p.result
+    .^(profile-contact %gx /(scot %p who)/contacts/(scot %da now)/v1/self/contact-1)
+  =/  published=?  !?=(%| -.result)
   =/  contact=profile-contact
     ?:  ?=(%| -.result)  *profile-contact
-    contact.p.result
+    p.result
   =/  public-repositories=(list json)
     %+  murn  ~(tap by repos)
     |=  entry=[@t repository:git]

@@ -46,3 +46,13 @@ test('binds the public profile shell at /urgit on init and upgrade', () => {
     assert.match(lifecycle, /%connect \[~ \/urgit\]/)
   }
 })
+
+test('treats dotted public repository names as SPA routes', () => {
+  const parseStart = source.indexOf('(rush url.request')
+  const routeStart = source.indexOf('=/  request-root=(unit path)', parseStart)
+  assert.notEqual(parseStart, -1)
+  assert.notEqual(routeStart, -1)
+
+  const routing = source.slice(parseStart, routeStart)
+  assert.match(routing, /=\.\s+ext\s+\?:\s+\(starts-with '\/apps\/urgit\/public\/' url\.request\)\s+~\s+ext/)
+})

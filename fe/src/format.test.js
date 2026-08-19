@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { relativeTime } from './format.js'
+import { newestRepositoriesFirst, relativeTime } from './format.js'
 
 test('formats commit timestamps as compact relative times', () => {
   const now = 2_000_000_000
@@ -13,4 +13,14 @@ test('formats commit timestamps as compact relative times', () => {
 test('does not render invalid commit timestamps', () => {
   assert.equal(relativeTime('', 2_000_000_000), '')
   assert.equal(relativeTime('not-a-time', 2_000_000_000), '')
+})
+
+test('sorts public repositories by most recent modification', () => {
+  const repositories = [
+    { name: 'older', updatedAt: '100' },
+    { name: 'newest', updatedAt: '300' },
+    { name: 'middle', updatedAt: '200' },
+  ]
+  assert.deepEqual(newestRepositoriesFirst(repositories).map(({ name }) => name), ['newest', 'middle', 'older'])
+  assert.deepEqual(repositories.map(({ name }) => name), ['older', 'newest', 'middle'])
 })

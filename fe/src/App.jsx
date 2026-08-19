@@ -11,7 +11,8 @@ import NewRepositoryModal from './components/NewRepositoryModal'
 import RemoteRepositoryView from './components/RemoteRepositoryView'
 import Settings from './components/Settings'
 import Sidebar from './components/Sidebar'
-import { exactTime, relativeTime } from './format'
+import UrbitSigil from './components/UrbitSigil'
+import { exactTime, newestRepositoriesFirst, relativeTime } from './format'
 import { readRemoteCache, remoteCacheIsUsable, writeRemoteCache } from './remoteCache'
 
 function routeFromHash() {
@@ -377,7 +378,7 @@ function PublicApp({ name }) {
   const nextTheme = { system: 'light', light: 'dark', dark: 'system' }[theme]
   return <div className="public-shell">
     <div className="workspace">
-      <div className="topbar"><div className="topbar-navigation"><button className="icon-button" onClick={() => history.back()} title="Back" aria-label="Back"><BackIcon /></button><button className="icon-button" onClick={() => history.forward()} title="Forward" aria-label="Forward"><ForwardIcon /></button><a className="public-brand" href="/apps/urgit/">urgit</a></div><div className="topbar-actions"><span className="public-read-label">read only</span><button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button></div></div>
+      <div className="topbar"><div className="topbar-navigation"><button className="icon-button" onClick={() => history.back()} title="Back" aria-label="Back"><BackIcon /></button><button className="icon-button" onClick={() => history.forward()} title="Forward" aria-label="Forward"><ForwardIcon /></button><a className="public-brand" href="/urgit">urgit</a></div><div className="topbar-actions"><span className="public-read-label">read only</span><a className="fork-urgit-link" href="https://github.com/yapishu/urgit" target="_blank" rel="noreferrer">Fork me on %urgit!</a><button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button></div></div>
       {error ? <main className="content"><div className="empty">{error}</div></main> : repo ? <RepositoryView repo={repo} publicMode client={publicApi} /> : <main className="content"><div className="empty">Loading repository…</div></main>}
     </div>
   </div>
@@ -386,6 +387,13 @@ function PublicApp({ name }) {
 const profileColor = (value) => {
   const raw = String(value || '').replace(/^0x/, '')
   return /^[0-9a-f]+$/i.test(raw) ? `#${raw.padStart(6, '0').slice(-6)}` : ''
+}
+
+function ProfileAvatar({ ship, name, src, accent }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [src])
+  if (src && !failed) return <img className="profile-avatar" src={src} alt={`${name} avatar`} onError={() => setFailed(true)} />
+  return <UrbitSigil className="profile-avatar sigil-avatar" ship={ship} size={88} background={accent || '#0969da'} />
 }
 
 function PublicProfileApp() {
@@ -405,19 +413,19 @@ function PublicProfileApp() {
   }, [])
 
   const nextTheme = { system: 'light', light: 'dark', dark: 'system' }[theme]
-  const profile = data?.profilePublished ? data.profile : null
+  const profile = data?.profile || null
   const name = profile?.nickname || data?.ship || ''
-  const repositories = [...(data?.repositories || [])].sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
+  const repositories = newestRepositoriesFirst(data?.repositories)
   const accent = profileColor(profile?.color)
 
   return <div className="public-shell profile-shell">
     <div className="workspace">
-      <div className="topbar profile-topbar"><a className="public-brand" href="/urgit">urgit</a><button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button></div>
+      <div className="topbar profile-topbar"><a className="public-brand" href="/urgit">urgit</a><div className="topbar-actions"><button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button></div></div>
       {error ? <main className="profile-page"><div className="empty">{error}</div></main> : !data ? <main className="profile-page"><div className="empty">Loading profile…</div></main> : <main className="profile-page">
         <section className={`profile-hero${profile?.cover ? ' with-cover' : ''}`} style={accent ? { '--profile-accent': accent } : undefined}>
           {profile?.cover && <img className="profile-cover" src={profile.cover} alt="" onError={(event) => { event.currentTarget.hidden = true }} />}
           <div className="profile-identity">
-            {profile?.avatar ? <img className="profile-avatar" src={profile.avatar} alt={`${name} avatar`} onError={(event) => { event.currentTarget.hidden = true }} /> : <div className="profile-avatar fallback" aria-hidden="true">{name.slice(0, 1).toUpperCase() || '~'}</div>}
+            <ProfileAvatar ship={data.ship} name={name} src={profile?.avatar} accent={accent} />
             <div><h1>{name}</h1>{profile?.nickname && <code>{data.ship}</code>}{profile?.status && <span className="profile-status">{profile.status}</span>}</div>
           </div>
           {profile?.bio && <p className="profile-bio">{profile.bio}</p>}
@@ -433,6 +441,7 @@ function PublicProfileApp() {
             </a>
           })}</div>}
         </section>
+        <footer className="profile-footer"><a className="powered-by-urgit" href="https://matwet.subject.network/apps/urgit/public/urgit"><img src="/apps/urgit/git.svg" alt="" />Powered by urgit</a></footer>
       </main>}
     </div>
   </div>

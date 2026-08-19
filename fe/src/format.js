@@ -47,3 +47,7 @@ export function exactTime(timestamp) {
   const value = Number(timestamp) * 1000
   return Number.isFinite(value) && value > 0 ? new Date(value).toLocaleString() : ''
 }
+
+export function newestRepositoriesFirst(repositories = []) {
+  return [...repositories].sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
+}

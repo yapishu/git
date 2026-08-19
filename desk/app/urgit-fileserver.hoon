@@ -192,6 +192,14 @@
   =+  ^-  [[ext=(unit @ta) site=(list @t)] args=(list [key=@t value=@t])]
     =-  (fall - [[~ ~] ~])
     (rush url.request ;~(plug apat:de-purl:html yque:de-purl:html))
+  ::  Repository names may contain periods.  Public repository routes are
+  ::  SPA shells, not static assets with the repository suffix as an
+  ::  extension.
+  ::
+  =.  ext
+    ?:  (starts-with '/apps/urgit/public/' url.request)
+      ~
+    ext
   =/  request-root=(unit path)
     ?:  =(woot (scag (lent woot) site))  `woot
     ?:  =(/urgit (scag 1 site))  `/urgit

@@ -9,6 +9,7 @@
     "test": "node --test src/*.test.js"
   },
   "dependencies": {
+    "@urbit/sigil-js": "^2.2.0",
     "@vitejs/plugin-react": "latest",
     "react": "latest",
     "react-dom": "latest",
