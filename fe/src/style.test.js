@@ -28,3 +28,10 @@ test('stacks upstream update actions below text on narrow screens', () => {
   assert.ok(rows.some((rule) => /grid-template-columns:\s*minmax\(0,\s*1fr\)/.test(rule)))
   assert.ok(actions.some((rule) => /justify-self:\s*start/.test(rule)))
 })
+
+test('keeps file history columns aligned independently of size text', () => {
+  const rows = declarations('.file-tree.with-history .table-head, .file-tree.with-history .table-row')
+
+  assert.ok(rows.some((rule) => /grid-template-columns:\s*minmax\(220px,\s*36%\)\s+minmax\(0,\s*1fr\)\s+76px\s+90px/.test(rule)))
+  assert.ok(rows.every((rule) => !/grid-template-columns:[^;]+\sauto(?:;|$)/.test(rule)))
+})

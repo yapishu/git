@@ -159,11 +159,18 @@ p { color: var(--muted); line-height: 1.55; }
 .table-head, .table-row { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center; min-height: 43px; padding: 0 16px; border-bottom: 1px solid var(--line); }
 .table-head { min-height: 36px; color: var(--muted); background: var(--soft); font-size: 11px; font-weight: 600; }
 .table-row:last-child { border-bottom: 0; }
-.file-row { width: 100%; border-top: 0; border-left: 0; border-right: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.file-row { width: 100%; border-top: 0; border-left: 0; border-right: 0; background: transparent; color: inherit; text-align: left; }
 .file-row:hover { background: var(--soft); }
 .file-path { display: flex; align-items: center; gap: 10px; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .file-path i { width: 8px; height: 10px; border: 1px solid var(--muted); border-radius: 1px; opacity: .6; }
 .file-tree .table-row { min-height: 39px; }
+.file-tree.with-history .table-head, .file-tree.with-history .table-row { grid-template-columns: minmax(220px, 36%) minmax(0, 1fr) 76px 90px; column-gap: 20px; }
+.file-tree.with-history .table-head > :nth-last-child(-n + 2), .file-tree.with-history .table-row > :nth-last-child(-n + 2) { justify-self: stretch; text-align: right; }
+.file-open, .file-commit-link, .file-time-link { min-width: 0; border: 0; padding: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.file-open:hover .file-path, .file-commit-link:hover, .file-time-link:hover { color: var(--accent); }
+.file-commit-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.file-time-link { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.file-size { white-space: nowrap; text-align: right; }
 .readme-panel { margin-top: 18px; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); box-shadow: var(--shadow); }
 .readme-panel.standalone { margin-top: 0; }
 .readme-panel > header { min-height: 42px; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 650; }
@@ -213,6 +220,10 @@ p { color: var(--muted); line-height: 1.55; }
 .commit-row:last-child { border-bottom: 0; }
 .commit-row strong, .commit-row small { display: block; }
 .commit-row strong { font-size: 13px; }
+@media (max-width: 720px) {
+  .file-tree.with-history .table-head, .file-tree.with-history .table-row { grid-template-columns: minmax(140px, 42%) minmax(0, 1fr) 68px; column-gap: 14px; }
+  .file-tree.with-history .table-head > :nth-child(3), .file-tree.with-history .table-row > :nth-child(3) { display: none; }
+}
 .commit-row small { margin-top: 4px; color: var(--muted); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .commit-row code { color: var(--muted); font-size: 11px; }
 .commit-hash { border: 0; border-radius: 6px; padding: 5px 7px; background: transparent; color: var(--accent); cursor: pointer; }

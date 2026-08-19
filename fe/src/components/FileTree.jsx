@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { exactBytes, formatBytes } from '../format'
+import { exactBytes, exactTime, formatBytes, relativeTime } from '../format'
 
 function makeTree(files) {
   const root = { name: '', path: '', directories: new Map(), files: [] }
@@ -25,7 +25,7 @@ function childCount(node) {
   return count
 }
 
-function TreeRows({ node, depth, expanded, toggle, onOpen }) {
+function TreeRows({ node, depth, expanded, toggle, onOpen, onOpenCommit, showHistory }) {
   const directories = [...node.directories.values()].sort((a, b) => a.name.localeCompare(b.name))
   const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name))
   return <>
@@ -34,23 +34,34 @@ function TreeRows({ node, depth, expanded, toggle, onOpen }) {
       return <div key={directory.path} className="tree-group">
         <button className="table-row file-row tree-row directory-row" style={{ '--tree-depth': depth }} onClick={() => toggle(directory.path)} aria-expanded={open}>
           <span className="file-path"><span className="tree-chevron">{open ? '⌄' : '›'}</span><i className="folder-icon" />{directory.name}</span>
-          <span className="quiet">{childCount(directory)} items</span>
+          {showHistory ? <><span /><span className="quiet file-size">{childCount(directory)} items</span><span /></> : <span className="quiet">{childCount(directory)} items</span>}
         </button>
-        {open && <TreeRows node={directory} depth={depth + 1} expanded={expanded} toggle={toggle} onOpen={onOpen} />}
+        {open && <TreeRows node={directory} depth={depth + 1} expanded={expanded} toggle={toggle} onOpen={onOpen} onOpenCommit={onOpenCommit} showHistory={showHistory} />}
       </div>
     })}
     {files.map((file) => {
-      const contents = <><span className="file-path"><span className="tree-spacer" /><i />{file.name}</span><span className="quiet" title={exactBytes(file.size)}>{formatBytes(file.size)}</span></>
+      const path = <span className="file-path"><span className="tree-spacer" /><i />{file.name}</span>
+      const commit = file.lastCommit
+      const contents = <>
+        {onOpen ? <button className="file-open" onClick={() => onOpen(file.path)}>{path}</button> : path}
+        {showHistory && <>
+          {commit ? <button className="file-commit-link" title={`View ${commit.oid}`} onClick={() => onOpenCommit?.(commit)}>{commit.subject || 'Untitled commit'}</button> : <span className="quiet">—</span>}
+          <span className="quiet file-size" title={exactBytes(file.size)}>{formatBytes(file.size)}</span>
+          {commit ? <button className="file-time-link" title={exactTime(commit.committer?.timestamp || commit.author?.timestamp)} onClick={() => onOpenCommit?.(commit)}>{relativeTime(commit.committer?.timestamp || commit.author?.timestamp)}</button> : <span className="quiet">—</span>}
+        </>}
+        {!showHistory && <span className="quiet file-size" title={exactBytes(file.size)}>{formatBytes(file.size)}</span>}
+      </>
       return onOpen
-        ? <button className="table-row file-row tree-row" style={{ '--tree-depth': depth }} key={file.path} onClick={() => onOpen(file.path)}>{contents}</button>
+        ? <div className="table-row file-row tree-row" style={{ '--tree-depth': depth }} key={file.path}>{contents}</div>
         : <div className="table-row tree-row static-file-row" style={{ '--tree-depth': depth }} key={file.path}>{contents}</div>
     })}
   </>
 }
 
-export default function FileTree({ files, header, onOpen }) {
+export default function FileTree({ files, header, onOpen, onOpenCommit }) {
   const tree = useMemo(() => makeTree(files), [files])
   const [expanded, setExpanded] = useState(new Set())
+  const showHistory = Boolean(onOpenCommit) && (files || []).some((file) => Object.hasOwn(file, 'lastCommit'))
 
   useEffect(() => { setExpanded(new Set()) }, [files])
 
@@ -63,9 +74,9 @@ export default function FileTree({ files, header, onOpen }) {
     })
   }
 
-  return <div className="table file-tree">
+  return <div className={`table file-tree${showHistory ? ' with-history' : ''}`}>
     {header}
-    <div className="table-head"><span>Path</span><span>Size</span></div>
-    <TreeRows node={tree} depth={0} expanded={expanded} toggle={toggle} onOpen={onOpen} />
+    <div className="table-head"><span>Path</span>{showHistory && <span>Last commit</span>}<span>Size</span>{showHistory && <span>Updated</span>}</div>
+    <TreeRows node={tree} depth={0} expanded={expanded} toggle={toggle} onOpen={onOpen} onOpenCommit={onOpenCommit} showHistory={showHistory} />
   </div>
 }

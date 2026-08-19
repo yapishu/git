@@ -578,10 +578,58 @@
   =.  fields  (~(del by fields) 'upstreamUpdates')
   [%o fields]
 ::
+++  latest-file-commits
+  |=  [repo=repository:git ref=@t]
+  ^-  (map path oid:git)
+  =/  start=(unit oid:git)  (revision-oid repo ref)
+  ?~  start  ~
+  =/  head-files=(unit (map path flat-entry:git-tree))
+    (flatten-commit-index:git-tree objects.repo u.start)
+  ?~  head-files  ~
+  =/  unresolved=(set path)
+    %+  roll  ~(tap by u.head-files)
+    |=  [entry=[file-path=path value=flat-entry:git-tree] accumulator=(set path)]
+    (~(put in accumulator) file-path.entry)
+  =/  commits=(map path oid:git)  ~
+  =/  current=(unit oid:git)  start
+  |-
+  ?~  current  commits
+  =/  unresolved-paths=(list path)  ~(tap in unresolved)
+  ?~  unresolved-paths  commits
+  =/  found=(unit object:git)  (~(get by objects.repo) u.current)
+  ?.  ?&(?=(^ found) =(%commit kind.u.found))  commits
+  =/  here=(unit (map path flat-entry:git-tree))
+    (flatten-commit-index:git-tree objects.repo u.current)
+  ?~  here  commits
+  =/  parent=(unit oid:git)  (commit-parent data.u.found)
+  =/  before=(map path flat-entry:git-tree)
+    ?~  parent  ~
+    =/  indexed=(unit (map path flat-entry:git-tree))
+      (flatten-commit-index:git-tree objects.repo u.parent)
+    ?~(indexed ~ u.indexed)
+  =/  remaining=(list path)  unresolved-paths
+  =/  updated=[unresolved=(set path) commits=(map path oid:git)]
+    |-
+    ?~  remaining  [unresolved commits]
+    =/  file-path=path  i.remaining
+    =/  current-file=(unit flat-entry:git-tree)  (~(get by u.here) file-path)
+    =/  parent-file=(unit flat-entry:git-tree)  (~(get by before) file-path)
+    ?:  =(current-file parent-file)
+      $(remaining t.remaining)
+    ?~  current-file
+      $(remaining t.remaining)
+    %=  $
+      remaining   t.remaining
+      unresolved  (~(del in unresolved) file-path)
+      commits     (~(put by commits) file-path u.current)
+    ==
+  $(current parent, unresolved unresolved.updated, commits commits.updated)
+::
 ++  repository-files-at-json
   |=  [name=@t repo=repository:git ref=@t]
   ^-  json
   =/  commit=(unit oid:git)  (revision-oid repo ref)
+  =/  latest=(map path oid:git)  (latest-file-commits repo ref)
   =/  files=(unit (map path octs))
     ?~  commit  `*(map path octs)
     (flatten-commit:git-tree objects.repo u.commit)
@@ -589,8 +637,15 @@
     ?~  files  ~
     %+  turn  ~(tap by u.files)
     |=  [file-path=path data=octs]
+    =/  last-oid=(unit oid:git)  (~(get by latest) file-path)
+    =/  last-object=(unit object:git)
+      ?~  last-oid  ~
+      (~(get by objects.repo) u.last-oid)
+    =/  last-commit=json
+      ?.  ?&(?=(^ last-oid) ?=(^ last-object) =(%commit kind.u.last-object))  ~
+      (commit-summary-json u.last-oid data.u.last-object)
     %-  pairs:enjs:format
-    ~[['path' s+(spat file-path)] ['size' n+(decimal p.data)]]
+    ~[['path' s+(spat file-path)] ['size' n+(decimal p.data)] ['lastCommit' last-commit]]
   %-  pairs:enjs:format
   :~  ['repository' s+name]
       ['head' s+ref]

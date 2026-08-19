@@ -127,7 +127,7 @@ function Files({ data, commit, loading, onOpen, onOpenCommit, loadFile }) {
   if (loading) return <div className="empty">Loading tree…</div>
   if (!data?.files?.length) return <div className="empty">This repository has no files yet.</div>
   const header = commit ? <div className="latest-commit"><span className="commit-avatar">{identityLabel(commit.author).slice(0, 1).toUpperCase()}</span><span><strong>{commit.subject || 'Untitled commit'}</strong><small>{identityLabel(commit.author)}{dateLabel(commit.committer) ? ` · ${dateLabel(commit.committer)}` : ''}</small></span><button className="commit-hash" title={`View ${commit.kind === 'clay' ? `revision ${commit.revision}` : commit.oid}`} onClick={() => onOpenCommit?.(commit)} disabled={!onOpenCommit}><code>{historyId(commit)}</code></button></div> : null
-  return <><FileTree files={data.files} header={header} onOpen={onOpen} />{loadFile && <Readme files={data.files} loadFile={loadFile} onOpen={onOpen} />}</>
+  return <><FileTree files={data.files} header={header} onOpen={onOpen} onOpenCommit={onOpenCommit} />{loadFile && <Readme files={data.files} loadFile={loadFile} onOpen={onOpen} />}</>
 }
 
 function SearchResults({ data, query, loading, error, onOpen }) {
