@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { api } from '../api'
-import { GitIcon, PlusIcon, SettingsIcon } from './Icons'
+import { GitIcon, PlusIcon } from './Icons'
 
-export default function Sidebar({ repositories, peers, selected, remoteSelected, onSelect, onSelectRemote, onCreate, onPeersChanged, onSettings }) {
+export default function Sidebar({ repositories, peers, selected, remoteSelected, onSelect, onSelectRemote, onCreate, onPeersChanged }) {
   const [query, setQuery] = useState('')
   const [addingPeer, setAddingPeer] = useState(false)
   const [peerName, setPeerName] = useState('')
+  const [sectionsOpen, setSectionsOpen] = useState({ repositories: true, peers: true })
   const [expanded, setExpanded] = useState({})
   const [catalogs, setCatalogs] = useState({})
   const [peerError, setPeerError] = useState('')
@@ -45,14 +46,18 @@ export default function Sidebar({ repositories, peers, selected, remoteSelected,
     await api.removePeer(ship); await onPeersChanged()
   }
 
+  function toggleSection(section) {
+    setSectionsOpen((value) => ({ ...value, [section]: !value[section] }))
+  }
+
   return (
     <aside className="sidebar">
       <div className="brand"><GitIcon size={20} /><span>urgit</span></div>
       <div className="sidebar-heading">
-        <span>Repositories</span>
+        <button className="sidebar-section-toggle" onClick={() => toggleSection('repositories')} aria-expanded={sectionsOpen.repositories}><span className="sidebar-section-chevron">{sectionsOpen.repositories ? '⌄' : '›'}</span><span>Repositories</span></button>
         <button className="icon-button" onClick={onCreate} title="New repository"><PlusIcon /></button>
       </div>
-      {repositories.length > 5 && <input className="repo-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a repository…" aria-label="Find a repository" />}
+      {sectionsOpen.repositories && <>{repositories.length > 5 && <input className="repo-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a repository…" aria-label="Find a repository" />}
       <nav className="repo-list">
         {visible.map((repo) => (
           <button
@@ -67,9 +72,9 @@ export default function Sidebar({ repositories, peers, selected, remoteSelected,
         ))}
         {!repositories.length && <p className="quiet sidebar-empty">No repositories yet.</p>}
         {repositories.length > 0 && !visible.length && <p className="quiet sidebar-empty">No matching repositories.</p>}
-      </nav>
-      <div className="sidebar-heading peer-heading"><span>Peers</span><button className="icon-button" onClick={() => setAddingPeer((value) => !value)} title="Add peer"><PlusIcon /></button></div>
-      {addingPeer && <form className="peer-add" onSubmit={addPeer}><input autoFocus value={peerName} onChange={(event) => setPeerName(event.target.value)} placeholder="~sampel-palnet" /><button className="button" disabled={!peerName.trim()}>Add</button></form>}
+      </nav></>}
+      <div className="sidebar-heading peer-heading"><button className="sidebar-section-toggle" onClick={() => toggleSection('peers')} aria-expanded={sectionsOpen.peers}><span className="sidebar-section-chevron">{sectionsOpen.peers ? '⌄' : '›'}</span><span>Peers</span></button><button className="icon-button" onClick={() => { setSectionsOpen((value) => ({ ...value, peers: true })); setAddingPeer((value) => !value) }} title="Add peer"><PlusIcon /></button></div>
+      {sectionsOpen.peers && <>{addingPeer && <form className="peer-add" onSubmit={addPeer}><input autoFocus value={peerName} onChange={(event) => setPeerName(event.target.value)} placeholder="~sampel-palnet" /><button className="button" disabled={!peerName.trim()}>Add</button></form>}
       {peerError && <small className="field-error sidebar-peer-error">{peerError}</small>}
       <nav className="peer-tree">
         {peers.map((ship) => <div className="peer-node" key={ship}>
@@ -82,8 +87,7 @@ export default function Sidebar({ repositories, peers, selected, remoteSelected,
           </div>}
         </div>)}
         {!peers.length && <small className="quiet peer-empty">Add a ship to browse its repositories.</small>}
-      </nav>
-      <div className="sidebar-footer"><button className="repo-link" onClick={onSettings}><span className="settings-mark"><SettingsIcon /></span><span>Settings</span><span className="sidebar-arrow">›</span></button></div>
+      </nav></>}
     </aside>
   )
 }

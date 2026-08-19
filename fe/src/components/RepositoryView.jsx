@@ -58,6 +58,7 @@ function routeForRepository(repo) {
     searchQuery: name === repo.name && tab === 'code' ? params.get('search') || '' : '',
     ...lines,
     commitOid: name === repo.name && tab === 'commits' ? params.get('commit') || '' : '',
+    branchCreate: name === repo.name && tab === 'branches' && params.get('new') === 'branch',
     tagTarget: name === repo.name && tab === 'tags' ? params.get('target') || '' : '',
     tagKind: name === repo.name && tab === 'tags' ? params.get('targetKind') || '' : '',
   }
@@ -71,6 +72,7 @@ function repositoryHash(repo, route) {
   if (route.searchQuery) params.set('search', route.searchQuery)
   if (route.filePath && route.lineStart) params.set('line', route.lineEnd && route.lineEnd !== route.lineStart ? `${route.lineStart}-${route.lineEnd}` : String(route.lineStart))
   if (route.commitOid) params.set('commit', route.commitOid)
+  if (route.tab === 'branches' && route.branchCreate) params.set('new', 'branch')
   if (route.tab === 'tags' && route.tagTarget) params.set('target', route.tagTarget)
   if (route.tab === 'tags' && route.tagKind) params.set('targetKind', route.tagKind)
   const query = params.toString()
@@ -322,18 +324,24 @@ function downloadComparison(repo, base, head, patch) {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-function Branches({ repo, publicMode, onBrowse, onMutate, client = api }) {
+function Branches({ repo, publicMode, onBrowse, onMutate, client = api, initialCreate = false, initialSource = '', onCreateConsumed }) {
   const confirmAction = useConfirm()
   const branches = (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/'))
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState(initialCreate)
   const [name, setName] = useState('')
-  const [source, setSource] = useState(repo.head || branches[0]?.name || '')
+  const [source, setSource] = useState(initialSource || repo.head || branches[0]?.name || '')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [comparing, setComparing] = useState(false)
   const [base, setBase] = useState(repo.head || branches[0]?.name || '')
   const [head, setHead] = useState(branches.find((branch) => branch.name !== (repo.head || branches[0]?.name))?.name || repo.head || '')
   const [comparison, setComparison] = useState(null)
+
+  useEffect(() => {
+    if (!initialCreate) return
+    setCreating(true)
+    onCreateConsumed?.()
+  }, [initialCreate])
 
   async function create() {
     setBusy('create'); setError('')
@@ -1225,6 +1233,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   const [lineEnd, setLineEnd] = useState(initialRoute.lineEnd)
   const [branch, setBranch] = useState(initialRoute.branch)
   const [commitOid, setCommitOid] = useState(initialRoute.commitOid)
+  const [branchCreate, setBranchCreate] = useState(initialRoute.branchCreate)
   const [tagTarget, setTagTarget] = useState(initialRoute.tagTarget)
   const [tagKind, setTagKind] = useState(initialRoute.tagKind)
   const [searchQuery, setSearchQuery] = useState(initialRoute.searchQuery)
@@ -1251,6 +1260,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
     setLineStart(route.lineStart)
     setLineEnd(route.lineEnd)
     setCommitOid(route.commitOid)
+    setBranchCreate(route.branchCreate)
     setTagTarget(route.tagTarget)
     setTagKind(route.tagKind)
     setSearchQuery(route.searchQuery)
@@ -1258,11 +1268,12 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   }
 
   function navigate(changes, replace = false) {
-    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, tagTarget, tagKind, searchQuery, ...changes }
+    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, branchCreate, tagTarget, tagKind, searchQuery, ...changes }
     if (Object.hasOwn(changes, 'filePath') && changes.filePath !== filePath && !Object.hasOwn(changes, 'lineStart')) { route.lineStart = null; route.lineEnd = null }
     if (route.tab !== 'code') { route.filePath = ''; route.lineStart = null; route.lineEnd = null; route.searchQuery = '' }
     if (!route.filePath) { route.lineStart = null; route.lineEnd = null }
     if (route.tab !== 'commits') route.commitOid = ''
+    if (route.tab !== 'branches') route.branchCreate = false
     if (route.tab !== 'tags') { route.tagTarget = ''; route.tagKind = '' }
     history[replace ? 'replaceState' : 'pushState']({}, '', repositoryHash(repo, route))
     applyRoute(route)
@@ -1364,7 +1375,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
         {(publicMode ? [['code', 'Code'], ['issues', 'Issues', repo.nativeIssues?.length], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['releases', 'Releases', repo.releases?.length], ['commits', clayHistory ? 'Revisions' : 'Commits']] : [['code', 'Code'], ['issues', 'Issues', (repo.nativeIssues?.length || 0) + (repo.githubIssues?.length || 0)], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['releases', 'Releases', repo.releases?.length], ['commits', clayHistory ? 'Revisions' : 'Commits'], ['webhooks', 'Webhooks', (repo.upstreamUpdates?.length || 0)], ['settings', 'Settings']]).map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => navigate({ tab: name, filePath: '', commitOid: '' })}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
       </nav>
       <section className="repo-body">
-        {tab === 'code' && <div className="branch-context"><select value={branch} onChange={(event) => browseBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option key={ref.name} value={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select><span>{detail?.files?.files?.length || 0} files</span>{branch !== repo.head && <button className="text-button" onClick={() => browseBranch(repo.head)}>Default branch</button>}{!publicMode && !filePath && !creatingFile && <button className="button new-file-button" onClick={() => { setCreatingFile(true); navigate({ searchQuery: '' }, true) }}>New file</button>}<form className="code-search" onSubmit={(event) => { event.preventDefault(); const query = searchDraft.trim(); if (!query || query.length >= 2) { setCreatingFile(false); navigate({ filePath: '', lineStart: null, lineEnd: null, searchQuery: query }) } }}><input value={searchDraft} maxLength={200} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Search code" aria-label="Search repository code" />{searchQuery && <button type="button" className="text-button" onClick={() => navigate({ searchQuery: '', filePath: '' })}>Clear</button>}</form></div>}
+        {tab === 'code' && <div className="branch-context"><select value={branch} onChange={(event) => browseBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option key={ref.name} value={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select><span>{detail?.files?.files?.length || 0} files</span>{branch !== repo.head && <button className="text-button" onClick={() => browseBranch(repo.head)}>Default branch</button>}{!publicMode && !filePath && !creatingFile && <><button className="button" onClick={() => navigate({ tab: 'branches', filePath: '', branchCreate: true })}>New branch</button><button className="button new-file-button" onClick={() => { setCreatingFile(true); navigate({ searchQuery: '' }, true) }}>New file</button></>}<form className="code-search" onSubmit={(event) => { event.preventDefault(); const query = searchDraft.trim(); if (!query || query.length >= 2) { setCreatingFile(false); navigate({ filePath: '', lineStart: null, lineEnd: null, searchQuery: query }) } }}><input value={searchDraft} maxLength={200} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Search code" aria-label="Search repository code" />{searchQuery && <button type="button" className="text-button" onClick={() => navigate({ searchQuery: '', filePath: '' })}>Clear</button>}</form></div>}
         {tab === 'code' && (creatingFile
           ? <NewFile repository={repo.name} branch={branch} onCancel={() => setCreatingFile(false)} onCreated={async (path) => { setCreatingFile(false); await mutate(); navigate({ filePath: path, searchQuery: '', lineStart: null, lineEnd: null }) }} />
           : filePath
@@ -1372,7 +1383,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
           : searchQuery ? <SearchResults data={searchData} query={searchQuery} loading={searchLoading} error={searchError} onOpen={(result) => navigate({ tab: 'code', filePath: result.path, lineStart: result.line, lineEnd: result.line, commitOid: '' })} />
             : <Files data={detail?.files} commit={branch === repo.head ? detail?.commits?.commits?.[0] : null} loading={loading} onOpen={(path) => navigate({ tab: 'code', filePath: path, commitOid: '' })} onOpenCommit={openCommit} loadFile={loadReadme} />)}
         {tab === 'issues' && <Issues repo={repo} publicMode={publicMode} client={client} onMutate={mutate} />}
-        {tab === 'branches' && <Branches repo={repo} publicMode={publicMode} onBrowse={browseBranch} onMutate={mutate} client={client} />}
+        {tab === 'branches' && <Branches repo={repo} publicMode={publicMode} onBrowse={browseBranch} onMutate={mutate} client={client} initialCreate={branchCreate} initialSource={branch} onCreateConsumed={() => navigate({ branchCreate: false }, true)} />}
         {tab === 'tags' && <Tags repo={repo} publicMode={publicMode} onMutate={mutate} initialTarget={tagTarget} initialKind={tagKind} onTargetConsumed={() => navigate({ tagTarget: '', tagKind: '' }, true)} />}
         {tab === 'releases' && <Releases repo={repo} publicMode={publicMode} onMutate={mutate} client={client} />}
         {tab === 'commits' && (commitOid ? commitLoading || !commitDetail ? <div className="empty">Loading commit…</div> : <CommitDetail data={commitDetail} onBack={() => navigate({ commitOid: '' })} onOpenGit={(oid) => navigate({ commitOid: oid })} onCreateTag={!publicMode ? createTagFrom : null} /> : <Commits data={detail} loading={loading} loadingMore={historyLoadingMore} onLoadMore={loadMoreHistory} onSelect={openCommit} onCreateTag={!publicMode ? createTagFrom : null} />)}

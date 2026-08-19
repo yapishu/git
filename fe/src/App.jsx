@@ -3,7 +3,7 @@ import { api, publicApi, waitForPeerBrowse, waitForPeerTransfer } from './api'
 import ForkPeer from './components/ForkPeer'
 import { ConfirmProvider } from './components/ConfirmDialog'
 import GitHubImport from './components/GitHubImport'
-import { ActivityIcon, RefreshIcon } from './components/Icons'
+import { ActivityIcon, BackIcon, ForwardIcon, SettingsIcon } from './components/Icons'
 import PeerActivity from './components/PeerActivity'
 import PublishDesk from './components/PublishDesk'
 import RepositoryView from './components/RepositoryView'
@@ -269,17 +269,21 @@ function PrivateApp() {
 
   return (
     <div className="app-shell">
-      <Sidebar repositories={repositories} peers={peers} selected={selected} remoteSelected={remoteSelected} onSelect={choose} onSelectRemote={chooseRemote} onCreate={() => setCreating(true)} onPeersChanged={refreshPeers} onSettings={openSettings} />
+      <Sidebar repositories={repositories} peers={peers} selected={selected} remoteSelected={remoteSelected} onSelect={choose} onSelectRemote={chooseRemote} onCreate={() => setCreating(true)} onPeersChanged={refreshPeers} />
       <div className="workspace">
         <div className="topbar">
-          <span className="topbar-label">{settingsOpen ? 'Settings' : repo ? repo.owner : 'Repositories'}</span>
+          <div className="topbar-navigation">
+            <button className="icon-button" onClick={() => history.back()} title="Back" aria-label="Back"><BackIcon /></button>
+            <button className="icon-button" onClick={() => history.forward()} title="Forward" aria-label="Forward"><ForwardIcon /></button>
+            <span className="topbar-label">{settingsOpen ? 'Settings' : repo ? repo.owner : 'Repositories'}</span>
+          </div>
           <div className="topbar-actions">
             <div className="activity-anchor">
               <button className="icon-button activity-button" onClick={() => { setActivityOpen((open) => !open); refreshActivity() }} title="Peer activity"><ActivityIcon />{activePeers > 0 && <span className="activity-badge">{activePeers}</span>}</button>
               {activityOpen && <PeerActivity activity={peerActivity} onClear={clearActivity} onCancel={cancelTransfer} />}
             </div>
             <button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button>
-            <button className="icon-button" onClick={() => refresh(selected)} title="Refresh"><RefreshIcon /></button>
+            <button className={`icon-button${settingsOpen ? ' active' : ''}`} onClick={() => settingsOpen ? closeSettings() : openSettings()} title="Settings" aria-label="Settings"><SettingsIcon /></button>
           </div>
         </div>
         {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError('')}>×</button></div>}
@@ -333,7 +337,7 @@ function PublicApp({ name }) {
   const nextTheme = { system: 'light', light: 'dark', dark: 'system' }[theme]
   return <div className="public-shell">
     <div className="workspace">
-      <div className="topbar"><a className="public-brand" href="/apps/urgit/">urgit</a><div className="topbar-actions"><span className="public-read-label">read only</span><button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button></div></div>
+      <div className="topbar"><div className="topbar-navigation"><button className="icon-button" onClick={() => history.back()} title="Back" aria-label="Back"><BackIcon /></button><button className="icon-button" onClick={() => history.forward()} title="Forward" aria-label="Forward"><ForwardIcon /></button><a className="public-brand" href="/apps/urgit/">urgit</a></div><div className="topbar-actions"><span className="public-read-label">read only</span><button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button></div></div>
       {error ? <main className="content"><div className="empty">{error}</div></main> : repo ? <RepositoryView repo={repo} publicMode client={publicApi} /> : <main className="content"><div className="empty">Loading repository…</div></main>}
     </div>
   </div>

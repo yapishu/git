@@ -36,6 +36,8 @@ button { color: inherit; }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--sidebar); border-right: 1px solid var(--line); padding: 16px 12px 12px; }
 .brand { height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 10px; font-weight: 700; font-size: 16px; letter-spacing: -.02em; }
 .sidebar-heading { display: flex; align-items: center; justify-content: space-between; margin: 26px 6px 8px 10px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.sidebar-section-toggle { min-width: 0; display: flex; align-items: center; gap: 5px; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.sidebar-section-chevron { width: 10px; margin-left: -10px; font-size: 14px; font-weight: 500; line-height: 1; text-align: center; }
 .repo-list { display: flex; flex-direction: column; gap: 2px; overflow: auto; }
 .repo-link { width: 100%; min-height: 36px; border: 0; border-radius: 8px; background: transparent; display: flex; align-items: center; gap: 9px; padding: 0 10px; text-align: left; cursor: pointer; }
 .repo-link:hover { background: color-mix(in srgb, var(--panel) 55%, transparent); }
@@ -49,7 +51,6 @@ button { color: inherit; }
 .publish-desk-button { min-height: 34px; margin: 0 5px 6px; border: 1px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--panel) 60%, transparent); color: var(--text); text-align: left; padding: 0 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .publish-desk-button:hover { background: var(--panel); }
 .publish-desk-button span { display: inline-block; margin-right: 7px; color: var(--accent); }
-.sidebar-footer { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); }
 .peer-heading { margin-top: 18px; }
 .peer-tree { min-height: 42px; max-height: 38vh; overflow: auto; }
 .peer-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; padding: 0 5px 7px; }
@@ -68,17 +69,17 @@ button { color: inherit; }
 .remote-repo-link { min-height: 31px; padding-left: 8px; font-size: 11px; }
 .write-badge { margin-left: auto; color: #1a7f37; font-size: 8px; text-transform: uppercase; }
 .peer-empty { display: block; padding: 8px 10px; font-size: 10px; line-height: 1.45; }
-.settings-mark { width: 22px; height: 22px; display: grid; place-items: center; color: var(--muted); }
-.settings-mark svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7px; stroke-linecap: round; stroke-linejoin: round; }
-.sidebar-arrow { margin-left: auto; color: var(--muted); font-size: 18px; }
 .workspace { min-width: 0; }
 .public-shell { min-height: 100vh; }
 .public-brand { color: var(--text); font-weight: 750; font-size: 16px; text-decoration: none; letter-spacing: -.03em; }
 .public-read-label { align-self: center; color: var(--muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
 .public-url { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .topbar { height: 58px; padding: 0 26px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 5; }
+.topbar-navigation { min-width: 0; display: flex; align-items: center; gap: 2px; }
+.topbar-navigation .topbar-label, .topbar-navigation .public-brand { margin-left: 8px; }
 .topbar-label { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .topbar-actions { display: flex; gap: 4px; }
+.icon-button.active { background: var(--soft); color: var(--accent); }
 .activity-anchor { position: relative; }
 .activity-button { position: relative; }
 .activity-badge { position: absolute; top: 1px; right: 0; min-width: 15px; height: 15px; padding: 0 4px; display: grid; place-items: center; border: 2px solid var(--bg); border-radius: 999px; background: #bf8700; color: white; font-size: 8px; font-weight: 800; }
@@ -248,16 +249,16 @@ p { color: var(--muted); line-height: 1.55; }
 .webhook-list, .delivery-list { min-width: 0; margin: 2px -22px -22px; display: grid; }
 .webhook-row, .delivery-row { min-height: 58px; padding: 9px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; border-top: 1px solid var(--line); }
 .delivery-row { grid-template-columns: 9px minmax(0, 1fr) auto; }
-.upstream-update-item { min-width: 0; min-height: 58px; padding: 9px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; align-items: center; border-top: 1px solid var(--line); }
+.upstream-update-item { min-width: 0; min-height: 58px; padding: 9px 18px; display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: 10px 14px; align-items: center; border-top: 1px solid var(--line); }
 .upstream-update-item > div:first-child { min-width: 0; }
-.upstream-update-item > .row-actions { min-width: max-content; margin-left: 0; }
+.upstream-update-item > .row-actions { min-width: max-content; justify-self: end; }
 .upstream-update-item strong, .upstream-update-item small { display: block; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .upstream-update-item small { margin-top: 4px; color: var(--muted); font-size: 10px; }
 .webhook-row strong, .webhook-row small, .delivery-row strong, .delivery-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .webhook-row strong { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .webhook-row small, .delivery-row small { margin-top: 4px; color: var(--muted); font-size: 10px; }
 .row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
-@media (max-width: 680px) { .event-grid { grid-template-columns: 1fr 1fr; } .webhook-row, .delivery-row, .upstream-update-item { grid-template-columns: minmax(0, 1fr); } .delivery-row > .activity-dot { display: none; } .row-actions { justify-content: flex-start; } .upstream-update-item > .row-actions { width: 100%; min-width: 0; } .upstream-banner { grid-template-columns: 9px 1fr; } .upstream-banner > b { grid-column: 2; } }
+@media (max-width: 680px) { .event-grid { grid-template-columns: 1fr 1fr; } .webhook-row, .delivery-row, .upstream-update-item { grid-template-columns: minmax(0, 1fr); } .delivery-row > .activity-dot { display: none; } .row-actions { justify-content: flex-start; } .upstream-update-item > .row-actions { width: 100%; min-width: 0; justify-self: start; } .upstream-banner { grid-template-columns: 9px 1fr; } .upstream-banner > b { grid-column: 2; } }
 .commit-message { margin: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .diff-summary { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 11px; }
 .diff-summary b { color: var(--text); }
@@ -373,7 +374,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .shiki .blame-origin span { background: transparent !important; color: var(--muted) !important; }
 .shiki .blame-origin:hover span { color: var(--text) !important; }
 .plain-code .selected-line { background: color-mix(in srgb, var(--accent) 15%, transparent) !important; box-shadow: inset 3px 0 var(--accent); }
-.highlighted-code code, .editor-highlight code { font: inherit; }
+.highlighted-code code, .plain-code code, .editor-highlight code { font: inherit; line-height: inherit; }
 .image-view { min-height: 180px; padding: 28px; display: grid; place-items: center; background-image: linear-gradient(45deg, var(--soft) 25%, transparent 25%), linear-gradient(-45deg, var(--soft) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--soft) 75%), linear-gradient(-45deg, transparent 75%, var(--soft) 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
 .image-view img { display: block; max-width: 100%; max-height: 62vh; }
 .editor-panel { overflow: hidden; }
