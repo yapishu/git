@@ -55,6 +55,7 @@ export const api = {
   peerDetail: (ship, repository, kind, number) => request('/peer/detail', {
     method: 'POST', body: JSON.stringify({ ship, repository, kind, number }),
   }),
+  peerFile: (ship, repository, path) => request(`/peer/file/${encodeURIComponent(ship)}/${encodeURIComponent(repository)}/${path.split('/').filter(Boolean).map(encodeURIComponent).join('/')}`, { method: 'POST', body: '{}' }),
   peerBrowses: () => request('/peer/browses'),
   peerDeleteBrowse: (requestId) => request('/peer/browses', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
   peerForgeRequests: () => request('/peer/forge'),

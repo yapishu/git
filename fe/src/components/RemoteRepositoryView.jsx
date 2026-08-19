@@ -1,13 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api, waitForPeerBrowse, waitForPeerForge } from '../api'
 import FileTree from './FileTree'
 import { DiffView } from './RepositoryView'
+import { HighlightedCode } from './HighlightedCode'
+import Markdown from './Markdown'
+import Readme from './Readme'
+import { exactBytes, formatBytes } from '../format'
+import { useLocalDraft } from '../useLocalDraft'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
 const formatDate = (timestamp) => {
   const value = Number(timestamp) * 1000
   return Number.isFinite(value) && value > 0 ? new Date(value).toLocaleString() : ''
 }
+const decodeBase64 = (content) => {
+  const raw = atob(content)
+  const bytes = Uint8Array.from(raw, (char) => char.charCodeAt(0))
+  let text = null
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes) } catch { /* binary */ }
+  return { bytes, text }
+}
+const imageType = (path) => ({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' })[(path.split('.').pop() || '').toLowerCase()]
 
 const remoteRoute = () => {
   const query = location.hash.split('?')[1] || ''
@@ -16,24 +29,27 @@ const remoteRoute = () => {
   const tab = ['code', 'issues', 'pulls', 'commits', 'branches'].includes(requested) ? requested : 'code'
   const issue = Number(params.get('issue'))
   const pull = Number(params.get('pull'))
-  if (tab === 'issues' && Number.isInteger(issue) && issue > 0) return { tab, kind: 'issue', number: issue }
-  if (tab === 'pulls' && Number.isInteger(pull) && pull > 0) return { tab, kind: 'pull', number: pull }
-  return { tab, kind: '', number: 0 }
+  const filePath = tab === 'code' ? params.get('file') || '' : ''
+  if (tab === 'issues' && Number.isInteger(issue) && issue > 0) return { tab, kind: 'issue', number: issue, filePath: '' }
+  if (tab === 'pulls' && Number.isInteger(pull) && pull > 0) return { tab, kind: 'pull', number: pull, filePath: '' }
+  return { tab, kind: '', number: 0, filePath }
 }
 
 export default function RemoteRepositoryView({ ship, repository, repositories, data, onFork, onCancelTransfer }) {
   const repo = data?.repository
   const [tab, setTab] = useState(() => remoteRoute().tab)
   const [selected, setSelected] = useState(null)
+  const [filePath, setFilePath] = useState(() => remoteRoute().filePath)
   const [detail, setDetail] = useState(null)
   const [detailError, setDetailError] = useState('')
-  const [comment, setComment] = useState('')
+  const commentKey = selected ? `peer-comment:${ship}:${repository}:${selected.kind}:${selected.item.number}` : ''
+  const [comment, setComment, clearComment] = useLocalDraft(commentKey)
   const [commentBusy, setCommentBusy] = useState(false)
   const [commentCounts, setCommentCounts] = useState({})
   const [createdIssues, setCreatedIssues] = useState([])
   const [issueCreating, setIssueCreating] = useState(false)
-  const [issueTitle, setIssueTitle] = useState('')
-  const [issueBody, setIssueBody] = useState('')
+  const [issueTitle, setIssueTitle, clearIssueTitle] = useLocalDraft(`peer-issue:${ship}:${repository}:title`)
+  const [issueBody, setIssueBody, clearIssueBody] = useLocalDraft(`peer-issue:${ship}:${repository}:body`)
   const [issueBusy, setIssueBusy] = useState(false)
   const [issueError, setIssueError] = useState('')
   const [forking, setForking] = useState(false)
@@ -46,7 +62,7 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
   const [publicRead, setPublicRead] = useState(true)
   async function inspect(kind, item, pushHistory = true) {
     if (!item) return
-    setSelected({ kind, item }); setDetail(null); setDetailError(''); setComment('')
+    setSelected({ kind, item }); setFilePath(''); setDetail(null); setDetailError('')
     if (pushHistory) {
       const key = kind === 'issue' ? 'issue' : 'pull'
       history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(repository)}?tab=${kind === 'issue' ? 'issues' : 'pulls'}&${key}=${item.number}`)
@@ -68,6 +84,7 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
     const restore = () => {
       const route = remoteRoute()
       setTab(route.tab)
+      setFilePath(route.filePath)
       if (!route.kind) { setSelected(null); setDetail(null); setDetailError(''); return }
       const source = route.kind === 'issue' ? [...createdIssues, ...(repo?.nativeIssues || [])] : (repo?.pullRequests || [])
       const item = source.find((candidate) => candidate.number === route.number)
@@ -81,7 +98,7 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
   function chooseTab(next) {
     const query = next === 'code' ? '' : `?tab=${encodeURIComponent(next)}`
     history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(repo.name)}${query}`)
-    setTab(next); setSelected(null); setDetail(null); setDetailError('')
+    setTab(next); setFilePath(''); setSelected(null); setDetail(null); setDetailError('')
   }
   async function addComment() {
     const body = comment.trim()
@@ -94,7 +111,7 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
       const found = await waitForPeerForge(request)
       if (!found.ok) throw new Error(found.message || 'Comment was rejected by the repository owner')
       setDetail(found.result)
-      setComment('')
+      clearComment()
       setCommentCounts((current) => ({ ...current, [`${selected.kind}-${selected.item.number}`]: found.result?.comments?.length || 0 }))
     } catch (cause) {
       setDetailError(cause.message)
@@ -117,8 +134,8 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
       const created = found.result
       if (!created?.number) throw new Error('Repository owner returned an invalid issue')
       setCreatedIssues((current) => [created, ...current.filter((issue) => issue.number !== created.number)])
-      setIssueCreating(false); setIssueTitle(''); setIssueBody('')
-      setSelected({ kind: 'issue', item: created }); setDetail(created); setDetailError(''); setComment('')
+      setIssueCreating(false); clearIssueTitle(); clearIssueBody()
+      setSelected({ kind: 'issue', item: created }); setDetail(created); setDetailError('')
       history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(repository)}?tab=issues&issue=${created.number}`)
     } catch (cause) {
       setIssueError(cause.message)
@@ -146,6 +163,23 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
     setCancelling(true)
     await onCancelTransfer(transfer)
   }
+  const loadPeerFile = useCallback(async (path) => {
+    let request = ''
+    try {
+      const started = await api.peerFile(ship, repository, path)
+      request = started.request
+      const found = await waitForPeerBrowse(request)
+      if (!found.ok) throw new Error(found.message || `Could not load ${path}`)
+      if (!found.result?.file) throw new Error('Peer returned an invalid file response')
+      return found.result.file
+    } finally {
+      if (request) api.peerDeleteBrowse(request).catch(() => {})
+    }
+  }, [ship, repository])
+  function openFile(path, pushHistory = true) {
+    if (pushHistory) history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(repository)}?file=${encodeURIComponent(path)}`)
+    setTab('code'); setSelected(null); setDetail(null); setDetailError(''); setFilePath(path)
+  }
   if (!repo) return <main className="content"><div className="empty">Repository data is unavailable.</div></main>
   const commits = data.commits?.commits || []
   const nativePulls = repo.pullRequests || []
@@ -167,7 +201,7 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
     <div className="repo-meta"><span><b>{repo.fileCount || 0}</b> files</span><span><b>{repo.commitCount || 0}</b> commits</span><span><b>{repo.branchCount || 0}</b> branches</span><span><b>{repo.tagCount || 0}</b> tags</span></div>
     <nav className="tabs"><button className={tab === 'code' ? 'active' : ''} onClick={() => chooseTab('code')}>Code</button><button className={tab === 'issues' ? 'active' : ''} onClick={() => chooseTab('issues')}>Issues <span className="tab-count">{issues.length}</span></button><button className={tab === 'pulls' ? 'active' : ''} onClick={() => chooseTab('pulls')}>Pull requests <span className="tab-count">{pulls.length}</span></button><button className={tab === 'commits' ? 'active' : ''} onClick={() => chooseTab('commits')}>Commits <span className="tab-count">{repo.commitCount || commits.length}</span></button><button className={tab === 'branches' ? 'active' : ''} onClick={() => chooseTab('branches')}>Branches <span className="tab-count">{repo.branchCount || 0}</span></button></nav>
     <section className="repo-body">
-      {tab === 'code' && <FileTree files={data.files?.files || []} />}
+      {tab === 'code' && (filePath ? <RemoteFileView path={filePath} loadFile={loadPeerFile} onBack={() => history.back()} /> : <><FileTree files={data.files?.files || []} onOpen={openFile} /><Readme files={data.files?.files || []} loadFile={loadPeerFile} onOpen={openFile} /></>)}
       {tab === 'commits' && <div className="commit-list">{commits.map((commit) => { const date = formatDate(commit.committer?.timestamp); return <div className="commit-row" key={commit.oid}><span className="commit-avatar">{(commit.author?.name || '?').slice(0, 1).toUpperCase()}</span><div><strong>{commit.subject || 'Untitled commit'}</strong><small>{commit.author?.name || commit.author?.email || 'Unknown author'}{date ? ` committed ${date}` : ''}</small></div><code title={commit.oid}>{shortOid(commit.oid)}</code></div> })}</div>}
       {selected && <RemoteForgeDetail selected={selected} detail={detail} error={detailError} comment={comment} commentBusy={commentBusy} onCommentChange={setComment} onComment={addComment} onBack={() => history.back()} />}
       {!selected && tab === 'issues' && <>{issueCreating && <form className="panel issue-composer" onSubmit={createIssue}><div className="section-title"><div><h2>New issue</h2><p className="quiet">Open an issue on {ship}/{repository} as this ship.</p></div><button type="button" className="text-button" onClick={() => { setIssueCreating(false); setIssueError('') }}>Cancel</button></div><label><span>Title</span><input autoFocus required value={issueTitle} maxLength="200" onChange={(event) => setIssueTitle(event.target.value)} /></label><label><span>Description</span><textarea value={issueBody} maxLength="65536" onChange={(event) => setIssueBody(event.target.value)} placeholder="Describe the problem or proposal…" /></label>{issueError && <div className="inline-error">{issueError}</div>}<div className="form-actions"><button className="button primary" disabled={issueBusy || !issueTitle.trim()}>{issueBusy ? 'Opening…' : 'Open issue'}</button></div></form>}<div className="forge-toolbar"><span>{issues.length} issues</span><div className="forge-toolbar-actions"><button className="button primary" disabled={issueBusy} onClick={() => { setIssueCreating(!issueCreating); setIssueError('') }}>New issue</button></div></div>{!issues.length ? <div className="empty compact">No issues.</div> : <div className="issue-list">{issues.map((issue) => issue.source === 'github' ? <a className="issue-row forge-link" href={issue.url} target="_blank" rel="noreferrer" key={`github-${issue.number}`}><span className={`issue-icon ${issue.state}`}>◉</span><div><h3>{issue.title}</h3><p>#{issue.number} · {issue.state} · {issue.author} · GitHub</p></div><span className="external-arrow">↗</span></a> : <button type="button" className="issue-row remote-forge-row" onClick={() => inspect('issue', issue)} key={`native-${issue.number}`}><span className={`issue-icon ${issue.state}`}>◉</span><div><h3>{issue.title}</h3><p>#{issue.number} · {issue.state} · {issue.author} · {commentCounts[`issue-${issue.number}`] ?? issue.commentCount ?? 0} comments</p><div className="issue-labels inline">{(issue.labels || []).map((label) => <span key={label}>{label}</span>)}</div></div></button>)}</div>}</>}
@@ -176,6 +210,23 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
     </section>
     {forkDialog && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setForkDialog(false)}><section className="modal-card" role="dialog" aria-modal="true" aria-label="Fork repository"><header><div><span className="eyebrow">Fork</span><h1>{ship}/{repository}</h1></div><button type="button" className="icon-button" onClick={() => setForkDialog(false)} aria-label="Close">×</button></header><form onSubmit={fork}><label><span>Local repository name</span><input autoFocus required pattern="[A-Za-z0-9._-]+" maxLength="100" value={localName} onChange={(event) => setLocalName(event.target.value)} /></label>{sameOrigin && <small className="field-note">This updates the existing fork from the same origin.</small>}{blockedCollision && <small className="field-error">That name belongs to another repository. Choose a different local name.</small>}<label className="check-row"><input type="checkbox" checked={publicRead} onChange={(event) => setPublicRead(event.target.checked)} /><span><strong>Public local fork</strong><small>Allow other ships and Git clients to fetch this copy.</small></span></label><div className="form-actions"><button type="button" className="button ghost" onClick={() => setForkDialog(false)}>Cancel</button><button className="button primary" disabled={blockedCollision || !localName.trim()}>{sameOrigin ? 'Update fork' : 'Fork repository'}</button></div></form></section></div>}
   </main>
+}
+
+function RemoteFileView({ path, loadFile, onBack }) {
+  const [file, setFile] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let active = true
+    setFile(null); setError('')
+    loadFile(path).then((data) => active && setFile({ ...data, ...decodeBase64(data.content) })).catch((cause) => active && setError(cause.message))
+    return () => { active = false }
+  }, [path, loadFile])
+  const mime = imageType(path)
+  const markdown = /\.(?:md|markdown)$/i.test(path)
+  return <div className="file-view">
+    <div className="file-toolbar"><button className="text-button file-back" onClick={onBack}>← Files</button><code>{path.replace(/^\/+/, '')}</code></div>
+    {error ? <div className="inline-error">{error}</div> : !file ? <div className="empty"><span className="spinner" /> Reading file from peer…</div> : mime ? <div className="image-view"><img src={`data:${mime};base64,${file.content}`} alt={path} /></div> : file.text !== null ? markdown ? <section className="readme-panel standalone"><header><span>{path.replace(/^\/+/, '')}</span></header><Markdown>{file.text}</Markdown></section> : <HighlightedCode code={file.text} path={path} /> : <div className="empty" title={exactBytes(file.size)}>Binary file · {formatBytes(file.size)}</div>}
+  </div>
 }
 
 function RemoteForgeDetail({ selected, detail, error, comment, commentBusy, onCommentChange, onComment, onBack }) {

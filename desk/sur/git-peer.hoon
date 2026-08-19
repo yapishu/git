@@ -46,7 +46,7 @@
   $:  request=@uv
       repositories=(list catalog-repository)
   ==
-+$  browse-view  ?(%overview %issue %pull)
++$  browse-view  ?(%overview %issue %pull %file)
 ::
 +$  forge-kind  ?(%issue %pull)
 ::
@@ -79,7 +79,7 @@
       [%catalog-request catalog-request=catalog-request]
       [%catalog catalog=catalog]
       [%catalog-error request=@uv message=@t]
-      [%browse-request request=@uv repository=@t view=browse-view number=@ud]
+      [%browse-request request=@uv repository=@t view=browse-view number=@ud file-path=path]
       [%browse-ready request=@uv repository=@t target=ship pages=@ud]
       [%browse-response request=@uv repository=@t result=json]
       [%browse-begin request=@uv repository=@t pages=@ud]

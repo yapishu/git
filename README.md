@@ -24,7 +24,7 @@
 - Clay-to-Git publishing that snapshots a bound desk as canonical blobs, trees, and commits
 - native Clay revision history for bound branches, including revision numbers, canonical timestamps, takos, mapped Git commits, per-file history, and revision diffs
 - bridge status and explicit synchronization controls that compare the live desk with the linked branch and can safely apply either side
-- GitHub-style web interface for repositories, branch creation/defaults/deletion, expandable file trees, deep-linked source lines, branch-aware file creation/editing/deletion, history, line blame, authorship, diffs, and repository settings
+- GitHub-style web interface for repositories, rendered Markdown READMEs, branch creation/defaults/deletion, expandable file trees, deep-linked source lines, branch-aware file creation/editing/deletion, history, line blame, authorship, diffs, and repository settings
 - branch-aware repository code search with line-level results that open directly in the highlighted source view
 - lightweight and annotated tag management with contextual commit/revision actions, unique abbreviated commit IDs, and standards-compliant peeled advertisements
 - tags can target native Clay revisions; the selected revision is materialized as a canonical Git commit and recorded in the revision-to-commit map without moving the bound branch
@@ -35,7 +35,7 @@
 - repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
 - one-click publication of any mounted Clay desk as a Git repository
 - verified, incremental native forks with explicit pull-from-origin refresh: Ames coordinates access and refs while bounded sequential Fine pages carry checksummed Git pack bytes for only the missing immutable objects; duplicate requests coalesce and active transfers can be cancelled
-- persistent ship peers in the sidebar, with on-demand public repository discovery; bounded remote browsing of code, branches, and history; and full native issue and pull-request discussions read through request-scoped Fine
+- persistent ship peers in the sidebar, with on-demand public repository discovery; bounded remote browsing of code, branches, history, rendered READMEs, and individual file previews; and full native issue and pull-request discussions read through request-scoped Fine
 - ship write ACLs with fast-forward-only native push-back from authorized forks
 - native pull requests between ships or local branches, with close/reopen lifecycle, per-file red/green diffs, resolvable general and line-anchored review comments, cross-ship discussion at the origin, fast-forward or conflict-checked three-way merges, and Clay gating
 - native issues authored by ship identity, with remote creation, open/close lifecycle, origin-authoritative cross-ship comments, labels, assignees, public read-only views, and linked `~ship/repository#number` references
@@ -45,6 +45,7 @@
 - optional GitHub token support for private imports, GitHub forks, and opening pull requests
 - paginated, deduplicated GitHub issue and pull-request lists with conditional load-more controls, request-scoped full bodies and unified pull-request diffs, and upstream file contents fetched on demand
 - Git and Clay histories loaded in pages of 50, with commit and revision detail available from every displayed identifier
+- browser-local draft recovery for file creation and editing, issue composition, pull-request titles, and local or remote discussion comments
 - JSON scries and HTTP APIs for repository summaries, refs, first-parent history, and file trees
 - Git LFS batch uploads and downloads backed by the ship's configured object storage
 - Git LFS file locking compatible with stock `git lfs lock`, `locks`, and `unlock`
