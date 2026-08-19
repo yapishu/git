@@ -3,7 +3,7 @@ import { api, waitForPeerBrowse, waitForPeerForge } from '../api'
 import FileTree from './FileTree'
 import { CommitDetail, DiffView } from './RepositoryView'
 import { HighlightedCode } from './HighlightedCode'
-import Markdown from './Markdown'
+import MarkdownDocument from './MarkdownDocument'
 import Readme from './Readme'
 import { exactBytes, formatBytes } from '../format'
 import { useLocalDraft } from '../useLocalDraft'
@@ -252,7 +252,7 @@ function RemoteFileView({ path, loadFile, onBack }) {
   const markdown = /\.(?:md|markdown)$/i.test(path)
   return <div className="file-view">
     <div className="file-toolbar"><button className="text-button file-back" onClick={onBack}>← Files</button><code>{path.replace(/^\/+/, '')}</code></div>
-    {error ? <div className="inline-error">{error}</div> : !file ? <div className="empty"><span className="spinner" /> Reading file from peer…</div> : mime ? <div className="image-view"><img src={`data:${mime};base64,${file.content}`} alt={path} /></div> : file.text !== null ? markdown ? <section className="readme-panel standalone"><header><span>{path.replace(/^\/+/, '')}</span></header><Markdown>{file.text}</Markdown></section> : <HighlightedCode code={file.text} path={path} /> : <div className="empty" title={exactBytes(file.size)}>Binary file · {formatBytes(file.size)}</div>}
+    {error ? <div className="inline-error">{error}</div> : !file ? <div className="empty"><span className="spinner" /> Reading file from peer…</div> : mime ? <div className="image-view"><img src={`data:${mime};base64,${file.content}`} alt={path} /></div> : file.text !== null ? markdown ? <section className="readme-panel standalone"><header><span>{path.replace(/^\/+/, '')}</span></header><MarkdownDocument>{file.text}</MarkdownDocument></section> : <HighlightedCode code={file.text} path={path} /> : <div className="empty" title={exactBytes(file.size)}>Binary file · {formatBytes(file.size)}</div>}
   </div>
 }
 

@@ -6,10 +6,11 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "test": "node --test src/*.test.js"
+    "test": "node --test --test-concurrency=1 src/*.test.js"
   },
   "dependencies": {
     "@urbit/sigil-js": "^2.2.0",
+    "yaml": "^2.9.0",
     "@vitejs/plugin-react": "latest",
     "react": "latest",
     "react-dom": "latest",

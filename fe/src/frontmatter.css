@@ -1,0 +1,7 @@
+.markdown-frontmatter { display: block; width: 100%; max-width: 100%; margin: 0 0 1.25em; border-spacing: 0; border-collapse: collapse; overflow-x: auto; font-size: 12px; line-height: 1.45; }
+.markdown-frontmatter th, .markdown-frontmatter td { border: 1px solid var(--line); padding: .45em .75em; vertical-align: top; }
+.markdown-frontmatter th { width: 1%; background: var(--soft); color: var(--muted); font-weight: 650; text-align: left; white-space: nowrap; }
+.markdown-frontmatter td { min-width: 0; overflow-wrap: anywhere; }
+.markdown-frontmatter tbody tr:nth-child(even) { background: color-mix(in srgb, var(--soft) 55%, transparent); }
+.markdown-frontmatter-complex { display: block; max-width: 70ch; padding: 0; background: transparent; white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown-frontmatter + .markdown-body { max-width: none; padding: 0; }

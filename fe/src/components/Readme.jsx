@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import Markdown from './Markdown'
+import MarkdownDocument from './MarkdownDocument'
 
 function decode(content) {
   const raw = atob(content)
@@ -47,6 +47,6 @@ export default function Readme({ files, loadFile, onOpen }) {
   if (!path || (!text && !error)) return null
   return <section className="readme-panel">
     <header><button type="button" className="text-button" onClick={() => onOpen?.(path)}>{path.replace(/^\/+/, '')}</button></header>
-    {error ? <div className="inline-error">{error}</div> : <Markdown loadAsset={loadAsset} onOpenPath={openPath}>{text}</Markdown>}
+    {error ? <div className="inline-error">{error}</div> : <MarkdownDocument loadAsset={loadAsset} onOpenPath={openPath}>{text}</MarkdownDocument>}
   </section>
 }
