@@ -1,7 +1,7 @@
 ::  Native Git object database and Smart HTTP endpoint.
 ::
 /-  git, git-peer
-/+  dbug, default-agent, git-archive, git-blame, git-clay, git-clay-history, git-codec, git-github, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
+/+  dbug, default-agent, git-access, git-archive, git-blame, git-clay, git-clay-history, git-codec, git-github, git-graph, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
 |%
 +$  card  card:agent:gall
 +$  profile-value  $@(~ [kind=@tas value=*])
@@ -464,6 +464,11 @@
   =.  events  (~(put in events) %pull-request)
   (~(put in events) %pull-comment)
 ::
+++  repository-readable
+  |=  [repo=repository:git requester=@p]
+  ^-  ?
+  (can-read:git-access public-read.repo owner.repo readers.repo writers.repo requester)
+::
 ++  profile-field
   |=  [contact=profile-contact field=@tas kind=@tas]
   ^-  @t
@@ -558,6 +563,8 @@
     ==
   =/  writers-json=(list json)
     (turn ~(tap in writers.repo) |=(writer=@p s+(scot %p writer)))
+  =/  readers-json=(list json)
+    (turn ~(tap in readers.repo) |=(reader=@p s+(scot %p reader)))
   =/  protected-json=(list json)
     (turn ~(tap in protected-refs.repo) |=(ref=@t s+ref))
   =/  notification-events-json=(list json)
@@ -612,6 +619,7 @@
       ['lfsLockCount' n+(decimal (lent ~(tap by lfs-locks.repo)))]
       ['writeTokenSet' b+?=(^ write-token-hash.repo)]
       ['writers' [%a writers-json]]
+      ['readers' [%a readers-json]]
       ['pullRequests' [%a pulls-json]]
       ['nativeIssues' [%a (turn native-issues.repo |=(issue=native-issue:git (native-issue-json issue %.n)))]]
       ['releases' [%a releases-json]]
@@ -646,6 +654,7 @@
   =/  fields=(map @t json)  p.full
   =.  fields  (~(del by fields) 'writeTokenSet')
   =.  fields  (~(del by fields) 'writers')
+  =.  fields  (~(del by fields) 'readers')
   =.  fields  (~(del by fields) 'binding')
   =.  fields  (~(del by fields) 'peerOrigin')
   =.  fields  (~(del by fields) 'webhooks')
@@ -654,6 +663,17 @@
   =.  fields  (~(del by fields) 'notificationEvents')
   =.  fields  (~(del by fields) 'upstreamUpdates')
   [%o fields]
+::
+++  public-repositories-json
+  |=  repos=(map @t repository:git)
+  ^-  json
+  %-  pairs:enjs:format
+  :~  :-  'repositories'
+      :-  %a
+      %+  turn  ~(tap by repos)
+      |=  [name=@t repo=repository:git]
+      (public-repository-json name repo)
+  ==
 ::
 ++  latest-file-commits
   |=  [repo=repository:git ref=@t]
@@ -1201,6 +1221,16 @@
       ['commits' (repository-commits-json name repo head.repo 0 50)]
   ==
 ::
+++  peer-repository-browse-json
+  |=  [name=@t repo=repository:git]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['revision' s+(repository-revision repo)]
+      ['repository' (public-repository-json name repo)]
+      ['files' (repository-files-json name repo)]
+      ['commits' (repository-commits-json name repo head.repo 0 50)]
+  ==
+::
 ++  repository-revision
   |=  repo=repository:git
   ^-  @t
@@ -1212,6 +1242,7 @@
         refs.repo
         protected-refs.repo
         writers.repo
+        readers.repo
         binding.repo
         peer-origin.repo
         github-origin.repo
@@ -1765,6 +1796,7 @@
       protected-refs.repo
       objects.repo
       writers.repo
+      ~
       write-token-hash.repo
       lfs-objects.repo
       lfs-uploads.repo
@@ -2142,6 +2174,7 @@
           ~
           ~
           ~
+          ~
           `[[source.flight source-repository.flight]]
           ~
           ~
@@ -2263,15 +2296,15 @@
 ++  peer-catalog-request
   |=  msg=catalog-request:git-peer
   ^-  (quip card _this)
-  =/  public-repositories=(list catalog-repository:git-peer)
+  =/  readable-repositories=(list catalog-repository:git-peer)
     %+  murn  ~(tap by repositories)
     |=  entry=[@t repository:git]
     =/  name=@t  -.entry
     =/  repo=repository:git  +.entry
-    ?.  public-read.repo  ~
+    ?.  (repository-readable repo src.bowl)  ~
     `[name head.repo (lent ~(tap by refs.repo)) (lent ~(tap by objects.repo)) (~(has in writers.repo) src.bowl)]
   :_  this
-  :~  (peer-card src.bowl /peer/catalog/(scot %uv request.msg) [%catalog request.msg (scag 200 public-repositories)])
+  :~  (peer-card src.bowl /peer/catalog/(scot %uv request.msg) [%catalog request.msg (scag 200 readable-repositories)])
   ==
 ::
 ++  peer-catalog
@@ -2298,32 +2331,32 @@
   |=  [request=@uv repository=@t view=browse-view:git-peer number=@ud file-path=path]
   ^-  (quip card _this)
   =/  found=(unit repository:git)  (~(get by repositories) repository)
-  ?.  ?&(?=(^ found) public-read.u.found)
+  ?.  ?&(?=(^ found) (repository-readable u.found src.bowl))
     :_  this
-    :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or not public'])
+    :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or requester is not authorized'])
     ==
   =/  detail=(unit json)
     ?:  =(%stamp view)
       `(repository-stamp-json repository u.found)
     ?:  =(%overview view)
-      `(repository-browse-json repository u.found)
+      `(peer-repository-browse-json repository u.found)
     ?:  =(%issue view)
       =/  issue=(unit native-issue:git)  (native-issue-at u.found number)
       ?~  issue  ~
-      `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['issue' (native-issue-json u.issue %.y)]])
+      `(pairs:enjs:format ~[['repository' (public-repository-json repository u.found)] ['issue' (native-issue-json u.issue %.y)]])
     ?:  =(%pull view)
       =/  pull=(unit native-pull:git)  (native-pull-at u.found number)
       ?~  pull  ~
       =/  pull-json=(unit json)  (native-pull-detail-json repository u.found u.pull)
       ?~  pull-json  ~
-      `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['pull' u.pull-json]])
+      `(pairs:enjs:format ~[['repository' (public-repository-json repository u.found)] ['pull' u.pull-json]])
     ?:  =(%commit view)
       ?~  file-path  ~
       (repository-history-detail-json repository u.found i.file-path our.bowl now.bowl)
     =/  data=(unit octs)  (repository-file u.found file-path)
     ?~  data  ~
     ?:  (gth p.u.data 4.194.304)  ~
-    `(pairs:enjs:format ~[['repository' (repository-json repository u.found)] ['file' (repository-file-json repository u.found head.u.found file-path u.data)]])
+    `(pairs:enjs:format ~[['repository' (public-repository-json repository u.found)] ['file' (repository-file-json repository u.found head.u.found file-path u.data)]])
   ?~  detail
     :_  this
     :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'requested item is unavailable, incomplete, or too large to preview'])
@@ -2442,8 +2475,8 @@
   |=  msg=forge-comment:git-peer
   ^-  (quip card _this)
   =/  found=(unit repository:git)  (~(get by repositories) repository.msg)
-  ?.  ?&(?=(^ found) public-read.u.found)
-    (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'repository is unavailable or not public' ~)
+  ?.  ?&(?=(^ found) (repository-readable u.found src.bowl))
+    (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'repository is unavailable or requester is not authorized' ~)
   ?:  =(%issue kind.msg)
     =/  issue=(unit native-issue:git)  (native-issue-at u.found number.msg)
     ?~  issue
@@ -2512,8 +2545,8 @@
   |=  msg=forge-create-issue:git-peer
   ^-  (quip card _this)
   =/  found=(unit repository:git)  (~(get by repositories) repository.msg)
-  ?.  ?&(?=(^ found) public-read.u.found)
-    (peer-forge-reply src.bowl request.msg repository.msg %issue 0 %.n 'repository is unavailable or not public' ~)
+  ?.  ?&(?=(^ found) (repository-readable u.found src.bowl))
+    (peer-forge-reply src.bowl request.msg repository.msg %issue 0 %.n 'repository is unavailable or requester is not authorized' ~)
   ?.  ?&  !=('' title.msg)
           (lte (met 3 title.msg) 200)
           (lte (met 3 body.msg) 65.536)
@@ -2626,8 +2659,8 @@
   =/  origin-request=?
     ?~  peer-origin.u.found  %.n
     =(src.bowl ship.u.peer-origin.u.found)
-  ?.  |(public-read.u.found origin-request)
-    (peer-fail src.bowl transfer.req 'repository is not public')
+  ?.  |((repository-readable u.found src.bowl) origin-request)
+    (peer-fail src.bowl transfer.req 'ship is not authorized to read this repository')
   ?:  (~(has by peer-serving) transfer.req)
     :_  this
     :~  (peer-card src.bowl /peer/accepted/(scot %uv transfer.req) [%accepted transfer.req repository.req])
@@ -2662,8 +2695,8 @@
   =/  origin-request=?
     ?~  peer-origin.u.found  %.n
     =(target ship.u.peer-origin.u.found)
-  ?.  |(public-read.u.found origin-request)
-    (peer-fail target transfer.req 'repository is not public')
+  ?.  |((repository-readable u.found target) origin-request)
+    (peer-fail target transfer.req 'ship is not authorized to read this repository')
   ?:  (~(has by peer-serving) transfer.req)
     `this
   =/  superseded=(list [@uv peer-serve])
@@ -2869,6 +2902,7 @@
           ~
           ~
           ~
+          ~
           default-notification-events
       ==
     `this(repositories (~(put by repositories) name.act repo))
@@ -2939,6 +2973,18 @@
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)
     ?~  found  `this
     =/  repo=repository:git  u.found(writers (~(del in writers.u.found) writer.act))
+    `this(repositories (~(put by repositories) repository.act repo))
+  ::
+      %grant-reader
+    =/  found=(unit repository:git)  (~(get by repositories) repository.act)
+    ?~  found  `this
+    =/  repo=repository:git  u.found(readers (~(put in readers.u.found) reader.act))
+    `this(repositories (~(put by repositories) repository.act repo))
+  ::
+      %revoke-reader
+    =/  found=(unit repository:git)  (~(get by repositories) repository.act)
+    ?~  found  `this
+    =/  repo=repository:git  u.found(readers (~(del in readers.u.found) reader.act))
     `this(repositories (~(put by repositories) repository.act repo))
   ::
       %set-write-token
@@ -6253,6 +6299,29 @@
       (api-with-action eyre-id 200 [%grant-writer name u.writer])
     (api-with-action eyre-id 200 [%revoke-writer name u.writer])
   ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %repository @ %readers ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    =/  allowed=(unit ?)  (bool-at 'allowed' u.jon)
+    ?.  ?&(?=(^ ship-text) ?=(^ allowed))
+      :_  this
+      (api-error eyre-id 422 'ship and allowed are required')
+    =/  reader=(unit @p)  (slaw %p u.ship-text)
+    ?~  reader
+      :_  this
+      (api-error eyre-id 422 'ship must be a valid Urbit ID')
+    ?:  u.allowed
+      (api-with-action eyre-id 200 [%grant-reader name u.reader])
+    (api-with-action eyre-id 200 [%revoke-reader name u.reader])
+  ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %repository @ %protected ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
@@ -7634,14 +7703,14 @@
       |=  entry=[@t repository:git]
       ?.  public-read.+.entry  ~
       `entry
-    ``json+!>((repositories-json visible))
+    ``json+!>((public-repositories-json visible))
   ::
       [%x %repository @ ~]
     =/  name=@t  i.t.t.path
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?~  found  [~ ~]
     ?.  public-read.u.found  [~ ~]
-    ``json+!>((repository-json name u.found))
+    ``json+!>((public-repository-json name u.found))
   ::
       [%x %repository @ %files ~]
     =/  name=@t  i.t.t.path
@@ -7662,7 +7731,7 @@
     =/  found=(unit repository:git)  (~(get by repositories) name)
     ?~  found  [~ ~]
     ?.  public-read.u.found  [~ ~]
-    ``json+!>((repository-browse-json name u.found))
+    ``json+!>((peer-repository-browse-json name u.found))
   ::
       [%x %fine @ ~]
     =/  transfer=(unit @uv)  (slaw %uv i.t.t.path)
@@ -8390,6 +8459,7 @@
               ~
               combined
               (silt ~[our.bowl])
+              ~
               ~
               ~
               ~

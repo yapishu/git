@@ -987,6 +987,7 @@ function Settings({ repo, onMutate }) {
   const [message, setMessage] = useState('Publish Clay desk')
   const [token, setToken] = useState('')
   const [writer, setWriter] = useState('')
+  const [reader, setReader] = useState('')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [syncResult, setSyncResult] = useState('')
@@ -1193,6 +1194,14 @@ function Settings({ repo, onMutate }) {
         {repo.publicRead && <div className="form-actions split"><code className="public-url">{publicUrl}</code><div><button className="button" onClick={() => navigator.clipboard.writeText(publicUrl)}>Copy public link</button> <a className="button link-button" href={publicUrl} target="_blank" rel="noreferrer">Open</a></div></div>}
         <label><span>Write token</span><div className="inline-field"><input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={repo.writeTokenSet ? 'Token is set' : 'Set a Git password'} /><button className="button" disabled={busy || !token} onClick={() => act('token', async () => { await api.setToken(repo.name, token); setToken('') })}>Save</button></div></label>
         {repo.writeTokenSet && <button className="text-button danger-text" onClick={() => act('clear-token', () => api.clearToken(repo.name))}>Clear write token</button>}
+        <div className="subsection">
+          <div className="section-title"><div><h3>Ship readers</h3><p>Readers can discover, browse, and fork this private repository through Urgit, but cannot send updates. Writers already have read access.</p></div></div>
+          <div className="inline-field"><input value={reader} onChange={(e) => setReader(e.target.value)} placeholder="~sampel-palnet" /><button className="button" disabled={busy || !reader.trim()} onClick={() => act('reader', async () => { await api.setReader(repo.name, reader.trim(), true); setReader('') })}>Grant</button></div>
+          <div className="writer-list">
+            {(repo.readers || []).map((ship) => <div key={ship}><code>{ship}</code><button className="text-button danger-text" onClick={() => act(`reader-${ship}`, () => api.setReader(repo.name, ship, false))}>Revoke</button></div>)}
+            {!repo.readers?.length && <small className="quiet">No remote readers.</small>}
+          </div>
+        </div>
         <div className="subsection">
           <div className="section-title"><div><h3>Ship writers</h3><p>Authorized ships can send verified, fast-forward updates from native forks.</p></div></div>
           <div className="inline-field"><input value={writer} onChange={(e) => setWriter(e.target.value)} placeholder="~sampel-palnet" /><button className="button" disabled={busy || !writer.trim()} onClick={() => act('writer', async () => { await api.setWriter(repo.name, writer.trim(), true); setWriter('') })}>Grant</button></div>

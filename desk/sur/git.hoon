@@ -228,6 +228,7 @@
       protected-refs=(set @t)
       objects=(map oid object)
       writers=(set @p)
+      readers=(set @p)
       write-token-hash=(unit @)
       lfs-objects=(map @t lfs-object)
       lfs-uploads=(map @t lfs-upload)
@@ -300,6 +301,8 @@
       [%set-description repository=@t description=@t]
       [%grant-writer repository=@t writer=@p]
       [%revoke-writer repository=@t writer=@p]
+      [%grant-reader repository=@t reader=@p]
+      [%revoke-reader repository=@t reader=@p]
       [%set-write-token repository=@t token=@t]
       [%clear-write-token repository=@t]
       [%bind-desk repository=@t desk-name=desk branch=@t]

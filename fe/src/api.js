@@ -156,6 +156,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ship, allowed }),
     }),
+  setReader: (name, ship, allowed) =>
+    request(`/repository/${encodeURIComponent(name)}/readers`, {
+      method: 'POST',
+      body: JSON.stringify({ ship, allowed }),
+    }),
   setProtected: (name, ref, protectedBranch) =>
     request(`/repository/${encodeURIComponent(name)}/protected`, {
       method: 'POST',
