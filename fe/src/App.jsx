@@ -48,6 +48,7 @@ function PrivateApp() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [peerActivity, setPeerActivity] = useState([])
+  const [urgitNotifications, setUrgitNotifications] = useState([])
   const [activityOpen, setActivityOpen] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('urgit-theme') || 'system')
 
@@ -90,6 +91,7 @@ function PrivateApp() {
     try {
       const data = await api.peerActivity()
       setPeerActivity(data.activity || [])
+      setUrgitNotifications(data.notifications || [])
     } catch {
       // Repository use remains available if the activity endpoint is reloading.
     }
@@ -231,12 +233,13 @@ function PrivateApp() {
 
   const repo = useMemo(() => repositories.find((item) => item.name === selected), [repositories, selected])
   const nextTheme = { system: 'light', light: 'dark', dark: 'system' }[theme]
-  const activePeers = peerActivity.filter((item) => item.status === 'active').length
+  const activityCount = peerActivity.filter((item) => item.status === 'active').length + urgitNotifications.length
 
   async function clearActivity() {
     try {
       await api.clearPeerActivity()
       setPeerActivity([])
+      setUrgitNotifications([])
     } catch (cause) {
       setError(cause.message)
     }
@@ -279,8 +282,8 @@ function PrivateApp() {
           </div>
           <div className="topbar-actions">
             <div className="activity-anchor">
-              <button className="icon-button activity-button" onClick={() => { setActivityOpen((open) => !open); refreshActivity() }} title="Peer activity"><ActivityIcon />{activePeers > 0 && <span className="activity-badge">{activePeers}</span>}</button>
-              {activityOpen && <PeerActivity activity={peerActivity} onClear={clearActivity} onCancel={cancelTransfer} />}
+              <button className="icon-button activity-button" onClick={() => { setActivityOpen((open) => !open); refreshActivity() }} title="Activity"><ActivityIcon />{activityCount > 0 && <span className="activity-badge">{activityCount}</span>}</button>
+              {activityOpen && <PeerActivity activity={peerActivity} notifications={urgitNotifications} onClear={clearActivity} onCancel={cancelTransfer} />}
             </div>
             <button className="theme-button" onClick={() => setTheme(nextTheme)} title={`Theme: ${theme}`}>{theme === 'dark' ? '◐' : theme === 'light' ? '◑' : '◒'}</button>
             <button className={`icon-button${settingsOpen ? ' active' : ''}`} onClick={() => settingsOpen ? closeSettings() : openSettings()} title="Settings" aria-label="Settings"><SettingsIcon /></button>

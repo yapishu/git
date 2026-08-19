@@ -142,27 +142,39 @@
 +$  notification-event
   ?(%issue %issue-comment %pull-request %pull-comment)
 ::
-+$  hark-place
-  [desk=desk path=path]
++$  hark-flag
+  [ship=ship name=term]
 ::
-+$  hark-bin
-  [path=path place=hark-place]
++$  hark-nest
+  [desk=desk flag=hark-flag]
 ::
-+$  hark-content
-  $%  [%ship ship=ship]
-      [%text text=cord]
++$  hark-rope
+  $:  group=(unit hark-flag)
+      channel=(unit hark-nest)
+      desk=desk
+      thread=path
   ==
 ::
-+$  hark-body
-  $:  title=(list hark-content)
-      content=(list hark-content)
++$  hark-content
+  $@  @t
+  $%  [%ship ship=ship]
+      [%emph text=cord]
+  ==
+::
++$  hark-button
+  [title=cord handler=path]
+::
++$  hark-yarn
+  $:  id=@uv
+      rope=hark-rope
       time=@da
-      binned=path
+      content=(list hark-content)
       link=path
+      button=(unit hark-button)
   ==
 ::
 +$  hark-action
-  [%add-note bin=hark-bin body=hark-body]
+  [%add-yarn all=? desk=? yarn=hark-yarn]
 ::
 +$  webhook
   $:  id=@ud

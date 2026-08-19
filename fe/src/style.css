@@ -87,12 +87,15 @@ button { color: inherit; }
 .activity-popover > header { min-height: 58px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
 .activity-popover > header strong, .activity-popover > header small { display: block; }
 .activity-popover > header small { margin-top: 3px; color: var(--muted); font-size: 10px; }
-.activity-list { max-height: 480px; overflow: auto; }
+.activity-scroll { max-height: 480px; overflow: auto; }
+.activity-list { overflow: visible; }
+.activity-section-label { padding: 8px 13px 6px; border-bottom: 1px solid var(--line); background: var(--subtle); color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .activity-row { min-height: 60px; padding: 10px 13px; display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
 .activity-row:last-child { border-bottom: 0; }
 .activity-row strong, .activity-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-row strong { font-size: 12px; }
 .activity-row small { margin-top: 4px; color: var(--muted); font-size: 10px; }
+.activity-dot.notification { background: #0969da; }
 .activity-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .activity-dot.active { background: #bf8700; box-shadow: 0 0 0 3px color-mix(in srgb, #bf8700 14%, transparent); }
 .activity-dot.success { background: #1a7f37; }

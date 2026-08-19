@@ -126,6 +126,15 @@
       message=@t
       when=@da
   ==
++$  notification-activity
+  $:  id=@uv
+      event=notification-event:git
+      repository=@t
+      message=@t
+      when=@da
+  ==
++$  notification-result
+  [cards=(list card) activity=(unit notification-activity)]
 +$  blame-table  [sources=(list json) remap=(map @ud @ud)]
 +$  github-kind  ?(%import %update %push %push-send %issues %pulls %issue-detail %pull-detail %pull-diff %file-detail %fork %open-pull)
 +$  github-request
@@ -1687,6 +1696,7 @@
 =/  peer-browse-serving  *(map @uv peer-browse-serve)
 =/  peer-forges  *(map @uv peer-forge)
 =/  peer-activities  *(list peer-activity)
+=/  notification-activities  *(list notification-activity)
 =/  github-in-flight  *(map @uv github-request)
 =/  github-results  *(map @uv github-result)
 =/  webhook-in-flight  *(map @uv webhook-flight)
@@ -1712,7 +1722,7 @@
     ?:  ?=([%0 *] q.old)
       (settle-webhook-state (migrate-state-0 !<(state-0:git old)))
     (settle-webhook-state !<(state-1:git old))
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -1766,6 +1776,12 @@
   |=  event=peer-activity
   ?:  !=(id id.event)  event
   event(status ?:(ok %success %failure), message message, when now.bowl)
+::
+++  notification-activity-put
+  |=  event=notification-activity
+  ^-  (list notification-activity)
+  =/  combined=(list notification-activity)  [event notification-activities]
+  (scag 50 combined)
 ::
 ++  peer-transfer-yawns
   |=  [transfer=@uv peer=ship pages=@ud completed=(set @ud)]
@@ -1874,7 +1890,7 @@
     =/  updated=repository:git
       u.existing(objects objects.flight, native-pulls [pull native-pulls.u.existing])
     =.  repositories  (~(put by repositories) local-repository.flight updated)
-    =/  notices=(list card)
+    =/  notice=notification-result
       %-  repository-notification
       :*  local-repository.flight
           updated
@@ -1882,6 +1898,11 @@
           /[local-repository.flight]/pull/(scot %ud number)
           (rap 3 ~[(scot %p source.flight) ' opened pull request #' (decimal number) ' in ' local-repository.flight ': ' title.flight])
       ==
+    =.  notification-activities
+      ?~  activity.notice
+        notification-activities
+      (notification-activity-put u.activity.notice)
+    =/  notices=(list card)  cards.notice
     =/  finished=(quip card _this)
       (peer-push-finish flight transfer %.y (rap 3 ~['pull request #' (decimal number) ' opened']))
     [(weld notices -.finished) +.finished]
@@ -2268,7 +2289,7 @@
       ?:(=(number.candidate number.msg) updated-issue candidate)
     =/  updated-repo=repository:git  u.found(native-issues issues)
     =.  repositories  (~(put by repositories) repository.msg updated-repo)
-    =/  notices=(list card)
+    =/  notice=notification-result
       %-  repository-notification
       :*  repository.msg
           updated-repo
@@ -2276,6 +2297,11 @@
           /[repository.msg]/issue/(scot %ud number.msg)
           (rap 3 ~[(scot %p src.bowl) ' commented on issue #' (decimal number.msg) ' in ' repository.msg ': ' title.updated-issue])
       ==
+    =.  notification-activities
+      ?~  activity.notice
+        notification-activities
+      (notification-activity-put u.activity.notice)
+    =/  notices=(list card)  cards.notice
     =/  replied=(quip card _this)
       (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.y 'comment added' `(native-issue-json updated-issue %.y))
     [(weld notices -.replied) +.replied]
@@ -2296,7 +2322,7 @@
     (native-pull-detail-json repository.msg updated-repo updated-pull)
   ?~  result
     (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.n 'comment was added but pull request detail could not be rendered' ~)
-  =/  notices=(list card)
+  =/  notice=notification-result
     %-  repository-notification
     :*  repository.msg
         updated-repo
@@ -2304,6 +2330,11 @@
         /[repository.msg]/pull/(scot %ud number.msg)
         (rap 3 ~[(scot %p src.bowl) ' commented on pull request #' (decimal number.msg) ' in ' repository.msg ': ' title.updated-pull])
     ==
+  =.  notification-activities
+    ?~  activity.notice
+      notification-activities
+    (notification-activity-put u.activity.notice)
+  =/  notices=(list card)  cards.notice
   =/  replied=(quip card _this)
     (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.y 'comment added' `u.result)
   [(weld notices -.replied) +.replied]
@@ -2326,9 +2357,7 @@
     (~(put by repositories) repository.msg u.found(native-issues [issue native-issues.u.found]))
   =/  updated-repo=repository:git  u.found(native-issues [issue native-issues.u.found])
   =/  result=json  (native-issue-json issue %.y)
-  =/  dispatched=(quip card _this)
-    (dispatch-webhooks repository.msg %issue result)
-  =/  notices=(list card)
+  =/  notice=notification-result
     %-  repository-notification
     :*  repository.msg
         updated-repo
@@ -2336,6 +2365,13 @@
         /[repository.msg]/issue/(scot %ud number)
         (rap 3 ~[(scot %p src.bowl) ' opened issue #' (decimal number) ' in ' repository.msg ': ' title.msg])
     ==
+  =.  notification-activities
+    ?~  activity.notice
+      notification-activities
+    (notification-activity-put u.activity.notice)
+  =/  notices=(list card)  cards.notice
+  =/  dispatched=(quip card _this)
+    (dispatch-webhooks repository.msg %issue result)
   =/  reply-cards=(list card)
     :~  (peer-card src.bowl /peer/forge-result/(scot %uv request.msg) [%forge-result request.msg repository.msg %issue 0 %.y 'issue opened' `result])
     ==
@@ -3388,7 +3424,17 @@
         ['message' s+message.event]
         ['when' s+(scot %da when.event)]
     ==
-  (pairs:enjs:format ~[['activity' [%a entries]]])
+  =/  notifications=(list json)
+    %+  turn  notification-activities
+    |=  event=notification-activity
+    %-  pairs:enjs:format
+    :~  ['id' s+(scot %uv id.event)]
+        ['event' s+event.event]
+        ['repository' s+repository.event]
+        ['message' s+message.event]
+        ['when' s+(scot %da when.event)]
+    ==
+  (pairs:enjs:format ~[['activity' [%a entries]] ['notifications' [%a notifications]]])
 ::
 ++  github-results-json
   ^-  json
@@ -3478,15 +3524,14 @@
 ::
 ++  repository-notification
   |=  [name=@t repo=repository:git event=notification-event:git thread=path message=@t]
-  ^-  (list card)
-  ?.  (~(has in notification-events.repo) event)  ~
-  =/  id  (end 7 (shas %urgit-notification eny.bowl))
-  =/  place=hark-place:git  [%urgit thread]
-  =/  bin=hark-bin:git  [/notification place]
-  =/  body=hark-body:git
-    [~[[%text message]] ~ now.bowl /notification /apps/urgit]
-  :~  [%pass /hark-store/(scot %uv id) %agent [our.bowl %hark-store] %poke %hark-action !>(`hark-action:git`[%add-note bin body])]
-  ==
+  ^-  notification-result
+  ?.  (~(has in notification-events.repo) event)  [~ ~]
+  =/  id=@uv  `@uv`(end 7 (shas %urgit-notification eny.bowl))
+  =/  rope=hark-rope:git  [~ ~ %urgit thread]
+  =/  yarn=hark-yarn:git  [id rope now.bowl ~[message] /apps/urgit ~]
+  =/  card=card
+    [%pass /hark/(scot %uv id) %agent [our.bowl %hark] %poke %hark-action !>(`hark-action:git`[%add-yarn & & yarn])]
+  [[card ~] `[id event name message now.bowl]]
 ::
 ++  accept-receive
   |=  $:  eyre-id=@ta
@@ -4157,6 +4202,7 @@
           ?=([%apps %urgit %api %peer %activity ~] site)
       ==
     =.  peer-activities  ~
+    =.  notification-activities  ~
     :_  this
     (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
   ?:  ?&  =(%'GET' method)

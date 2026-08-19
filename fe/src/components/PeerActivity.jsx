@@ -5,15 +5,38 @@ const labels = {
   'pull-request': 'Pull request',
 }
 
-export default function PeerActivity({ activity, onClear, onCancel }) {
+const notificationLabels = {
+  issue: 'Issue',
+  'issue-comment': 'Issue comment',
+  'pull-request': 'Pull request',
+  'pull-comment': 'Pull request comment',
+}
+
+export default function PeerActivity({ activity, notifications = [], onClear, onCancel }) {
+  const hasItems = activity.length > 0 || notifications.length > 0
   return (
-    <section className="activity-popover" aria-label="Peer activity">
+    <section className="activity-popover" aria-label="Urgit activity">
       <header>
-        <div><strong>Peer activity</strong><small>Ames and Fine operations</small></div>
-        {!!activity.length && <button className="text-button" onClick={onClear}>Clear</button>}
+        <div><strong>Activity</strong></div>
+        {hasItems && <button className="text-button" onClick={onClear}>Clear</button>}
       </header>
-      {!activity.length ? <div className="activity-empty">No peer activity.</div> : (
-        <div className="activity-list">
+      {!hasItems ? <div className="activity-empty">No activity.</div> : (
+        <div className="activity-scroll">
+          {!!notifications.length && <div className="activity-section-label">Notifications</div>}
+          {!!notifications.length && <div className="activity-list">
+            {notifications.map((event) => (
+              <div className="activity-row" key={`notification-${event.id}`} title={event.when}>
+                <span className="activity-dot notification" />
+                <div>
+                  <strong>{notificationLabels[event.event] || event.event} · {event.repository}</strong>
+                  <small>{event.message}</small>
+                </div>
+                <span className="activity-state">new</span>
+              </div>
+            ))}
+          </div>}
+          {!!activity.length && <div className="activity-section-label">Peer</div>}
+          {!!activity.length && <div className="activity-list">
           {activity.map((event) => (
             <div className="activity-row" key={event.id} title={event.when}>
               <span className={`activity-dot ${event.status}`} />
@@ -26,6 +49,7 @@ export default function PeerActivity({ activity, onClear, onCancel }) {
               ) : <span className={`activity-state ${event.status}`}>{event.status}</span>}
             </div>
           ))}
+          </div>}
         </div>
       )}
     </section>

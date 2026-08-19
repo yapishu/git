@@ -122,7 +122,7 @@ Native issues live in repository state independently of Git objects and Clay rev
 
 Peer operations also write a bounded, transient activity ledger. Incoming snapshot reads and outgoing forks, pushes, and pull requests move from active to success or failure without changing persisted state. The authenticated activity API and top-bar panel expose the peer, repository, direction, time, and terminal message; clearing the ledger has no effect on repositories or transfers.
 
-Incoming native issue, pull-request, and comment mutations can emit notifications according to each repository's event set. The repository stores only those preferences. The `%hark-store` agent owns delivery and history: notes are visible in the global feed and grouped under stable `%urgit` issue and pull-request paths. An empty event set mutes the repository.
+Incoming native issue, pull-request, and comment mutations can emit notifications according to each repository's event set. The repository stores only those preferences. Urgit sends current `%add-yarn` actions directly to the `%hark` agent with both the global and desk inbox flags enabled. Hark owns delivery and history, grouping yarns under stable `%urgit` issue and pull-request paths. Urgit also keeps a bounded transient mirror of the yarns it emits for its top-bar activity panel; it does not read or duplicate unrelated Hark notifications. Clearing the Urgit panel does not alter Hark history. An empty event set mutes the repository.
 
 ## Web interface
 
