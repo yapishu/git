@@ -134,6 +134,11 @@ test('legacy peer offers remain decodable during a rolling upgrade', () => {
   assert.match(push, /\[%offer transfer repository\.u\.peer-origin\.u\.found u\.name %.n ''\]/)
 })
 
+test('incomplete push and pull graphs return a terminal result to the source', () => {
+  const finish = sourceBlock(backend, '++  peer-finish', '=/  existing=(unit repository:git)')
+  assert.match(finish, /peer-push-finish flight transfer %.n 'received repository graph is incomplete'/)
+})
+
 test('local pull creation validates and pins explicit source and target refs', () => {
   const create = sourceBlock(
     backend,

@@ -2101,6 +2101,8 @@
           (peer-valid-refs refs.flight objects.flight)
           (~(has by refs.flight) head.flight)
       ==
+    ?:  |(=(%pull purpose.flight) =(%push purpose.flight))
+      (peer-push-finish flight transfer %.n 'received repository graph is incomplete')
     =.  peer-receiving  (~(del by peer-receiving) transfer)
     =.  peer-results  (~(put by peer-results) transfer [%.n 'received repository graph is incomplete' local-repository.flight])
     =.  peer-activities
