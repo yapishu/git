@@ -35,3 +35,11 @@ test('keeps file history columns aligned independently of size text', () => {
   assert.ok(rows.some((rule) => /grid-template-columns:\s*minmax\(220px,\s*36%\)\s+minmax\(0,\s*1fr\)\s+76px\s+90px/.test(rule)))
   assert.ok(rows.every((rule) => !/grid-template-columns:[^;]+\sauto(?:;|$)/.test(rule)))
 })
+
+test('keeps wide Markdown tables scrollable within the readme panel', () => {
+  const [table] = declarations('.markdown-body table')
+
+  assert.match(table, /display:\s*block/)
+  assert.match(table, /max-width:\s*100%/)
+  assert.match(table, /overflow-x:\s*auto/)
+})

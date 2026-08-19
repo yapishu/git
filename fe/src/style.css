@@ -225,6 +225,10 @@ p { color: var(--muted); line-height: 1.55; }
 .markdown-body pre code { padding: 0; background: transparent; font-size: 12px; white-space: pre; }
 .markdown-body blockquote { border-left: 3px solid var(--line); padding-left: 1em; color: var(--muted); }
 .markdown-body img { display: block; max-width: 100%; height: auto; margin: 18px 0; border-radius: 6px; }
+.markdown-body table { display: block; width: max-content; max-width: 100%; margin: 0 0 1em; border-spacing: 0; border-collapse: collapse; overflow-x: auto; }
+.markdown-body th, .markdown-body td { border: 1px solid var(--line); padding: .45em .75em; overflow-wrap: normal; vertical-align: top; }
+.markdown-body th { background: var(--soft); font-weight: 650; }
+.markdown-body tbody tr:nth-child(even) { background: color-mix(in srgb, var(--soft) 55%, transparent); }
 .markdown-body hr { height: 1px; margin: 24px 0; border: 0; background: var(--line); }
 @media (max-width: 640px) { .markdown-body { padding: 22px 18px 32px; } }
 .tree-group { display: contents; }

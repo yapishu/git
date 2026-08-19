@@ -7,7 +7,7 @@ import { useConfirm } from './ConfirmDialog'
 import { HighlightedCode, HighlightedEditor } from './HighlightedCode'
 import { CopyIcon } from './Icons'
 import Readme from './Readme'
-import Markdown from './Markdown'
+import MarkdownDocument from './MarkdownDocument'
 import { clearLocalDraft, readLocalDraft, saveLocalDraft, useLocalDraft } from '../useLocalDraft'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
@@ -282,7 +282,7 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
       ) : objectUrl ? (
         <div className="image-view"><img src={objectUrl} alt={path} /></div>
       ) : file?.text !== null ? (
-        /\.(?:md|markdown)$/i.test(path) ? <section className="readme-panel standalone"><header><span>{path.replace(/^\/+/, '')}</span></header><Markdown>{file.text}</Markdown></section> : <HighlightedCode code={file?.text} path={path} selectedStart={lineStart} selectedEnd={lineEnd} onSelectLine={onSelectLine} />
+        /\.(?:md|markdown)$/i.test(path) ? <section className="readme-panel standalone"><header><span>{path.replace(/^\/+/, '')}</span></header><MarkdownDocument>{file.text}</MarkdownDocument></section> : <HighlightedCode code={file?.text} path={path} selectedStart={lineStart} selectedEnd={lineEnd} onSelectLine={onSelectLine} />
       ) : file ? (
         <div className="empty" title={exactBytes(file.size)}>Binary file · {formatBytes(file.size)}</div>
       ) : null}
