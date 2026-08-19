@@ -44,7 +44,7 @@ export default function PeerActivity({ activity, notifications = [], onClear, on
                 <strong>{labels[event.kind] || event.kind} · {event.repository}</strong>
                 <small>{event.direction} {event.ship} · {event.message}</small>
               </div>
-              {event.status === 'active' && event.kind !== 'serve' ? (
+              {event.status === 'active' && event.kind === 'fork' ? (
                 <button className="activity-cancel" onClick={() => onCancel(event.id)}>Cancel</button>
               ) : <span className={`activity-state ${event.status}`}>{event.status}</span>}
             </div>

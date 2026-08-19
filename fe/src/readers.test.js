@@ -7,6 +7,10 @@ const repositoryView = readFileSync(
   new URL('./components/RepositoryView.jsx', import.meta.url),
   'utf8',
 )
+const peerActivityView = readFileSync(
+  new URL('./components/PeerActivity.jsx', import.meta.url),
+  'utf8',
+)
 const backend = readFileSync(
   new URL('../../desk/app/urgit.hoon', import.meta.url),
   'utf8',
@@ -26,6 +30,26 @@ const peerBrowseJson = backend.slice(
 const publicScries = backend.slice(
   backend.indexOf('++  on-peek'),
   backend.indexOf('++  on-watch'),
+)
+const peerError = backend.slice(
+  backend.indexOf('++  peer-error'),
+  backend.indexOf('++  handle-peer'),
+)
+const peerResultReceived = backend.slice(
+  backend.indexOf('++  peer-result-received'),
+  backend.indexOf('++  peer-request'),
+)
+const peerPrepare = backend.slice(
+  backend.indexOf('++  peer-prepare'),
+  backend.indexOf('++  peer-ready'),
+)
+const peerRelease = backend.slice(
+  backend.indexOf('++  peer-release'),
+  backend.indexOf('++  peer-snapshot-fail'),
+)
+const peerResultsJson = backend.slice(
+  backend.indexOf('++  peer-results-json'),
+  backend.indexOf('++  peer-discoveries-json'),
 )
 
 test('setReader posts the ship reader permission to the encoded repository route', async () => {
@@ -76,4 +100,45 @@ test('public repository scries hide repository administration fields', () => {
   assert.doesNotMatch(publicScries, /\(repositories-json visible\)/)
   assert.doesNotMatch(publicScries, /\(repository-json name u\.found\)/)
   assert.doesNotMatch(publicScries, /\(repository-browse-json name u\.found\)/)
+})
+
+test('early peer errors finish tracked outgoing offers', () => {
+  assert.match(peerError, /outgoing=.*~\(get by peer-outgoing\) transfer/)
+  assert.match(peerError, /=\(src\.bowl peer\.u\.outgoing\)/)
+  assert.match(peerError, /peer-outgoing-finish transfer %.n message/)
+  assert.doesNotMatch(peerError, /skim\s+peer-activities/)
+})
+
+test('snapshot service activity does not replace its outgoing offer', () => {
+  assert.match(peerPrepare, /peer-serve-activity-id transfer\.req/)
+  assert.match(peerRelease, /peer-serve-activity-id transfer/)
+})
+
+test('outgoing offers remain active until authoritative state is consumed', () => {
+  assert.match(backend, /\+\$  peer-offer-flight/)
+  assert.match(backend, /=\/  peer-outgoing\s+\*\(map @uv peer-offer-flight\)/)
+  assert.match(peerResultsJson, /outgoing=\(unit peer-offer-flight\).*~\(get by peer-outgoing\) transfer/)
+  assert.match(peerResultsJson, /\['active' b\+\|\(\?=\(\^ flight\) \?=\(\^ outgoing\)\)\]/)
+})
+
+test('peer results authenticate and consume one active outgoing offer', () => {
+  assert.match(peerResultReceived, /outgoing=.*~\(get by peer-outgoing\) transfer/)
+  assert.match(peerResultReceived, /=\(src\.bowl peer\.u\.outgoing\)/)
+  assert.match(peerResultReceived, /peer-outgoing-finish transfer ok message/)
+})
+
+test('outgoing offers have a terminal timeout independent of activity history', () => {
+  assert.equal([...backend.matchAll(/\/peer\/offer-timeout\/\(scot %uv transfer\)/g)].length, 2)
+  assert.match(backend, /\[%peer %offer-timeout @ ~\]/)
+  assert.match(backend, /peer-outgoing\s+\(~\(del by peer-outgoing\) u\.transfer\)/)
+  assert.match(backend, /peer-results\s+[\s\S]*\[%.n message repository\.u\.outgoing\]/)
+  const clearActivity = backend.slice(
+    backend.indexOf("?=([%apps %urgit %api %peer %activity ~] site)"),
+    backend.indexOf("?=([%apps %urgit %api %peer %transfers ~] site)"),
+  )
+  assert.doesNotMatch(clearActivity, /peer-outgoing/)
+})
+
+test('only cancellable fork transfers show a cancel action', () => {
+  assert.match(peerActivityView, /event\.status === 'active' && event\.kind === 'fork'/)
 })

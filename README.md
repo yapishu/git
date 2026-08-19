@@ -39,7 +39,7 @@
 - persistent ship peers in the sidebar, with on-demand discovery of public repositories and private repositories shared with that ship
 - per-repository ship reader ACLs for private native browsing, issue and pull-request discussion, and forks without update rights
 - ship write ACLs with fast-forward-only native push-back from authorized forks
-- native pull requests between ships or local branches, with close/reopen lifecycle, per-file red/green diffs, resolvable general and line-anchored review comments, cross-ship discussion at the origin, fast-forward or conflict-checked three-way merges, and Clay gating
+- native pull requests between ships or local branches, with selectable source and target repositories and branches, pinned branch tips, close/reopen lifecycle, per-file red/green diffs, resolvable review comments, cross-ship discussion at the origin, fast-forward or conflict-checked three-way merges, and Clay gating
 - native issues authored by ship identity, with remote creation, open/close lifecycle, origin-authoritative cross-ship comments, labels, assignees, public read-only views, and linked `~ship/repository#number` references
 - per-repository Landscape notifications for incoming native issues, pull requests, and comments, with event-level muting, Hark-owned `%urgit` history, and an Urgit-only top-bar feed
 - explicit Clay revision-to-commit history for both pushed Git trees and published desk snapshots
@@ -80,11 +80,13 @@ Public pages, public scries, and remote peer responses omit reader lists, writer
 
 ### State compatibility
 
-This branch adds a `readers` field to the persisted repository mold. Fresh installs can use the new shape.
+This branch preserves the published `%1` state mold and stores reader ACLs and branch-labeled pull requests in `%2`.
 
-Existing installs cannot load their old `%1` state with the first feature commit. A follow-up commit must preserve `%1` and migrate it to `%2` before live publication.
+The `%1` to `%2` migration preserves repositories, objects, refs, writer ACLs, forge data, webhooks, and configuration. It initializes each reader ACL as empty.
 
-After that migration, the current upstream build cannot read `%2`. Returning to current upstream requires upstream support or a hard nuke that deletes all Urgit state.
+Old pull requests did not store source branch names. The migration keeps their commit IDs, marks the source branch as unknown, and uses the old default branch as the target.
+
+The migration is forward-only. The current upstream build cannot read `%2`. Returning to current upstream requires upstream support or a hard nuke that deletes all Urgit state.
 
 Further protocol work is tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
 
@@ -102,6 +104,7 @@ Then commit the `%urgit` desk and run the protocol vectors:
 
 ```hoon
 +urgit!git-access-vector
++urgit!git-migration-vector
 +urgit!git-codec-vector
 +urgit!git-pack-vector
 +urgit!git-pack-decode-vector
