@@ -1909,6 +1909,7 @@
 =/  request-count=@ud  0
 =/  pending-clay  *(unit clay-push)
 =/  pending-publish  *(unit publish-job)
+=/  peer-prepare-queue  *(map @uv [target=ship req=request:git-peer])
 =/  peer-serving  *(map @uv peer-serve)
 =/  peer-receiving  *(map @uv peer-receive)
 =/  peer-results  *(map @uv peer-result)
@@ -1929,7 +1930,7 @@
 ::
 ++  on-init
   ^-  (quip card _this)
-  :_  this
+  :_  this(peer-prepare-queue ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -1947,7 +1948,7 @@
       %2  !<(state-2:git old)
     ==
   =.  loaded  (settle-webhook-state loaded)
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-prepare-queue ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -2759,13 +2760,15 @@
     =(src.bowl ship.u.peer-origin.u.found)
   ?.  |((repository-readable u.found src.bowl) origin-request)
     (peer-fail src.bowl transfer.req 'ship is not authorized to read this repository')
-  ?:  (~(has by peer-serving) transfer.req)
+  ?:  |((~(has by peer-serving) transfer.req) (~(has by peer-prepare-queue) transfer.req))
     :_  this
     :~  (peer-card src.bowl /peer/accepted/(scot %uv transfer.req) [%accepted transfer.req repository.req])
     ==
+  =.  peer-prepare-queue
+    (~(put by peer-prepare-queue) transfer.req [src.bowl req])
   :_  this
   :~  (peer-card src.bowl /peer/accepted/(scot %uv transfer.req) [%accepted transfer.req repository.req])
-      [%pass /peer/prepare/(scot %uv transfer.req) %agent [our.bowl %urgit] %poke %git-peer !>([%prepare src.bowl req])]
+      [%pass /peer/prepare-start/(scot %uv transfer.req) %arvo %b %wait (add now.bowl ~s1)]
   ==
 ::
 ++  peer-accepted
@@ -2895,6 +2898,11 @@
 ++  peer-release
   |=  transfer=@uv
   ^-  (quip card _this)
+  =/  queued=(unit [target=ship req=request:git-peer])
+    (~(get by peer-prepare-queue) transfer)
+  ?^  queued
+    ?.  =(src.bowl target.u.queued)  `this
+    `this(peer-prepare-queue (~(del by peer-prepare-queue) transfer))
   =/  found=(unit peer-serve)  (~(get by peer-serving) transfer)
   ?~  found  `this
   ?.  =(src.bowl target.u.found)  `this
@@ -7917,6 +7925,21 @@
     [[status ~[['content-type' 'application/vnd.git-lfs+json'] ['cache-control' 'no-store']]] `(json-to-octs:server jon)]
   ?+  wire  (on-arvo:def wire sign-arvo)
       [%eyre *]  `this
+      [%peer %prepare-start @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  transfer  `this
+    =/  queued=(unit [target=ship req=request:git-peer])
+      (~(get by peer-prepare-queue) u.transfer)
+    ?~  queued  `this
+    =.  peer-prepare-queue
+      (~(del by peer-prepare-queue) u.transfer)
+    :_  this
+    :~  [%pass /peer/prepare/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>([%prepare target.u.queued req.u.queued])]
+    ==
+  ::
       [%peer %fine @ @ ~]
     =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
     ?~  transfer  `this
