@@ -173,20 +173,29 @@
   =/  new=(unit (unit oid:git))  (parsed-oid payload 41)
   ?~  old  ~
   ?~  new  ~
+  ::  The ref runs from byte 82 to a NUL, a line feed, or the end of the
+  ::  payload.  End-of-payload is a real terminator: git appends the
+  ::  capability list after a NUL on the first command line only, so
+  ::  every later line is <old> SP <new> SP <ref> and simply stops.
+  ::  Treating the end as a parse failure rejected any push of more than
+  ::  one ref.  The terminator set is the same rule for every line.
+  ::
   =/  cursor=@ud  82
   |-
-  ?:  (gte cursor p.payload)  ~
-  =/  byte=@ud  (byte-at:git-codec payload cursor)
-  ?:  ?|  =(byte 0)
-          =(byte 10)
-      ==
-    =/  length=@ud  (sub cursor 82)
-    ?:  =(length 0)  ~
-    =/  ref-bytes=octs  (slice:git-codec payload 82 length)
-    =/  ref=@t  q.ref-bytes
-    ?.  (valid-ref ref)  ~
-    `[[u.old u.new ref]]
-  $(cursor +(cursor))
+  =/  terminated=?
+    ?:  (gte cursor p.payload)  %.y
+    =/  byte=@ud  (byte-at:git-codec payload cursor)
+    ?|  =(byte 0)
+        =(byte 10)
+    ==
+  ?.  terminated
+    $(cursor +(cursor))
+  =/  length=@ud  (sub cursor 82)
+  ?:  =(length 0)  ~
+  =/  ref-bytes=octs  (slice:git-codec payload 82 length)
+  =/  ref=@t  q.ref-bytes
+  ?.  (valid-ref ref)  ~
+  `[[u.old u.new ref]]
 ::
 ++  parse-receive-request
   |=  body=octs
