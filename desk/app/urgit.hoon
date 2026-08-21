@@ -40,6 +40,8 @@
       repository=@t
       mode=peer-transfer-mode
       pages=@ud
+      bytes=@ud
+      sent=?
       objects=(list [oid:git object:git])
   ==
 +$  peer-object-assembly
@@ -58,6 +60,7 @@
       head=@t
       refs=(map @t oid:git)
       expected=@ud
+      expected-bytes=@ud
       received=@ud
       pages=@ud
       completed=(set @ud)
@@ -88,8 +91,9 @@
       source=ship
       source-repository=@t
       local-repository=@t
-      stage=?(%request %prepare %fine)
+      stage=?(%request %prepare %mesa %fine)
       expected-objects=@ud
+      expected-bytes=@ud
       received-objects=@ud
       pages=@ud
       completed-pages=(list @ud)
@@ -100,7 +104,10 @@
   $:  transfer=@uv
       target=ship
       repository=@t
+      mode=peer-transfer-mode
       pages=@ud
+      bytes=@ud
+      sent=?
       objects=@ud
   ==
 +$  peer-result  [status=? message=@t repository=@t]
@@ -1915,16 +1922,20 @@
 ++  peer-serve-lifetime
   |=  [mode=peer-transfer-mode pages=@ud]
   ^-  @dr
+  ?:  =(%archive mode)  ~d1
   ?:  =(%objects mode)
     (min ~d1 (add ~m10 (mul pages ~m2)))
   ~m10
 ::
-++  peer-object-capability  0x7572.6769.742d.6f62
+++  peer-object-capability  0x7572.6769.742d.6132
 ::
 ++  peer-stream-max-objects  25.000
 ++  peer-stream-max-pages  65.536
 ++  peer-stream-max-object-bytes  67.108.864
 ++  peer-stream-max-assembly-bytes  67.108.864
+++  peer-archive-max-objects  250.000
+++  peer-archive-max-bytes  1.073.741.824
+++  peer-archive-max-object-bytes  536.870.912
 ++  peer-stream-window  8
 ++  peer-stream-page-max-fragments  512
 ++  peer-stream-page-max-bytes  1.048.576
@@ -1938,6 +1949,15 @@
   |=  transfer=@uv
   ^-  @uv
   `@uv`(mix (cut 0 [0 128] transfer) (lsh [0 128] peer-object-capability))
+::
+++  peer-object-bytes
+  |=  objects=(list [oid:git object:git])
+  ^-  @ud
+  =/  remaining  objects
+  =/  total=@ud  0
+  |-
+  ?~  remaining  total
+  $(remaining t.remaining, total (add total p.data.+.i.remaining))
 ::
 ++  peer-directed
   |=  [target=ship our=ship now=@da]
@@ -2447,6 +2467,12 @@
     ?>  =(src.bowl our.bowl)
     (peer-prepare target.prepare.packet request.prepare.packet)
   ::
+      %archive-ready
+    (peer-archive-ready archive-ready.packet)
+  ::
+      %archive-accept
+    (peer-archive-accept transfer.packet)
+  ::
       %stream-next
     (peer-stream-next transfer.packet)
   ::
@@ -2511,7 +2537,7 @@
     (peer-release transfer.packet)
   ::
       %archive
-    (peer-archive transfer.packet repository.packet head.packet refs.packet objects.packet)
+    (peer-archive transfer.packet repository.packet objects.packet)
   ::
       %snapshot
     (peer-snapshot transfer.packet objects.packet)
@@ -2909,6 +2935,7 @@
         0
         0
         0
+        0
         ~
         ~
         now.bowl
@@ -3027,40 +3054,49 @@
     ?:  (~(has in haves.req) -.entry)  ~
     `entry
   =/  object-count=@ud  (lent objects)
-  =/  object-sizes-ok=?
-    %+  levy  objects
-    |=  entry=[oid:git object:git]
-    (lte p.data.+.entry peer-stream-max-object-bytes)
-  =/  capable=?
-    ?&  (peer-object-capable transfer.req)
-        (lte object-count peer-stream-max-objects)
-        object-sizes-ok
-    ==
+  =/  object-bytes=@ud  (peer-object-bytes objects)
+  =/  capable=?  (peer-object-capable transfer.req)
   =/  directed=?
     ?&  capable
         (peer-directed target our.bowl now.bowl)
     ==
   ?:  directed
+    ?:  (gth object-count peer-archive-max-objects)
+      (peer-fail target transfer.req 'repository exceeds the Mesa archive object limit')
+    ?:  (gth object-bytes peer-archive-max-bytes)
+      (peer-fail target transfer.req 'repository exceeds the Mesa archive byte limit')
+    =/  archive-object-sizes-ok=?
+      %+  levy  objects
+      |=  entry=[oid:git object:git]
+      (lte p.data.+.entry peer-archive-max-object-bytes)
+    ?.  archive-object-sizes-ok
+      (peer-fail target transfer.req 'repository contains an object larger than the Mesa archive limit')
     =/  archive-flight=peer-serve
-      [target transfer.req repository.req %archive 0 objects]
+      [target transfer.req repository.req %archive 0 object-bytes %.n objects]
     =.  peer-serving  (~(put by peer-serving) transfer.req archive-flight)
     =.  peer-activities
       (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req 'repository snapshot requested')
     =/  final-cards=(list card)
-      :~  (peer-card target /peer/archive/(scot %uv transfer.req) [%archive transfer.req repository.req head.u.found refs.u.found objects])
+      :~  (peer-card target /peer/archive-ready/(scot %uv transfer.req) [%archive-ready transfer.req repository.req head.u.found refs.u.found object-count object-bytes])
           [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl (peer-serve-lifetime %archive 1))]
       ==
     :_  this
     (weld cleanup-cards final-cards)
+  =/  object-sizes-ok=?
+    %+  levy  objects
+    |=  entry=[oid:git object:git]
+    (lte p.data.+.entry peer-stream-max-object-bytes)
   =/  stream-pages=@ud  (peer-object-batch-count objects)
   =/  streamable=?
     ?&  capable
+        (lte object-count peer-stream-max-objects)
+        object-sizes-ok
         (lte stream-pages peer-stream-max-pages)
     ==
   ?.  streamable
     =/  pages=(list octs)  (peer-object-pages objects)
     =/  flight=peer-serve
-      [target transfer.req repository.req %pack (lent pages) objects]
+      [target transfer.req repository.req %pack (lent pages) object-bytes %.n objects]
     =.  peer-serving  (~(put by peer-serving) transfer.req flight)
     =.  peer-activities
       (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req 'repository snapshot requested')
@@ -3077,7 +3113,7 @@
     (weld cleanup-cards (weld object-pages final-cards))
   =/  pages=@ud  stream-pages
   =/  flight=peer-serve
-    [target transfer.req repository.req %objects pages objects]
+    [target transfer.req repository.req %objects pages object-bytes %.n objects]
   =/  job=peer-stream-job
     [target transfer.req repository.req head.u.found refs.u.found (lent objects) pages 1 objects 0 %.n]
   =.  peer-serving  (~(put by peer-serving) transfer.req flight)
@@ -3145,6 +3181,50 @@
   ?~  found  `this
   :_  this
   :~  (peer-card target.u.found /peer/begin/(scot %uv transfer.msg) [%begin transfer.msg repository.msg 1 head.msg refs.msg objects.msg pages.msg])
+  ==
+::
+++  peer-archive-ready
+  |=  msg=archive-ready:git-peer
+  ^-  (quip card _this)
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
+  ?~  found  `this
+  =/  flight=peer-receive  u.found
+  ?.  ?&  =(src.bowl source.flight)
+          =(repository.msg source-repository.flight)
+          accepted.flight
+          =('' head.flight)
+          (peer-object-capable transfer.msg)
+      ==
+    `this
+  ?:  (gth objects.msg peer-archive-max-objects)
+    (peer-snapshot-fail transfer.msg 'peer announced too many Mesa archive objects')
+  ?:  (gth bytes.msg peer-archive-max-bytes)
+    (peer-snapshot-fail transfer.msg 'peer announced an oversized Mesa archive')
+  =/  next=peer-receive
+    flight(mode %archive, head head.msg, refs refs.msg, expected objects.msg, expected-bytes bytes.msg, pages 1, progress-at now.bowl)
+  =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
+  =.  peer-results
+    (~(put by peer-results) transfer.msg [%.n 'receiving repository over Mesa' local-repository.flight])
+  :_  this
+  :~  (peer-card source.flight /peer/archive-accept/(scot %uv transfer.msg) [%archive-accept transfer.msg])
+      [%pass /peer/archive-timeout/(scot %uv transfer.msg) %arvo %b %wait (add now.bowl ~d1)]
+  ==
+::
+++  peer-archive-accept
+  |=  transfer=@uv
+  ^-  (quip card _this)
+  =/  found=(unit peer-serve)  (~(get by peer-serving) transfer)
+  ?~  found  `this
+  =/  flight=peer-serve  u.found
+  ?.  ?&  =(src.bowl target.flight)
+          =(%archive mode.flight)
+          =(%.n sent.flight)
+      ==
+    `this
+  =.  peer-serving
+    (~(put by peer-serving) transfer flight(sent %.y))
+  :_  this
+  :~  (peer-card target.flight /peer/archive/(scot %uv transfer) [%archive transfer repository.flight objects.flight])
   ==
 ::
 ++  peer-begin
@@ -3237,7 +3317,7 @@
   culls
 ::
 ++  peer-archive
-  |=  [transfer=@uv repository=@t head=@t refs=(map @t oid:git) incoming=(list [oid:git object:git])]
+  |=  [transfer=@uv repository=@t incoming=(list [oid:git object:git])]
   ^-  (quip card _this)
   =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer)
   ?~  found  `this
@@ -3245,25 +3325,24 @@
   ?.  ?&  =(src.bowl source.flight)
           =(repository source-repository.flight)
           (peer-object-capable transfer)
+          =(%archive mode.flight)
       ==
     `this
   =/  count=@ud  (lent incoming)
-  ?.  (lte count peer-stream-max-objects)
-    (peer-snapshot-fail transfer 'peer announced invalid repository object bounds')
+  ?.  =(count expected.flight)
+    (peer-snapshot-fail transfer 'Mesa archive object count did not match its header')
+  =/  bytes=@ud  (peer-object-bytes incoming)
+  ?.  =(bytes expected-bytes.flight)
+    (peer-snapshot-fail transfer 'Mesa archive byte count did not match its header')
   =/  object-sizes-ok=?
     %+  levy  incoming
     |=  entry=[oid:git object:git]
-    (lte p.data.+.entry peer-stream-max-object-bytes)
+    (lte p.data.+.entry peer-archive-max-object-bytes)
   ?.  object-sizes-ok
-    (peer-snapshot-fail transfer 'peer announced an oversized repository object')
+    (peer-snapshot-fail transfer 'peer announced an oversized Mesa archive object')
   =/  incoming-map=(map oid:git object:git)  (malt incoming)
   ?.  =(count (lent ~(tap by incoming-map)))
     (peer-snapshot-fail transfer 'peer announced duplicate repository objects')
-  =/  next=peer-receive
-    flight(mode %archive, head head, refs refs, expected count, pages 1, progress-at now.bowl)
-  =.  peer-receiving  (~(put by peer-receiving) transfer next)
-  =.  peer-results
-    (~(put by peer-results) transfer [%.n 'receiving repository over Mesa' local-repository.flight])
   (peer-snapshot transfer incoming-map)
 ::
 ++  peer-snapshot-fail
@@ -4031,6 +4110,7 @@
         ['repository' s+repository.result]
         ['received' n+(decimal ?~(flight 0 received.u.flight))]
         ['expected' n+(decimal ?~(flight 0 expected.u.flight))]
+        ['expectedBytes' n+(decimal ?~(flight 0 expected-bytes.u.flight))]
         ['pages' n+(decimal ?~(flight 0 pages.u.flight))]
         ['completedPages' n+(decimal ?~(flight 0 ~(wyt in completed.u.flight)))]
         ['fineFragmentsReceived' n+(decimal ?~(flight 0 (roll ~(val by fine-progress.u.flight) |=([[fag=@ud tot=@ud] sum=@ud] (add fag sum)))))]
@@ -5430,6 +5510,7 @@
           %.n
           ''
           ~
+          0
           0
           0
           0
@@ -8304,8 +8385,9 @@
           source.flight
           source-repository.flight
           local-repository.flight
-          ?:(=('' head.flight) ?:(accepted.flight %prepare %request) %fine)
+          ?:(=('' head.flight) ?:(accepted.flight %prepare %request) ?:(=(%archive mode.flight) %mesa %fine))
           expected.flight
+          expected-bytes.flight
           received.flight
           pages.flight
           %+  sort  ~(tap in completed.flight)
@@ -8319,7 +8401,7 @@
       %+  turn  ~(tap by peer-serving)
       |=  entry=[@uv peer-serve]
       =/  flight=peer-serve  +.entry
-      [transfer=-.entry target=target.flight repository=repository.flight pages=pages.flight objects=(lent objects.flight)]
+      [transfer=-.entry target=target.flight repository=repository.flight mode=mode.flight pages=pages.flight bytes=bytes.flight sent=sent.flight objects=(lent objects.flight)]
     ``noun+!>([transfers=transfers serving=serving results=~(tap by peer-results)])
   ::
       [%x %repositories ~]
@@ -8700,6 +8782,21 @@
       [%snapshot-error u.transfer 'peer did not finish preparing the repository snapshot']
     :_  this
     :~  [%pass /peer/prepare-timeout-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
+    ==
+  ::
+      [%peer %archive-timeout @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  transfer=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  transfer  `this
+    =/  found=(unit peer-receive)  (~(get by peer-receiving) u.transfer)
+    ?~  found  `this
+    ?.  =(%archive mode.u.found)  `this
+    =/  packet=packet:git-peer
+      [%snapshot-error u.transfer 'Mesa repository transfer did not complete within one day']
+    :_  this
+    :~  [%pass /peer/archive-timeout-result/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
     ==
   ::
       [%peer %serve-timeout @ ~]

@@ -12,9 +12,12 @@ const peerTypes = readFileSync(
 )
 
 function arm(name, next) {
-  const start = backend.indexOf(`++  ${name}`)
+  const marker = `\n++  ${name}\n`
+  const nextMarker = `\n++  ${next}\n`
+  const found = backend.indexOf(marker)
+  const start = found === -1 ? -1 : found + 1
   if (start === -1) return ''
-  const end = backend.indexOf(`++  ${next}`, start + `++  ${name}`.length)
+  const end = backend.indexOf(nextMarker, start + `++  ${name}`.length)
   return end === -1 ? backend.slice(start) : backend.slice(start, end)
 }
 
@@ -32,9 +35,11 @@ const peerPrepare = arm('peer-prepare', 'peer-stream-next')
 const peerObjectPrepare = peerPrepare.slice(peerPrepare.indexOf('=/  pages=@ud  stream-pages'))
 const peerStreamNext = arm('peer-stream-next', 'peer-stream-grown')
 const peerStreamGrown = arm('peer-stream-grown', 'peer-ready')
+const peerArchiveReady = arm('peer-archive-ready', 'peer-archive-accept')
+const peerArchiveAccept = arm('peer-archive-accept', 'peer-begin')
 const peerBegin = arm('peer-begin', 'peer-begin-objects')
 const peerBeginObjects = arm('peer-begin-objects', 'peer-release')
-const peerRelease = arm('peer-release', 'peer-snapshot-fail')
+const peerRelease = arm('peer-release', 'peer-archive')
 const peerArchive = arm('peer-archive', 'peer-snapshot-fail')
 const peerSnapshotFail = arm('peer-snapshot-fail', 'peer-object-fragments')
 const peerObjectFragments = arm('peer-object-fragments', 'peer-snapshot')
@@ -48,6 +53,14 @@ const serveTimeout = onArvo.slice(
   onArvo.indexOf('[%peer %serve-timeout @ ~]'),
   onArvo.indexOf('[%peer %forge-timeout @ ~]'),
 )
+const prepareTimeout = onArvo.slice(
+  onArvo.indexOf('[%peer %prepare-timeout @ ~]'),
+  onArvo.indexOf('[%peer %archive-timeout @ ~]'),
+)
+const archiveTimeout = onArvo.slice(
+  onArvo.indexOf('[%peer %archive-timeout @ ~]'),
+  onArvo.indexOf('[%peer %serve-timeout @ ~]'),
+)
 const rateHandler = onArvo.slice(
   onArvo.indexOf('[%peer %rate @ @ ~]'),
   onArvo.indexOf('[%peer %browse @ @ ~]'),
@@ -60,7 +73,12 @@ test('raw-object streaming adds a new begin packet and authenticated self packet
   assert.match(peerTypes, /\[%begin-objects begin-objects=begin-objects\]/)
   assert.match(peerTypes, /\[%stream-next transfer=@uv\]/)
   assert.match(peerTypes, /\[%stream-grown transfer=@uv\]/)
+  assert.match(peerTypes, /\+\$  archive-ready[\s\S]*?objects=@ud[\s\S]*?bytes=@ud/)
+  assert.match(peerTypes, /\[%archive-ready archive-ready=archive-ready\]/)
+  assert.match(peerTypes, /\[%archive-accept transfer=@uv\]/)
   assert.match(handlePeer, /%begin-objects\s+\(peer-begin-objects begin-objects\.packet\)/)
+  assert.match(handlePeer, /%archive-ready\s+\(peer-archive-ready archive-ready\.packet\)/)
+  assert.match(handlePeer, /%archive-accept\s+\(peer-archive-accept transfer\.packet\)/)
   assert.match(handlePeer, /%stream-next\s+\(peer-stream-next transfer\.packet\)/)
   assert.match(handlePeer, /%stream-grown\s+\(peer-stream-grown transfer\.packet\)/)
   assert.match(peerStreamNext, /=\(src\.bowl our\.bowl\)/)
@@ -70,20 +88,22 @@ test('raw-object streaming adds a new begin packet and authenticated self packet
 test('transfer-id capability negotiation preserves the legacy request wire and pack fallback', () => {
   assert.match(peerTypes, /\+\$  request\s+[\s\S]*?transfer=@uv[\s\S]*?repository=@t[\s\S]*?haves=\(set oid:git\)/)
   assert.doesNotMatch(peerTypes, /\+\$  request[\s\S]*?capabilit/)
-  assert.match(backend, /\+\+  peer-object-capability\s+0x7572\.6769\.742d\.6f62/)
+  assert.match(backend, /\+\+  peer-object-capability\s+0x7572\.6769\.742d\.6132/)
   assert.match(backend, /\+\+  peer-object-capable[\s\S]*?\(cut 0 \[128 64\] transfer\)/)
   assert.match(backend, /\+\+  peer-object-transfer[\s\S]*?\(mix \(cut 0 \[0 128\] transfer\) \(lsh \[0 128\] peer-object-capability\)\)/)
   assert.match(backend, /=\/  raw-transfer=@uv[\s\S]*?=\/  transfer=@uv\s+\(peer-object-transfer raw-transfer\)/)
   assert.match(peerPrepare, /capable=\?/)
-  assert.match(peerPrepare, /\(peer-object-capable transfer\.req\)/)
+  assert.match(peerPrepare, /capable=\?\s+\(peer-object-capable transfer\.req\)/)
   assert.match(peerPrepare, /object-count=@ud\s+\(lent objects\)/)
-  assert.match(peerPrepare, /\(lte object-count peer-stream-max-objects\)/)
-  assert.match(peerPrepare, /\(lte stream-pages peer-stream-max-pages\)/)
   assert.match(
     peerPrepare,
     /directed=\?[\s\S]*?\(peer-directed target our\.bowl now\.bowl\)/,
   )
-  assert.match(peerPrepare, /\?:  directed[\s\S]*?%archive/)
+  assert.match(peerPrepare, /\?:  directed[\s\S]*?%archive-ready/)
+  assert.ok(
+    peerPrepare.indexOf('?:  directed') < peerPrepare.indexOf('peer-stream-max-objects'),
+    'Mesa selection must happen before Fine-only object bounds',
+  )
   assert.match(peerPrepare, /\?\.  streamable[\s\S]*?peer-object-pages objects/)
   assert.match(peerPrepare, /flight=peer-serve[\s\S]*?%pack/)
   assert.match(backend, /\+\+  peer-fine-name[\s\S]*?\(cut 0 \[0 64\] transfer\)/)
@@ -94,13 +114,14 @@ test('transfer-id capability negotiation preserves the legacy request wire and p
 test('transfer modes and stream jobs are transient and reset on init and load', () => {
   assert.match(backend, /\+\$  peer-transfer-mode\s+\?\(%archive %pack %objects\)/)
   assert.match(backend, /\+\$  peer-serve[\s\S]*?mode=peer-transfer-mode/)
+  assert.match(backend, /\+\$  peer-serve[\s\S]*?bytes=@ud[\s\S]*?sent=\?/)
   assert.match(
     backend,
     /\+\$  peer-object-assembly\s+\[kind=object-kind:git total=@ud next=@ud data=octs\]/,
   )
   assert.match(
     backend,
-    /\+\$  peer-receive[\s\S]*?mode=peer-transfer-mode[\s\S]*?pending-pages=\(map @ud \(list object-fragment:git-peer\)\)[\s\S]*?assemblies=\(map oid:git peer-object-assembly\)/,
+    /\+\$  peer-receive[\s\S]*?mode=peer-transfer-mode[\s\S]*?expected-bytes=@ud[\s\S]*?pending-pages=\(map @ud \(list object-fragment:git-peer\)\)[\s\S]*?assemblies=\(map oid:git peer-object-assembly\)/,
   )
   assert.match(
     backend,
@@ -336,12 +357,18 @@ test('hostile object announcements and partial assembly state have hard limits',
   assert.match(backend, /\+\+  peer-stream-max-pages\s+65\.536/)
   assert.match(backend, /\+\+  peer-stream-max-object-bytes\s+67\.108\.864/)
   assert.match(backend, /\+\+  peer-stream-max-assembly-bytes\s+67\.108\.864/)
+  assert.match(backend, /\+\+  peer-archive-max-objects\s+250\.000/)
+  assert.match(backend, /\+\+  peer-archive-max-bytes\s+1\.073\.741\.824/)
+  assert.match(backend, /\+\+  peer-archive-max-object-bytes\s+536\.870\.912/)
   assert.match(backend, /\+\$  peer-receive[\s\S]*?assemblies=\(map oid:git peer-object-assembly\)[\s\S]*?assembly-bytes=@ud/)
   assert.match(backend, /\+\$  peer-receive[\s\S]*?assembly-bytes=@ud[\s\S]*?assembly-count=@ud/)
   assert.match(peerPrepare, /stream-pages=@ud\s+\(peer-object-batch-count objects\)/)
   assert.match(peerPrepare, /\(lte object-count peer-stream-max-objects\)/)
   assert.match(peerPrepare, /\(lte stream-pages peer-stream-max-pages\)/)
   assert.match(peerPrepare, /\(lte p\.data\.\+\.entry peer-stream-max-object-bytes\)/)
+  assert.match(peerPrepare, /\(gth object-count peer-archive-max-objects\)/)
+  assert.match(peerPrepare, /\(gth object-bytes peer-archive-max-bytes\)/)
+  assert.match(peerPrepare, /\(lte p\.data\.\+\.entry peer-archive-max-object-bytes\)/)
   assert.match(peerBeginObjects, /\(lte objects\.msg peer-stream-max-objects\)/)
   assert.match(peerBeginObjects, /\(lte pages\.msg peer-stream-max-pages\)/)
   assert.match(peerBeginObjects, /\(lte pages\.msg \(mul objects\.msg 16\)\)/)
@@ -372,6 +399,7 @@ test('Fine cancellation follows its mode while Mesa archives have no scries to c
 
 test('streamed snapshots scale their source lifetime while Fine rates do not hide page stalls', () => {
   assert.match(peerServeLifetime, /mode=peer-transfer-mode/)
+  assert.match(peerServeLifetime, /=\(%archive mode\)\s+~d1/)
   assert.match(peerServeLifetime, /=\(%objects mode\)/)
   assert.match(peerServeLifetime, /\(min ~d1 \(add ~m10 \(mul pages ~m2\)\)\)/)
   assert.match(peerPrepare, /peer-serve-lifetime %archive/)
@@ -383,10 +411,39 @@ test('streamed snapshots scale their source lifetime while Fine rates do not hid
 })
 
 test('Mesa archives retain a distinct mode and validate negotiated object bounds', () => {
+  assert.match(peerArchiveReady, /accepted\.flight/)
+  assert.match(peerArchiveReady, /=\('' head\.flight\)/)
+  assert.match(peerArchiveReady, /\(gth objects\.msg peer-archive-max-objects\)/)
+  assert.match(peerArchiveReady, /\(gth bytes\.msg peer-archive-max-bytes\)/)
+  assert.match(peerArchiveReady, /flight\(mode %archive,[\s\S]*?expected objects\.msg,[\s\S]*?expected-bytes bytes\.msg/)
+  assert.match(peerArchiveReady, /\[%archive-accept transfer\.msg\]/)
+  assert.match(peerArchiveReady, /\/peer\/archive-timeout\//)
+  assert.match(peerArchiveReady, /\(add now\.bowl ~d1\)/)
+
+  assert.match(peerArchiveAccept, /=\(src\.bowl target\.flight\)/)
+  assert.match(peerArchiveAccept, /=\(%archive mode\.flight\)/)
+  assert.match(peerArchiveAccept, /=\(%\.n sent\.flight\)/)
+  assert.match(peerArchiveAccept, /flight\(sent %\.y\)/)
+  assert.match(peerArchiveAccept, /\[%archive transfer repository\.flight objects\.flight\]/)
+
   assert.match(peerArchive, /\(peer-object-capable transfer\)/)
-  assert.match(peerArchive, /\(lte count peer-stream-max-objects\)/)
-  assert.match(peerArchive, /\(lte p\.data\.\+\.entry peer-stream-max-object-bytes\)/)
+  assert.match(peerArchive, /=\(%archive mode\.flight\)/)
+  assert.match(peerArchive, /=\(count expected\.flight\)/)
+  assert.match(peerArchive, /=\(bytes expected-bytes\.flight\)/)
+  assert.match(peerArchive, /\(lte p\.data\.\+\.entry peer-archive-max-object-bytes\)/)
   assert.match(peerArchive, /incoming-map=\(map oid:git object:git\)\s+\(malt incoming\)/)
   assert.match(peerArchive, /=\(count \(lent ~\(tap by incoming-map\)\)\)/)
-  assert.match(peerArchive, /flight\(mode %archive/)
+  assert.doesNotMatch(peerArchive, /peer-stream-max-objects|peer-stream-max-object-bytes/)
+})
+
+test('Mesa handshake separates preparation from bulk delivery timeouts', () => {
+  assert.match(peerPrepare, /\[%archive-ready transfer\.req repository\.req head\.u\.found refs\.u\.found object-count object-bytes\]/)
+  assert.doesNotMatch(
+    peerPrepare.slice(peerPrepare.indexOf('?:  directed'), peerPrepare.indexOf('=/  object-sizes-ok')),
+    /\[%archive transfer\.req/,
+  )
+  assert.match(prepareTimeout, /accepted\.u\.found/)
+  assert.match(prepareTimeout, /=\('' head\.u\.found\)/)
+  assert.match(archiveTimeout, /=\(%archive mode\.u\.found\)/)
+  assert.match(archiveTimeout, /Mesa repository transfer did not complete within one day/)
 })

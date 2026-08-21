@@ -39,6 +39,14 @@
   $:  transfer=@uv
       repository=@t
   ==
++$  archive-ready
+  $:  transfer=@uv
+      repository=@t
+      head=@t
+      refs=(map @t oid:git)
+      objects=@ud
+      bytes=@ud
+  ==
 +$  prepare
   $:  target=ship
       request=request
@@ -94,6 +102,8 @@
   $%  [%request request=request]
       [%accepted accepted=accepted]
       [%prepare prepare=prepare]
+      [%archive-ready archive-ready=archive-ready]
+      [%archive-accept transfer=@uv]
       [%ready ready=ready]
       [%begin begin=begin]
       [%begin-objects begin-objects=begin-objects]
@@ -117,8 +127,6 @@
       $:  %archive
           transfer=@uv
           repository=@t
-          head=@t
-          refs=(map @t oid:git)
           objects=(list [oid:git object:git])
       ==
       [%object-fragments transfer=@uv revision=@ud fragments=(list object-fragment)]
