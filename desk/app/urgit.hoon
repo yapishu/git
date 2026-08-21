@@ -2008,7 +2008,18 @@
     .^  (map ship ?(%known %alien))  %ax
       /(scot %p our)//(scot %da now)/chums
     ==
-  (~(has by chums) target)
+  ?.  (~(has by chums) target)  %.n
+  =/  chum=chum-state:ames
+    .^  chum-state:ames  %ax
+      /(scot %p our)//(scot %da now)/chums/(scot %p target)
+    ==
+  ?.  ?=([%known *] chum)  %.n
+  =/  peer=fren-state:ames  +.chum
+  ?.  ?=(^ lane.peer)  %.n
+  ?:  =(%czar (clan:title target))  %.y
+  ?&  =(%live -.qos.peer)
+      (lth now (add ~s30 last-contact.qos.peer))
+  ==
 ::
 ++  peer-fine-name
   |=  transfer=@uv
@@ -2153,7 +2164,7 @@
     =/  issued=?
       ?:  (lte revision peer-stream-window)  %.y
       (~(has in completed) (sub revision peer-stream-window))
-    ?.  ?&(issued !(~(has in completed) revision))  ~
+    ?.  issued  ~
     =/  scry-path=path
       /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer)
     `[%pass /peer/fine-cancel/(scot %uv transfer)/(scot %ud revision) %arvo %a %yawn [peer scry-path]]
@@ -2163,7 +2174,7 @@
   =/  issued=?
     ?:  =(revision 1)  %.y
     (~(has in completed) (sub revision 1))
-  ?.  ?&(issued !(~(has in completed) revision))  ~
+  ?.  issued  ~
   =/  scry-path=path
     /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer)
   `[%pass /peer/fine-cancel/(scot %uv transfer)/(scot %ud revision) %arvo %a %yawn [peer scry-path]]
@@ -8712,21 +8723,27 @@
     ?.  ?&(active.u.found =(%fine phase.u.found))  `this
     =/  release-card=card
       [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
+    =/  cancel-cards=(list card)
+      (peer-browse-yawns u.request peer.u.found expected.u.found)
     =/  fail
       |=  message=@t
       ^-  (quip card _this)
       =.  peer-browses
         (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message message))
       :_  this
-      :~  release-card
-      ==
+      (weld cancel-cards [release-card ~])
     ?.  ?&((gth u.revision 0) (lte u.revision expected.u.found))
       (fail 'peer overview Fine response used an invalid page revision')
+    =/  scry-path=path
+      /g/x/(scot %ud u.revision)/urgit//1/browse/(scot %uv u.request)
+    =/  browse-peer=ship  peer.u.found
+    =/  cancel-card=card
+      [%pass /peer/browse-cancel/(scot %uv u.request)/(scot %ud u.revision) %arvo %a %yawn [browse-peer scry-path]]
     ?:  (~(has by parts.u.found) u.revision)  `this
     =/  page=(unit [length=@ud data=@])
       ?.  ?=([%ames %sage *] sign-arvo)  ~
       =/  =sage:mess:ames  sage.sign-arvo
-      ?.  =(ship.p.sage peer.u.found)  ~
+      ?.  =(ship.p.sage browse-peer)  ~
       ?~  q.sage  ~
       ?.  =(%noun p.q.sage)  ~
       %-  mole
@@ -8744,7 +8761,10 @@
     =/  next=peer-browse
       u.found(parts next-parts, received next-received, progress [~ [16 next-received expected.u.found]], progress-at now.bowl, message (rap 3 ~['received ' (decimal next-received) ' of ' (decimal expected.u.found) ' Fine pages']))
     =.  peer-browses  (~(put by peer-browses) u.request next)
-    ?.  =(next-received expected.next)  `this
+    ?.  =(next-received expected.next)
+      :_  this
+      :~  cancel-card
+      ==
     =/  encoded=(unit @)  (peer-browse-join parts.next expected.next)
     ?~  encoded
       (fail 'peer overview Fine pages were incomplete')
@@ -8769,8 +8789,7 @@
     =.  peer-browses
       (~(put by peer-browses) u.request next(active %.n, ok %.y, message 'complete', result `u.result))
     :_  this
-    :~  release-card
-    ==
+    (weld cancel-cards [release-card ~])
   ::
       [%peer %browse-prepare @ ~]
     ?.  ?=([%behn %wake *] sign-arvo)
