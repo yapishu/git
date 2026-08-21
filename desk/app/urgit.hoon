@@ -587,8 +587,8 @@
       ['repositories' [%a public-repositories]]
   ==
 ::
-++  repository-json
-  |=  [name=@t repo=repository:git]
+++  repository-json-up-to
+  |=  [name=@t repo=repository:git history-limit=@ud]
   ^-  json
   =/  refs-json=(list json)
     %+  turn  ~(tap by refs.repo)
@@ -613,10 +613,12 @@
   =/  notification-events-json=(list json)
     (turn ~(tap in notification-events.repo) |=(event=notification-event:git s+event))
   =/  head-oid=(unit oid:git)  (~(get by refs.repo) head.repo)
-  =/  head-files=(unit (map path octs))
+  =/  head-files=(unit (map path flat-entry:git-tree))
     ?~  head-oid  ~
-    (flatten-commit:git-tree objects.repo u.head-oid)
-  =/  file-count=@ud  ?~(head-files 0 (lent ~(tap by u.head-files)))
+    (flatten-commit-index:git-tree objects.repo u.head-oid)
+  =/  file-count=@ud  ?~(head-files 0 ~(wyt by u.head-files))
+  =/  history=[count=@ud exact=?]
+    (first-parent-count-up-to repo head.repo history-limit)
   =/  pulls-json=(list json)
     %+  turn  native-pulls.repo
     |=  pull=native-pull:git
@@ -655,13 +657,14 @@
       ['head' s+head.repo]
       ['refs' [%a refs-json]]
       ['protectedRefs' [%a protected-json]]
-      ['objectCount' n+(decimal (lent ~(tap by objects.repo)))]
+      ['objectCount' n+(decimal ~(wyt by objects.repo))]
       ['fileCount' n+(decimal file-count)]
-      ['commitCount' n+(decimal (first-parent-count repo head.repo))]
+      ['commitCount' n+(decimal count.history)]
+      ['commitCountExact' b+exact.history]
       ['branchCount' n+(decimal (ref-count-prefix refs.repo 'refs/heads/'))]
       ['tagCount' n+(decimal (ref-count-prefix refs.repo 'refs/tags/'))]
-      ['lfsObjectCount' n+(decimal (lent ~(tap by lfs-objects.repo)))]
-      ['lfsLockCount' n+(decimal (lent ~(tap by lfs-locks.repo)))]
+      ['lfsObjectCount' n+(decimal ~(wyt by lfs-objects.repo))]
+      ['lfsLockCount' n+(decimal ~(wyt by lfs-locks.repo))]
       ['writeTokenSet' b+?=(^ write-token-hash.repo)]
       ['writers' [%a writers-json]]
       ['readers' [%a readers-json]]
@@ -680,6 +683,10 @@
       ['githubOrigin' ?~(github-origin.repo ~ (pairs:enjs:format ~[['owner' s+owner.u.github-origin.repo] ['repository' s+repository.u.github-origin.repo]]))]
   ==
 ::
+++  repository-json
+  |=  [name=@t repo=repository:git]
+  (repository-json-up-to name repo 10.000)
+::
 ++  repositories-json
   |=  repos=(map @t repository:git)
   ^-  json
@@ -691,10 +698,10 @@
       (repository-json name repo)
   ==
 ::
-++  public-repository-json
-  |=  [name=@t repo=repository:git]
+++  public-repository-json-up-to
+  |=  [name=@t repo=repository:git history-limit=@ud]
   ^-  json
-  =/  full=json  (repository-json name repo)
+  =/  full=json  (repository-json-up-to name repo history-limit)
   ?>  ?=([%o *] full)
   =/  fields=(map @t json)  p.full
   =.  fields  (~(del by fields) 'writeTokenSet')
@@ -708,6 +715,10 @@
   =.  fields  (~(del by fields) 'notificationEvents')
   =.  fields  (~(del by fields) 'upstreamUpdates')
   [%o fields]
+::
+++  public-repository-json
+  |=  [name=@t repo=repository:git]
+  (public-repository-json-up-to name repo 10.000)
 ::
 ++  public-repositories-json
   |=  repos=(map @t repository:git)
@@ -1205,14 +1216,15 @@
       ['committer' (commit-identity-json (commit-identity-at data 'committer '))]
   ==
 ::
-++  repository-commits-json
-  |=  [name=@t repo=repository:git ref=@t offset=@ud limit=@ud]
+++  repository-commits-json-up-to
+  |=  [name=@t repo=repository:git ref=@t offset=@ud limit=@ud count-limit=@ud]
   ^-  json
   =/  current=(unit oid:git)  (revision-oid repo ref)
   =/  entries=(list json)  ~
   =/  scanned=@ud  0
   =/  count=@ud  0
-  =/  total=@ud  (first-parent-count repo ref)
+  =/  history=[count=@ud exact=?]
+    (first-parent-count-up-to repo ref count-limit)
   =/  finish
     |=  [more=? page-count=@ud page-entries=(list json)]
     ^-  json
@@ -1220,7 +1232,8 @@
     :~  ['repository' s+name]
         ['head' s+ref]
         ['historyKind' s+'git']
-        ['commitCount' n+(decimal total)]
+        ['commitCount' n+(decimal count.history)]
+        ['commitCountExact' b+exact.history]
         ['offset' n+(decimal offset)]
         ['nextOffset' n+(decimal (add offset page-count))]
         ['hasMore' b+more]
@@ -1237,6 +1250,10 @@
     $(current parent, scanned +(scanned))
   =/  entry=json  (commit-summary-json u.current data.u.found)
   $(current parent, entries [entry entries], scanned +(scanned), count +(count))
+::
+++  repository-commits-json
+  |=  [name=@t repo=repository:git ref=@t offset=@ud limit=@ud]
+  (repository-commits-json-up-to name repo ref offset limit 10.000)
 ::
 ++  repository-history-json
   |=  [name=@t repo=repository:git ref=@t who=@p now=@da offset=@ud limit=@ud]
@@ -1281,9 +1298,9 @@
   ^-  json
   %-  pairs:enjs:format
   :~  ['revision' s+(repository-revision repo)]
-      ['repository' (public-repository-json name repo)]
+      ['repository' (public-repository-json-up-to name repo 50)]
       ['files' (repository-files-at-json-up-to name repo head.repo 50)]
-      ['commits' (repository-commits-json name repo head.repo 0 50)]
+      ['commits' (repository-commits-json-up-to name repo head.repo 0 50 50)]
   ==
 ::
 ++  repository-revision
@@ -1808,12 +1825,20 @@
 ++  first-parent-count
   |=  [repo=repository:git ref=@t]
   ^-  @ud
+  =/  result=[count=@ud exact=?]
+    (first-parent-count-up-to repo ref 10.000)
+  count.result
+::
+++  first-parent-count-up-to
+  |=  [repo=repository:git ref=@t limit=@ud]
+  ^-  [count=@ud exact=?]
   =/  current=(unit oid:git)  (revision-oid repo ref)
   =/  count=@ud  0
   |-
-  ?:  |(?=(~ current) (gte count 10.000))  count
+  ?~  current  [count %.y]
+  ?:  (gte count limit)  [count %.n]
   =/  found=(unit object:git)  (~(get by objects.repo) u.current)
-  ?.  ?&(?=(^ found) =(%commit kind.u.found))  count
+  ?.  ?&(?=(^ found) =(%commit kind.u.found))  [count %.y]
   $(current (commit-parent data.u.found), count +(count))
 ::
 ++  ref-count-prefix
@@ -2585,7 +2610,7 @@
     =/  name=@t  -.entry
     =/  repo=repository:git  +.entry
     ?.  (repository-readable repo src.bowl)  ~
-    `[name head.repo (lent ~(tap by refs.repo)) (lent ~(tap by objects.repo)) (~(has in writers.repo) src.bowl)]
+    `[name head.repo ~(wyt by refs.repo) ~(wyt by objects.repo) (~(has in writers.repo) src.bowl)]
   :_  this
   :~  (peer-card src.bowl /peer/catalog/(scot %uv request.msg) [%catalog request.msg (scag 200 readable-repositories)])
   ==
@@ -2643,20 +2668,20 @@
     ?:  =(%issue view)
       =/  issue=(unit native-issue:git)  (native-issue-at u.found number)
       ?~  issue  ~
-      `(pairs:enjs:format ~[['repository' (public-repository-json repository u.found)] ['issue' (native-issue-json u.issue %.y)]])
+      `(pairs:enjs:format ~[['repository' (public-repository-json-up-to repository u.found 50)] ['issue' (native-issue-json u.issue %.y)]])
     ?:  =(%pull view)
       =/  pull=(unit native-pull:git)  (native-pull-at u.found number)
       ?~  pull  ~
       =/  pull-json=(unit json)  (native-pull-detail-json repository u.found u.pull)
       ?~  pull-json  ~
-      `(pairs:enjs:format ~[['repository' (public-repository-json repository u.found)] ['pull' u.pull-json]])
+      `(pairs:enjs:format ~[['repository' (public-repository-json-up-to repository u.found 50)] ['pull' u.pull-json]])
     ?:  =(%commit view)
       ?~  file-path  ~
       (repository-history-detail-json repository u.found i.file-path our.bowl now.bowl)
     =/  data=(unit octs)  (repository-file u.found file-path)
     ?~  data  ~
     ?:  (gth p.u.data 4.194.304)  ~
-    `(pairs:enjs:format ~[['repository' (public-repository-json repository u.found)] ['file' (repository-file-json repository u.found head.u.found file-path u.data)]])
+    `(pairs:enjs:format ~[['repository' (public-repository-json-up-to repository u.found 50)] ['file' (repository-file-json repository u.found head.u.found file-path u.data)]])
   ?~  detail
     :_  this
     :~  (peer-card target /peer/browse-error/(scot %uv request) [%browse-error request 'requested item is unavailable, incomplete, or too large to preview'])
