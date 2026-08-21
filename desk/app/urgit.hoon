@@ -8033,6 +8033,20 @@
   ?~  body.request.req
     :_  this
     (give-http eyre-id 400 ~[['content-type' 'text/plain']] `(text:git-codec 'missing receive-pack request\0a'))
+  ::  Answer git's pre-upload probe before any parsing, policy, or ref
+  ::  update runs.  The probe body is a lone flush packet and carries no
+  ::  commands; git needs only the 200 to proceed with the real request.
+  ::
+  ?:  (receive-probe:git-protocol u.body.request.req)
+    :_  this
+    %-  give-http
+    :*  eyre-id
+        200
+        :~  ['content-type' 'application/x-git-receive-pack-result']
+            ['cache-control' 'no-store']
+        ==
+        ~
+    ==
   =/  parsed=(unit receive-request:git)
     (parse-receive-request:git-protocol u.body.request.req)
   ?~  parsed

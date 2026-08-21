@@ -197,6 +197,21 @@
   ?.  (valid-ref ref)  ~
   `[[u.old u.new ref]]
 ::
+::  A receive-pack body of one flush packet and nothing else is git's
+::  probe, sent ahead of any request larger than http.postBuffer to
+::  check auth and readiness before it commits to the upload.  It asks
+::  for no ref update, so it is not a receive-request and must not be
+::  parsed as one; the caller answers it before any policy runs.
+::
+++  receive-probe
+  |=  body=octs
+  ^-  ?
+  =/  next=(unit [pkt=packet:git-codec rest=octs])
+    (de-pkt:git-codec body)
+  ?~  next  %.n
+  ?.  ?=(%flush -.pkt.u.next)  %.n
+  =(0 p.rest.u.next)
+::
 ++  parse-receive-request
   |=  body=octs
   ^-  (unit receive-request:git)
