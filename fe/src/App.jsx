@@ -146,7 +146,7 @@ function PrivateApp() {
     const previous = remoteBrowseRef.current.request
     const generation = remoteBrowseRef.current.generation + 1
     remoteBrowseRef.current = { generation, request: '' }
-    if (previous) api.peerDeleteBrowse(previous).catch(() => {})
+    if (previous) await api.peerDeleteBrowse(previous).catch(() => {})
     const selection = { ship, name }
     remoteSelectedRef.current = selection
     setError(''); setRemoteSelected(selection); setRemoteData(null); setRemoteStatus('Checking local cache'); setRemoteProgress(null); setRemoteError(''); setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 }); setSelected('')
@@ -203,6 +203,7 @@ function PrivateApp() {
           })
         } catch (cause) {
           if (remoteBrowseRef.current.generation !== generation) return
+          await api.peerDeleteBrowse(started.request).catch(() => {})
           remoteBrowseRef.current.request = ''
           if (cause.code === 'PEER_BROWSE_MISSING' && attempt === 0) {
             setRemoteStatus('Restarting peer browse after agent reload')

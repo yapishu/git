@@ -1299,7 +1299,11 @@
   %-  pairs:enjs:format
   :~  ['revision' s+(repository-revision repo)]
       ['repository' (public-repository-json-up-to name repo 50)]
-      ['files' (repository-files-at-json-up-to name repo head.repo 50)]
+      ::  Per-file history is supplemental browse metadata.  Keep this
+      ::  bounded tightly: every revision requires a tree comparison, and
+      ::  doing fifty of them can hold the source ship in %prepare for a
+      ::  large repository before Fine or Mesa has even begun transferring.
+      ['files' (repository-files-at-json-up-to name repo head.repo 10)]
       ['commits' (repository-commits-json-up-to name repo head.repo 0 50 50)]
   ==
 ::
