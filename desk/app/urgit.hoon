@@ -2658,13 +2658,10 @@
     :_  this
     :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or requester is not authorized'])
     ==
-  ?:  (peer-object-capable request)
-    =.  peer-browse-prepare-queue
-      (~(put by peer-browse-prepare-queue) request [src.bowl repository view number file-path])
-    :_  this
-    :~  (peer-card src.bowl /peer/browse-accepted/(scot %uv request) [%browse-accepted request])
-        [%pass /peer/browse-prepare/(scot %uv request) %arvo %b %wait (add now.bowl ~s1)]
-    ==
+  ::  Build in the request event.  Deferring this through Behn left the
+  ::  requester permanently in %prepare when the wake or self-poke was lost,
+  ::  even for the constant-size %stamp view.  Browse generation is bounded;
+  ::  Fine or Mesa publication still happens through the returned cards.
   (browse-build src.bowl request repository view number file-path)
 ::
 ++  browse-build
