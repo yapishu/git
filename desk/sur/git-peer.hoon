@@ -113,6 +113,8 @@
       [%catalog catalog=catalog]
       [%catalog-error request=@uv message=@t]
       [%browse-request request=@uv repository=@t view=browse-view number=@ud file-path=path]
+      [%browse-accepted request=@uv]
+      [%browse-prepare request=@uv]
       [%browse-ready request=@uv repository=@t target=ship pages=@ud]
       [%browse-response request=@uv repository=@t result=json]
       [%browse-begin request=@uv repository=@t pages=@ud]

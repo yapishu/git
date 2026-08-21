@@ -118,6 +118,13 @@
   ==
 +$  webhook-flight  [repository=@t hook=@ud delivery=@uv]
 +$  peer-browse-serve  [target=ship pages=@ud]
++$  peer-browse-job
+  $:  target=ship
+      repository=@t
+      view=browse-view:git-peer
+      number=@ud
+      file-path=path
+  ==
 +$  peer-discovery
   $:  peer=ship
       active=?
@@ -131,7 +138,7 @@
       view=browse-view:git-peer
       number=@ud
       file-path=path
-      phase=?(%request %fine)
+      phase=?(%request %prepare %fine)
       active=?
       ok=?
       message=@t
@@ -715,6 +722,10 @@
 ::
 ++  latest-file-commits
   |=  [repo=repository:git ref=@t]
+  (latest-file-commits-up-to repo ref 10.000)
+::
+++  latest-file-commits-up-to
+  |=  [repo=repository:git ref=@t limit=@ud]
   ^-  (map path oid:git)
   =/  start=(unit oid:git)  (revision-oid repo ref)
   ?~  start  ~
@@ -727,66 +738,72 @@
     (~(put in accumulator) file-path.entry)
   =/  commits=(map path oid:git)  ~
   =/  current=(unit oid:git)  start
+  =/  scanned=@ud  0
   |-
   ?~  current  commits
+  ?:  (gte scanned limit)  commits
   =/  unresolved-paths=(list path)  ~(tap in unresolved)
   ?~  unresolved-paths  commits
   =/  found=(unit object:git)  (~(get by objects.repo) u.current)
   ?.  ?&(?=(^ found) =(%commit kind.u.found))  commits
-  =/  here=(unit (map path flat-entry:git-tree))
-    (flatten-commit-index:git-tree objects.repo u.current)
-  ?~  here  commits
   =/  parent=(unit oid:git)  (commit-parent data.u.found)
-  =/  before=(map path flat-entry:git-tree)
-    ?~  parent  ~
-    =/  indexed=(unit (map path flat-entry:git-tree))
-      (flatten-commit-index:git-tree objects.repo u.parent)
-    ?~(indexed ~ u.indexed)
-  =/  remaining=(list path)  unresolved-paths
+  =/  changed=(set path)
+    (changed-commit-files:git-tree objects.repo u.current parent)
+  =/  remaining=(list path)  ~(tap in changed)
   =/  updated=[unresolved=(set path) commits=(map path oid:git)]
     |-
     ?~  remaining  [unresolved commits]
     =/  file-path=path  i.remaining
-    =/  current-file=(unit flat-entry:git-tree)  (~(get by u.here) file-path)
-    =/  parent-file=(unit flat-entry:git-tree)  (~(get by before) file-path)
-    ?:  =(current-file parent-file)
-      $(remaining t.remaining)
-    ?~  current-file
+    ?.  (~(has in unresolved) file-path)
       $(remaining t.remaining)
     %=  $
       remaining   t.remaining
       unresolved  (~(del in unresolved) file-path)
       commits     (~(put by commits) file-path u.current)
     ==
-  $(current parent, unresolved unresolved.updated, commits commits.updated)
+  $(current parent, unresolved unresolved.updated, commits commits.updated, scanned +(scanned))
 ::
-++  repository-files-at-json
-  |=  [name=@t repo=repository:git ref=@t]
+++  repository-files-at-json-up-to
+  |=  [name=@t repo=repository:git ref=@t history-limit=@ud]
   ^-  json
   =/  commit=(unit oid:git)  (revision-oid repo ref)
-  =/  latest=(map path oid:git)  (latest-file-commits repo ref)
-  =/  files=(unit (map path octs))
-    ?~  commit  `*(map path octs)
-    (flatten-commit:git-tree objects.repo u.commit)
+  =/  latest=(map path oid:git)
+    (latest-file-commits-up-to repo ref history-limit)
+  =/  summaries=(map oid:git json)
+    %+  roll  ~(tap by latest)
+    |=  [entry=[path oid:git] accumulator=(map oid:git json)]
+    =/  commit-oid=oid:git  +.entry
+    ?:  (~(has by accumulator) commit-oid)  accumulator
+    =/  found=(unit object:git)  (~(get by objects.repo) commit-oid)
+    ?.  ?&(?=(^ found) =(%commit kind.u.found))  accumulator
+    (~(put by accumulator) commit-oid (commit-summary-json commit-oid data.u.found))
+  =/  files=(unit (map path flat-entry:git-tree))
+    ?~  commit  `*(map path flat-entry:git-tree)
+    (flatten-commit-index:git-tree objects.repo u.commit)
   =/  file-json=(list json)
     ?~  files  ~
-    %+  turn  ~(tap by u.files)
-    |=  [file-path=path data=octs]
+    %+  murn  ~(tap by u.files)
+    |=  [file-path=path entry=flat-entry:git-tree]
+    =/  blob=(unit object:git)  (~(get by objects.repo) oid.entry)
+    ?.  ?&(?=(^ blob) =(%blob kind.u.blob))  ~
     =/  last-oid=(unit oid:git)  (~(get by latest) file-path)
-    =/  last-object=(unit object:git)
+    =/  last-summary=(unit json)
       ?~  last-oid  ~
-      (~(get by objects.repo) u.last-oid)
+      (~(get by summaries) u.last-oid)
     =/  last-commit=json
-      ?.  ?&(?=(^ last-oid) ?=(^ last-object) =(%commit kind.u.last-object))  ~
-      (commit-summary-json u.last-oid data.u.last-object)
-    %-  pairs:enjs:format
-    ~[['path' s+(spat file-path)] ['size' n+(decimal p.data)] ['lastCommit' last-commit]]
+      ?~  last-summary  ~
+      u.last-summary
+    `(pairs:enjs:format ~[['path' s+(spat file-path)] ['size' n+(decimal p.data.u.blob)] ['lastCommit' last-commit]])
   %-  pairs:enjs:format
   :~  ['repository' s+name]
       ['head' s+ref]
       ['commit' s+?~(commit '' (oid-text:git-codec u.commit))]
       ['files' [%a file-json]]
   ==
+::
+++  repository-files-at-json
+  |=  [name=@t repo=repository:git ref=@t]
+  (repository-files-at-json-up-to name repo ref 10.000)
 ::
 ++  repository-files-json
   |=  [name=@t repo=repository:git]
@@ -1265,7 +1282,7 @@
   %-  pairs:enjs:format
   :~  ['revision' s+(repository-revision repo)]
       ['repository' (public-repository-json name repo)]
-      ['files' (repository-files-json name repo)]
+      ['files' (repository-files-at-json-up-to name repo head.repo 50)]
       ['commits' (repository-commits-json name repo head.repo 0 50)]
   ==
 ::
@@ -1995,6 +2012,7 @@
 =/  peer-outgoing  *(map @uv peer-offer-flight)
 =/  peer-discoveries  *(map @uv peer-discovery)
 =/  peer-browses  *(map @uv peer-browse)
+=/  peer-browse-prepare-queue  *(map @uv peer-browse-job)
 =/  peer-browse-serving  *(map @uv peer-browse-serve)
 =/  peer-forges  *(map @uv peer-forge)
 =/  peer-activities  *(list peer-activity)
@@ -2009,7 +2027,7 @@
 ::
 ++  on-init
   ^-  (quip card _this)
-  :_  this(peer-prepare-queue ~, peer-stream-jobs ~)
+  :_  this(peer-prepare-queue ~, peer-stream-jobs ~, peer-browse-prepare-queue ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -2027,7 +2045,7 @@
       %2  !<(state-2:git old)
     ==
   =.  loaded  (settle-webhook-state loaded)
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-prepare-queue ~, peer-serving ~, peer-receiving ~, peer-stream-jobs ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-prepare-queue ~, peer-serving ~, peer-receiving ~, peer-stream-jobs ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-prepare-queue ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -2503,6 +2521,12 @@
       %browse-request
     (peer-browse-request request.packet repository.packet view.packet number.packet file-path.packet)
   ::
+      %browse-accepted
+    (peer-browse-accepted request.packet)
+  ::
+      %browse-prepare
+    (peer-browse-prepare request.packet)
+  ::
       %browse-ready
     (peer-browse-ready request.packet repository.packet target.packet pages.packet)
   ::
@@ -2594,6 +2618,23 @@
     :_  this
     :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or requester is not authorized'])
     ==
+  ?:  (peer-object-capable request)
+    =.  peer-browse-prepare-queue
+      (~(put by peer-browse-prepare-queue) request [src.bowl repository view number file-path])
+    :_  this
+    :~  (peer-card src.bowl /peer/browse-accepted/(scot %uv request) [%browse-accepted request])
+        [%pass /peer/browse-prepare/(scot %uv request) %arvo %b %wait (add now.bowl ~s1)]
+    ==
+  (browse-build src.bowl request repository view number file-path)
+::
+++  browse-build
+  |=  [target=ship request=@uv repository=@t view=browse-view:git-peer number=@ud file-path=path]
+  ^-  (quip card _this)
+  =/  found=(unit repository:git)  (~(get by repositories) repository)
+  ?.  ?&(?=(^ found) (repository-readable u.found target))
+    :_  this
+    :~  (peer-card target /peer/browse-error/(scot %uv request) [%browse-error request 'repository is unavailable or requester is not authorized'])
+    ==
   =/  detail=(unit json)
     ?:  =(%stamp view)
       `(repository-stamp-json repository u.found)
@@ -2618,13 +2659,19 @@
     `(pairs:enjs:format ~[['repository' (public-repository-json repository u.found)] ['file' (repository-file-json repository u.found head.u.found file-path u.data)]])
   ?~  detail
     :_  this
-    :~  (peer-card src.bowl /peer/browse-error/(scot %uv request) [%browse-error request 'requested item is unavailable, incomplete, or too large to preview'])
+    :~  (peer-card target /peer/browse-error/(scot %uv request) [%browse-error request 'requested item is unavailable, incomplete, or too large to preview'])
+    ==
+  =/  result=json  u.detail
+  ?:  ?&  (peer-object-capable request)
+          (peer-directed target our.bowl now.bowl)
+      ==
+    :_  this
+    :~  (peer-card target /peer/browse-response/(scot %uv request) [%browse-response request repository result])
     ==
   =/  browse-path=path  /browse/(scot %uv request)
-  =/  result=json  u.detail
   =/  pages=(list [length=@ud data=@])  (peer-browse-pages result)
   =.  peer-browse-serving
-    (~(put by peer-browse-serving) request [src.bowl (lent pages)])
+    (~(put by peer-browse-serving) request [target (lent pages)])
   :_  this
   =/  page-cards=(list card)
     %+  turn  pages
@@ -2634,6 +2681,34 @@
     :~  [%pass /peer/browse-ready/(scot %uv request) %agent [our.bowl %urgit] %poke %git-peer !>([%browse-ready request repository src.bowl (lent pages)])]
     ==
   (weld page-cards ready-cards)
+::
+++  peer-browse-prepare
+  |=  request=@uv
+  ^-  (quip card _this)
+  ?.  =(src.bowl our.bowl)  `this
+  =/  found=(unit peer-browse-job)  (~(get by peer-browse-prepare-queue) request)
+  ?~  found  `this
+  =/  job=peer-browse-job  u.found
+  =.  peer-browse-prepare-queue
+    (~(del by peer-browse-prepare-queue) request)
+  (browse-build target.job request repository.job view.job number.job file-path.job)
+::
+++  peer-browse-accepted
+  |=  request=@uv
+  ^-  (quip card _this)
+  =/  found=(unit peer-browse)  (~(get by peer-browses) request)
+  ?~  found  `this
+  ?.  ?&  active.u.found
+          =(src.bowl peer.u.found)
+          =(%request phase.u.found)
+          (peer-object-capable request)
+      ==
+    `this
+  =.  peer-browses
+    (~(put by peer-browses) request u.found(phase %prepare, message 'peer is preparing repository overview', progress-at now.bowl))
+  :_  this
+  :~  [%pass /peer/browse-prepare-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~m10)]
+  ==
 ::
 ++  peer-browse-ready
   |=  [request=@uv repository=@t target=ship pages=@ud]
@@ -2703,6 +2778,10 @@
 ++  peer-browse-release
   |=  request=@uv
   ^-  (quip card _this)
+  =/  queued=(unit peer-browse-job)  (~(get by peer-browse-prepare-queue) request)
+  ?^  queued
+    ?.  =(src.bowl target.u.queued)  `this
+    `this(peer-browse-prepare-queue (~(del by peer-browse-prepare-queue) request))
   =/  found=(unit peer-browse-serve)  (~(get by peer-browse-serving) request)
   ?~  found  `this
   ?.  =(src.bowl target.u.found)  `this
@@ -4202,7 +4281,7 @@
     :_  this
     (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv -.u.duplicate)] ['deduplicated' b+%.y]]))
   =/  request=@uv
-    `@uv`(shas %git-peer-browse (cat 3 eny.bowl request-count))
+    (peer-object-transfer `@uv`(shas %git-peer-browse (cat 3 eny.bowl request-count)))
   =.  request-count  +(request-count)
   =.  peer-browses
     (~(put by peer-browses) request [peer repository view number file-path %request %.y %.n 'reading from peer' ~ now.bowl 0 0 ~ ~])
@@ -5161,12 +5240,14 @@
     :_  this
     =/  response=(list card)
       (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y]]))
-    ?.  =(%fine phase.u.found)  response
+    =/  release-cards=(list card)
+      ?:  active.u.found
+        :~  [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
+        ==
+      ~
+    ?.  =(%fine phase.u.found)  (weld release-cards response)
     =/  cancel-cards=(list card)
       (peer-browse-yawns u.request peer.u.found expected.u.found)
-    =/  release-cards=(list card)
-      :~  [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
-      ==
     (weld cancel-cards (weld release-cards response))
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %peer %browse @ @ ~] site)
@@ -8666,6 +8747,16 @@
     :~  release-card
     ==
   ::
+      [%peer %browse-prepare @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  request  `this
+    :_  this
+    :~  [%pass /peer/browse-prepare/(scot %uv u.request) %agent [our.bowl %urgit] %poke %git-peer !>([%browse-prepare u.request])]
+    ==
+  ::
       [%peer %browse-timeout @ ~]
     ?.  ?=([%behn %wake *] sign-arvo)
       (on-arvo:def wire sign-arvo)
@@ -8674,11 +8765,31 @@
     ?~  request  `this
     =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
     ?~  found  `this
-    ?.  active.u.found  `this
-    ?:  =(%fine phase.u.found)  `this
+    ?.  ?&  active.u.found
+            =(%request phase.u.found)
+        ==
+      `this
     =.  peer-browses
       (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer did not answer the repository browse request'))
     `this
+  ::
+      [%peer %browse-prepare-timeout @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    ?^  error.sign-arvo  `this
+    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  request  `this
+    =/  found=(unit peer-browse)  (~(get by peer-browses) u.request)
+    ?~  found  `this
+    ?.  ?&  active.u.found
+            =(%prepare phase.u.found)
+        ==
+      `this
+    =.  peer-browses
+      (~(put by peer-browses) u.request u.found(active %.n, ok %.n, message 'peer did not finish preparing the repository overview'))
+    :_  this
+    :~  [%pass /peer/browse-release/(scot %uv u.request) %agent [peer.u.found %urgit] %poke %git-peer !>([%browse-release u.request])]
+    ==
   ::
       [%peer %browse-stall @ ~]
     ?.  ?=([%behn %wake *] sign-arvo)

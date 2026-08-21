@@ -107,6 +107,78 @@
   ?~  tree-oid  ~
   (walk-tree-index objects u.tree-oid / ~ ~)
 ::
+++  add-index-paths
+  |=  [index=(map path flat-entry) paths=(set path)]
+  ^-  (set path)
+  %+  roll  ~(tap by index)
+  |=  [entry=[file-path=path value=flat-entry] accumulator=(set path)]
+  (~(put in accumulator) file-path.entry)
+::
+++  changed-tree-files
+  |=  $:  objects=(map oid:git object:git)
+          current=oid:git
+          parent=(unit oid:git)
+          prefix=path
+          visiting=(set oid:git)
+          changed=(set path)
+      ==
+  ^-  (set path)
+  ?:  (~(has in visiting) current)  changed
+  =/  unchanged=?
+    ?~  parent  %.n
+    =(current u.parent)
+  ?:  unchanged  changed
+  =/  current-object=(unit object:git)  (~(get by objects) current)
+  ?.  ?&(?=(^ current-object) =(%tree kind.u.current-object))  changed
+  =/  current-list=(unit (list tree-entry:git-clay))
+    (parse-tree:git-clay data.u.current-object)
+  ?~  current-list  changed
+  =/  parent-entries=(map @t tree-entry:git-clay)
+    ?~  parent  ~
+    =/  parent-object=(unit object:git)  (~(get by objects) u.parent)
+    ?.  ?&(?=(^ parent-object) =(%tree kind.u.parent-object))  ~
+    =/  parent-list=(unit (list tree-entry:git-clay))
+      (parse-tree:git-clay data.u.parent-object)
+    ?~  parent-list  ~
+    %-  malt
+    %+  turn  u.parent-list
+    |=  entry=tree-entry:git-clay
+    [name.entry entry]
+  =.  visiting  (~(put in visiting) current)
+  =/  remaining=(list tree-entry:git-clay)  u.current-list
+  |-
+  ?~  remaining  changed
+  =/  entry=tree-entry:git-clay  i.remaining
+  =/  file-path=(unit path)  (append-segment prefix name.entry)
+  ?~  file-path  $(remaining t.remaining)
+  =/  old=(unit tree-entry:git-clay)  (~(get by parent-entries) name.entry)
+  ?:  =('40000' mode.entry)
+    ?.  ?&(?=(^ old) =('40000' mode.u.old))
+      =/  indexed=(unit (map path flat-entry))
+        (walk-tree-index objects oid.entry u.file-path ~ visiting)
+      ?~  indexed  $(remaining t.remaining)
+      $(remaining t.remaining, changed (add-index-paths u.indexed changed))
+    =/  nested=(set path)
+      (changed-tree-files objects oid.entry `oid.u.old u.file-path visiting changed)
+    $(remaining t.remaining, changed nested)
+  ?.  (blob-mode mode.entry)  $(remaining t.remaining)
+  ?:  ?&  ?=(^ old)
+          =(mode.entry mode.u.old)
+          =(oid.entry oid.u.old)
+      ==
+    $(remaining t.remaining)
+  $(remaining t.remaining, changed (~(put in changed) u.file-path))
+::
+++  changed-commit-files
+  |=  [objects=(map oid:git object:git) current=oid:git parent=(unit oid:git)]
+  ^-  (set path)
+  =/  current-tree=(unit oid:git)  (commit-tree:git-clay objects current)
+  ?~  current-tree  ~
+  =/  parent-tree=(unit oid:git)
+    ?~  parent  ~
+    (commit-tree:git-clay objects u.parent)
+  (changed-tree-files objects u.current-tree parent-tree / ~ ~)
+::
 ++  replace-entry
   |=  [entries=(list tree-entry:git-clay) name=@t new-oid=oid:git]
   ^-  (list tree-entry:git-clay)

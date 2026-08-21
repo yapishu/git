@@ -47,7 +47,7 @@
 - two-ship Mesa and Fine conformance: native forks reconstruct complete repositories with duplicate, size, count, OID, and ref-graph validation and pass stock Git clone and `git fsck --full`
 - on-demand Ames peer discovery with bounded public-repository catalogs, writer hints, expiry, cancellation, and status pruning
 - persistent peer bookmarks with expandable public repositories in the sidebar
-- bounded remote repository overviews over Ames, with request-scoped Fine overview, revision-stamp, commit-detail, and individual-file reads accepted; browser-local indefinite overview caching with explicit refresh and update detection; and every unanswered browse terminated explicitly
+- bounded remote repository overviews over Ames, with acknowledged deferred preparation, one-noun Mesa delivery, progress-aware Fine compatibility, structurally bounded per-file commit attribution, revision-stamp, commit-detail, and individual-file reads accepted; browser-local indefinite overview caching with explicit refresh and update detection; and separate unanswered-request, preparation, and stalled-read termination
 - remote forge summaries expose native and cached GitHub issues and pull requests alongside code, branches, and history
 - request-scoped Fine detail reads expose native issue bodies and comments plus pull-request diffs and review discussion; authenticated Ames requests create native issues and append origin-authoritative ship-authored comments to both native issues and pull requests
 - bounded peer activity notifications for incoming and outgoing forks, snapshot reads, native updates, and pull requests
