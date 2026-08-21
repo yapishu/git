@@ -1185,7 +1185,7 @@ function Settings({ repo, onMutate }) {
         <small className="quiet">Uncheck all to mute.</small>
       </section>
       {repo.peerOrigin && <section className="panel">
-        <div className="section-title"><div><h2>Native origin</h2><p>Forked from <code>{repo.peerOrigin.ship}/{repo.peerOrigin.repository}</code>. Ames coordinates updates and Fine carries the verified object snapshot.</p></div></div>
+        <div className="section-title"><div><h2>Native origin</h2><p>Forked from <code>{repo.peerOrigin.ship}/{repo.peerOrigin.repository}</code> over the Urbit network.</p></div></div>
         <div className="form-actions split"><small className="quiet">{syncResult || 'Pull the latest snapshot, or push changes when the origin grants this ship write access.'}</small><div className="row-actions"><button className="button" disabled={busy} onClick={pullFromOrigin}>{busy === 'peer-pull' ? 'Pulling…' : 'Pull from origin'}</button><button className="button primary" disabled={busy} onClick={pushToOrigin}>{busy === 'peer-push' ? 'Syncing…' : 'Push to origin'}</button></div></div>
       </section>}
       {repo.githubOrigin && <section className="panel github-panel">

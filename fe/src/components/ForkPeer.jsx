@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { peerTransferPresentation } from '../peerTransfer'
 
 export default function ForkPeer({ repositories, onComplete, onCancel }) {
   const [ship, setShip] = useState('')
@@ -79,9 +80,7 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
           if (!transfer || transfer.active) {
             if (transfer) {
               setProgress(transfer)
-              const received = Number(transfer.received || 0)
-              const expected = Number(transfer.expected || 0)
-              setStatus(expected > 0 ? `Receiving verified Git objects · ${received} / ${expected}` : 'Preparing repository snapshot…')
+              setStatus(peerTransferPresentation(transfer).label)
             } else setStatus('Contacting peer…')
             return
           }
@@ -120,14 +119,15 @@ export default function ForkPeer({ repositories, onComplete, onCancel }) {
   const existing = repositories.find((repo) => repo.name === name.trim())
   const sameOrigin = existing?.peerOrigin?.ship === ship.trim() && existing?.peerOrigin?.repository === repository.trim() && !existing?.binding?.bound
   const blockedCollision = Boolean(existing && !sameOrigin)
+  const transferView = peerTransferPresentation(progress)
 
   return (
     <main className="content centered">
       <form className="panel create-panel" onSubmit={submit}>
         <h1>Fork from a ship</h1>
-        <p>Copy a public repository through Ames and Fine.</p>
+        <p>Copy a public repository over the Urbit network.</p>
         {error && <div className="inline-error">{error}</div>}
-        {status && !error && <div className="transfer-status"><span className={busy ? 'spinner' : ''} />{status}{busy && progress && Number(progress.expected || 0) > 0 && <progress max={Number(progress.expected)} value={Number(progress.received || 0)} />}</div>}
+        {status && !error && <div className="transfer-status"><span className={busy ? 'spinner' : ''} />{status}{busy && transferView.determinate && <progress max={transferView.max} value={transferView.value} />}</div>}
         <label><span>Source ship</span><div className="inline-field"><input value={ship} onChange={(event) => { setShip(event.target.value); setCatalog([]) }} placeholder="~sampel-palnet" autoFocus /><button type="button" className="button" disabled={busy || discovering || !ship.trim()} onClick={discover}>{discovering ? 'Scanning…' : 'Discover'}</button></div></label>
         {!!catalog.length && <div className="peer-catalog">{catalog.map((repo) => <button type="button" key={repo.name} className={repository === repo.name ? 'peer-repo selected' : 'peer-repo'} onClick={() => selectRemote(repo)}><span><strong>{repo.name}</strong><small>{repo.head}</small></span><span className="peer-repo-meta">{repo.refs} refs · {repo.objects} objects{repo.writable ? ' · write' : ''}</span></button>)}</div>}
         <label><span>Source repository</span><input value={repository} onChange={(event) => { setRepository(event.target.value); if (!name) setName(event.target.value) }} placeholder="project" /></label>

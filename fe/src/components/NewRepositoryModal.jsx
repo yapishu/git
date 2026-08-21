@@ -19,7 +19,7 @@ export default function NewRepositoryModal({ onCreate, onPublishDesk, onForkPeer
       {mode === 'choose' ? <div className="source-options">
         <button onClick={() => setMode('blank')}><b>Blank repository</b><span>Start with an empty main branch.</span><i>›</i></button>
         <button onClick={() => { onPublishDesk(); onClose() }}><b>Publish a Clay desk</b><span>Snapshot an existing desk and keep its revisions mapped to commits.</span><i>›</i></button>
-        <button onClick={() => { onForkPeer(); onClose() }}><b>Fork from a ship</b><span>Copy a repository over Ames and Fine, with an upstream for pushes and PRs.</span><i>›</i></button>
+        <button onClick={() => { onForkPeer(); onClose() }}><b>Fork from a ship</b><span>Copy a repository over the Urbit network, with an upstream for pushes and PRs.</span><i>›</i></button>
         <button onClick={() => { onImportGitHub(); onClose() }}><b>Import from GitHub</b><span>Fetch Git objects and optionally synchronize issues and pull requests.</span><i>›</i></button>
       </div> : <form onSubmit={submit}>
         <button type="button" className="text-button modal-back" onClick={() => setMode('choose')}>← Sources</button>

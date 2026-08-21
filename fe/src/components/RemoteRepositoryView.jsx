@@ -6,6 +6,7 @@ import { HighlightedCode } from './HighlightedCode'
 import MarkdownDocument from './MarkdownDocument'
 import Readme from './Readme'
 import { exactBytes, formatBytes } from '../format'
+import { peerTransferPresentation } from '../peerTransfer'
 import { useLocalDraft } from '../useLocalDraft'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
@@ -181,7 +182,7 @@ export default function RemoteRepositoryView({ ship, repository, repositories, d
     setForkDialog(false)
     setForking(true)
     setForkTarget(target)
-    setProgress({ received: 0, expected: 0, message: 'Contacting peer' })
+    setProgress({ stage: 'request' })
     const complete = await onFork(ship, repository, target, publicRead, setProgress, setTransfer)
     if (!complete) { setForking(false); setCancelling(false); setTransfer(''); setProgress(null) }
   }
@@ -283,12 +284,10 @@ function RemoteCommentComposer({ value, busy, onChange, onSubmit }) {
 }
 
 function TransferProgress({ ship, repository, localName, progress, cancelling, onCancel }) {
-  const received = Number(progress?.received || 0)
-  const expected = Number(progress?.expected || 0)
-  const percent = expected > 0 ? Math.min(100, Math.round((received / expected) * 100)) : 0
+  const view = peerTransferPresentation(progress)
   return <div className="peer-transfer-progress" role="status" aria-live="polite">
-    <div><strong>Forking {ship}/{repository} → {localName}</strong><span>{expected > 0 ? `${received} / ${expected} objects · ${percent}%` : progress?.message || 'Preparing repository snapshot…'}</span></div>
-    {expected > 0 ? <progress max="100" value={percent}>{percent}%</progress> : <div className="progress-track indeterminate"><i /></div>}
+    <div><strong>Forking {ship}/{repository} → {localName}</strong><span>{view.label}</span></div>
+    {view.determinate ? <progress max={view.max} value={view.value} /> : <div className="progress-track indeterminate"><i /></div>}
     <div className="peer-transfer-footer"><small>You can leave this view and follow the transfer from peer activity.</small><button className="text-button" disabled={cancelling} onClick={onCancel}>{cancelling ? 'Cancelling…' : 'Cancel transfer'}</button></div>
   </div>
 }

@@ -41,7 +41,6 @@ function PrivateApp() {
   const remoteBrowseRef = useRef({ generation: 0, request: '' })
   const [remoteData, setRemoteData] = useState(null)
   const [remoteStatus, setRemoteStatus] = useState('')
-  const [remoteProgress, setRemoteProgress] = useState(null)
   const [remoteError, setRemoteError] = useState('')
   const [remoteCacheState, setRemoteCacheState] = useState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 })
   const [creating, setCreating] = useState(false)
@@ -114,7 +113,7 @@ function PrivateApp() {
         const current = remoteSelectedRef.current
         if (!current || current.ship !== route.ship || current.name !== route.name) chooseRemote(route.ship, route.name, false)
       }
-      else { setRemoteSelected(null); setRemoteData(null); setRemoteStatus(''); setRemoteProgress(null); setRemoteError(''); setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 }); setSelected(route.name) }
+      else { setRemoteSelected(null); setRemoteData(null); setRemoteStatus(''); setRemoteError(''); setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 }); setSelected(route.name) }
     }
     addEventListener('popstate', pop)
     if (routeFromHash().kind !== 'repository') pop()
@@ -133,7 +132,6 @@ function PrivateApp() {
     setRemoteSelected(null)
     setRemoteData(null)
     setRemoteStatus('')
-    setRemoteProgress(null)
     setRemoteError('')
     setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 })
     setSelected(name)
@@ -149,7 +147,7 @@ function PrivateApp() {
     if (previous) await api.peerDeleteBrowse(previous).catch(() => {})
     const selection = { ship, name }
     remoteSelectedRef.current = selection
-    setError(''); setRemoteSelected(selection); setRemoteData(null); setRemoteStatus('Checking local cache'); setRemoteProgress(null); setRemoteError(''); setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 }); setSelected('')
+    setError(''); setRemoteSelected(selection); setRemoteData(null); setRemoteStatus('Checking local cache'); setRemoteError(''); setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: 0 }); setSelected('')
     setCreating(false); setPublishingDesk(false); setForkingPeer(false); setImportingGitHub(false); setSettingsOpen(false)
     if (pushHistory) history.pushState({}, '', `#/peer/${encodeURIComponent(ship)}/${encodeURIComponent(name)}`)
     try {
@@ -197,7 +195,6 @@ function PrivateApp() {
             onProgress: (browse) => {
               if (remoteBrowseRef.current.generation === generation) {
                 setRemoteStatus(browse.message || 'Loading from peer')
-                setRemoteProgress(browse.progress || null)
               }
             },
           })
@@ -222,7 +219,6 @@ function PrivateApp() {
           throw new Error('peer browse returned a different repository')
         }
         setRemoteStatus('')
-        setRemoteProgress(null)
         setRemoteData(found.result)
         setRemoteCacheState({ cached: false, checking: false, newer: false, checkFailed: false, cachedAt: Date.now() })
         await writeRemoteCache(ship, name, found.result.revision, found.result)
@@ -232,7 +228,6 @@ function PrivateApp() {
       if (remoteBrowseRef.current.generation === generation) {
         remoteBrowseRef.current.request = ''
         setRemoteStatus('')
-        setRemoteProgress(null)
         setRemoteError(cause.message)
       }
     }
@@ -338,7 +333,7 @@ function PrivateApp() {
         ) : publishingDesk ? (
           <PublishDesk repositories={repositories} onComplete={published} onCancel={() => setPublishingDesk(false)} />
         ) : remoteSelected ? (
-          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} repositories={repositories} data={remoteData} cacheState={remoteCacheState} onRefresh={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false, true)} onFork={forkRemote} onCancelTransfer={cancelTransfer} /> : remoteError ? <main className="content"><div className="empty remote-browse-failure"><strong>Could not load {remoteSelected.ship}/{remoteSelected.name}</strong><span>{remoteError}</span><button className="button primary" onClick={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false, true)}>Retry</button></div></main> : <main className="content"><div className="empty remote-browse-loading"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…<small>{remoteStatus}</small><BrowseProgress progress={remoteProgress} /></div></main>
+          remoteData ? <RemoteRepositoryView key={`${remoteSelected.ship}/${remoteSelected.name}`} ship={remoteSelected.ship} repository={remoteSelected.name} repositories={repositories} data={remoteData} cacheState={remoteCacheState} onRefresh={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false, true)} onFork={forkRemote} onCancelTransfer={cancelTransfer} /> : remoteError ? <main className="content"><div className="empty remote-browse-failure"><strong>Could not load {remoteSelected.ship}/{remoteSelected.name}</strong><span>{remoteError}</span><button className="button primary" onClick={() => chooseRemote(remoteSelected.ship, remoteSelected.name, false, true)}>Retry</button></div></main> : <main className="content"><div className="empty remote-browse-loading"><span className="spinner" />Loading {remoteSelected.ship}/{remoteSelected.name} from peer…<small>{remoteStatus}</small><div className="progress-track indeterminate remote-browse-progress"><i /></div></div></main>
         ) : repo ? (
           <RepositoryView repo={repo} onRefresh={refresh} onOpenOrigin={chooseRemote} />
         ) : (
@@ -351,16 +346,6 @@ function PrivateApp() {
       {creating && <NewRepositoryModal onCreate={create} onClose={() => setCreating(false)} onPublishDesk={() => { setForkingPeer(false); setImportingGitHub(false); setSettingsOpen(false); setPublishingDesk(true) }} onForkPeer={() => { setPublishingDesk(false); setImportingGitHub(false); setSettingsOpen(false); setForkingPeer(true) }} onImportGitHub={() => { setPublishingDesk(false); setForkingPeer(false); setSettingsOpen(false); setImportingGitHub(true) }} />}
     </div>
   )
-}
-
-function BrowseProgress({ progress }) {
-  const received = Number(progress?.received || 0)
-  const expected = Number(progress?.expected || 0)
-  if (expected > 0) {
-    const percent = Math.min(100, Math.round((received / expected) * 100))
-    return <div className="remote-browse-progress"><progress max={expected} value={received}>{percent}%</progress><span>{received} / {expected} pages · {percent}%</span></div>
-  }
-  return <div className="progress-track indeterminate remote-browse-progress"><i /></div>
 }
 
 function PublicApp({ name }) {
