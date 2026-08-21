@@ -44,15 +44,7 @@
 ++  adler32
   |=  data=octs
   ^-  @ud
-  =/  a=@ud  1
-  =/  b=@ud  0
-  =/  index=@ud  0
-  |-
-  ?:  =(index p.data)
-    (add (mul b 65.536) a)
-  =.  a  (mod (add a (byte-at:git-codec data index)) 65.521)
-  =.  b  (mod (add b a) 65.521)
-  $(index +(index))
+  `@ud`(adler32:adler:checksum data)
 ::
 ++  stored-deflate
   |=  data=octs

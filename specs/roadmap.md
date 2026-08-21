@@ -43,8 +43,8 @@
 - branch-aware file browsing, text and image blob views, safe rendered Markdown READMEs, authenticated text editing, per-file history, commit identities, and commit detail
 - bounded occurrence-aware line blame across Git first-parent commits and native Clay revisions, with attributed source gutters in authenticated and public file views
 - mounted-desk discovery and first-class desk-to-repository publication
-- Ames-coordinated, Fine-backed repository snapshots with incremental have negotiation, a bounded initial-response deadline, byte-bounded checksummed Git-pack pages, one verified sequential Fine read in flight, exact-path `%yawn` cancellation, Dojo transfer diagnostics, status pruning, pack checksum and object-count checks, and per-object OID verification
-- two-ship Fine conformance: bidirectional native forks reconstructed complete repositories and passed stock Git clone and `git fsck --full`
+- Ames-coordinated incremental repository snapshots with capability negotiation: Mesa-connected peers deliver refs and missing Git objects as one authenticated `%archive` noun, while bounded concurrent Fine object pages and sequential checksummed Git-pack pages cover non-Mesa and rolling-upgrade peers
+- two-ship Mesa and Fine conformance: native forks reconstruct complete repositories with duplicate, size, count, OID, and ref-graph validation and pass stock Git clone and `git fsck --full`
 - on-demand Ames peer discovery with bounded public-repository catalogs, writer hints, expiry, cancellation, and status pruning
 - persistent peer bookmarks with expandable public repositories in the sidebar
 - bounded remote repository overviews over Ames, with request-scoped Fine overview, revision-stamp, commit-detail, and individual-file reads accepted; browser-local indefinite overview caching with explicit refresh and update detection; and every unanswered browse terminated explicitly

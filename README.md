@@ -35,7 +35,7 @@
 - an unauthenticated `/urgit` profile with the ship's published Landscape alias, avatar, cover, bio, and public repositories
 - repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
 - one-click publication of any mounted Clay desk as a Git repository
-- verified, incremental native forks with explicit pull-from-origin refresh: Ames coordinates access and refs while bounded sequential Fine pages carry checksummed Git pack bytes for only the missing immutable objects; duplicate requests coalesce and active transfers can be cancelled
+- verified, incremental native forks with explicit pull-from-origin refresh: Mesa-connected peers send refs and missing immutable objects as one authenticated repository noun, with bounded Fine object or Git-pack pages as the negotiated fallback; duplicate requests coalesce and active transfers can be cancelled
 - persistent ship peers in the sidebar, with on-demand discovery of public repositories and private repositories shared with that ship
 - per-repository ship reader ACLs for private native browsing, issue and pull-request discussion, and forks without update rights
 - ship write ACLs with fast-forward-only native push-back from authorized forks
