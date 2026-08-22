@@ -48,8 +48,8 @@ const peerRelease = backend.slice(
   backend.indexOf('++  peer-snapshot-fail'),
 )
 const peerResultsJson = backend.slice(
-  backend.indexOf('++  peer-results-json'),
-  backend.indexOf('++  peer-discoveries-json'),
+  backend.indexOf('++  peer-ui-transfers-json'),
+  backend.indexOf('++  peer-ui-json'),
 )
 
 test('setReader posts the ship reader permission to the encoded repository route', async () => {
@@ -85,10 +85,10 @@ test('repository access settings manage readers separately from writers', () => 
 })
 
 test('native peer browse responses hide repository administration fields', () => {
-  assert.match(peerBrowseJson, /\['repository' \(public-repository-json name repo\)\]/)
+  assert.match(peerBrowseJson, /\['repository' \(public-repository-json-up-to name repo 50\)\]/)
   assert.doesNotMatch(peerBrowse, /\(repository-json repository u\.found\)/)
   assert.equal(
-    [...peerBrowse.matchAll(/\(public-repository-json repository u\.found\)/g)].length,
+    [...peerBrowse.matchAll(/\(public-repository-json-up-to repository u\.found 50\)/g)].length,
     3,
   )
 })
@@ -117,8 +117,8 @@ test('snapshot service activity does not replace its outgoing offer', () => {
 test('outgoing offers remain active until authoritative state is consumed', () => {
   assert.match(backend, /\+\$  peer-offer-flight/)
   assert.match(backend, /=\/  peer-outgoing\s+\*\(map @uv peer-offer-flight\)/)
-  assert.match(peerResultsJson, /outgoing=\(unit peer-offer-flight\).*~\(get by peer-outgoing\) transfer/)
-  assert.match(peerResultsJson, /\['active' b\+\|\(\?=\(\^ flight\) \?=\(\^ outgoing\)\)\]/)
+  assert.match(peerResultsJson, /offer=\(unit peer-offer-flight\).*~\(get by outgoing\.ui\) transfer/)
+  assert.match(peerResultsJson, /\['active' b\+\|\(\?=\(\^ flight\) \?=\(\^ offer\)\)\]/)
 })
 
 test('peer results authenticate and consume one active outgoing offer', () => {

@@ -7,6 +7,11 @@ const backend = readFileSync(
   'utf8',
 )
 
+const schema = readFileSync(
+  new URL('../../desk/sur/git.hoon', import.meta.url),
+  'utf8',
+)
+
 function arm(name, next) {
   const start = backend.indexOf(`++  ${name}`)
   const end = backend.indexOf(`++  ${next}`, start)
@@ -22,16 +27,24 @@ const peerRequest = arm('peer-request', 'peer-accepted')
 const peerRelease = arm('peer-release', 'peer-snapshot-fail')
 const onArvo = backend.slice(backend.indexOf('++  on-arvo'))
 
-test('fork pack preparation queue is transient and resets across lifecycle entry points', () => {
-  assert.match(
-    backend,
-    /=\/  peer-prepare-queue\s+\*\(map @uv \[target=ship req=request:git-peer\]\)/,
-  )
-  assert.match(onInit, /this\(peer-prepare-queue ~, peer-stream-jobs ~\)/)
-  assert.match(onLoad, /peer-prepare-queue ~/)
-  assert.match(onLoad, /peer-stream-jobs ~/)
+test('the fork preparation queue is persisted, so a reload cannot strand a requester', () => {
+  // It is a field of the saved state, not a transient =/ binding beside it.
+  assert.doesNotMatch(backend, /=\/  peer-prepare-queue/)
+  assert.match(schema, /peer-prepare-queue=\(map @uv peer-prepare-entry\)/)
   assert.equal(onSave.trimEnd(), '++  on-save\n  !>(state)\n::')
-  assert.doesNotMatch(onSave, /peer-prepare-queue/)
+
+  // on-load keeps the queue and re-arms the ~s1 build timer for each entry.
+  assert.doesNotMatch(onLoad, /peer-prepare-queue ~/)
+  assert.match(onLoad, /~\(tap by peer-prepare-queue\.loaded\)/)
+  assert.match(
+    onLoad,
+    /\/peer\/prepare-start\/\(scot %uv transfer\.entry\) %arvo %b %wait \(add now\.bowl ~s1\)/,
+  )
+
+  // The genuinely transient maps are still wiped.
+  assert.match(onLoad, /peer-stream-jobs ~/)
+  assert.match(onLoad, /peer-serving ~/)
+  assert.match(onInit, /this\(peer-prepare-queue ~, peer-stream-jobs ~, peer-browse-prepare-queue ~\)/)
 })
 
 test('peer request acceptance never immediately starts synchronous pack preparation', () => {
