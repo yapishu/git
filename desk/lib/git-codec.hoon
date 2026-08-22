@@ -25,10 +25,17 @@
   ^-  octs
   [(add p.left p.right) (can 3 ~[[p.left q.left] [p.right q.right]])]
 ::
+::  One +can over every piece.  Folding +join pairwise recopied the
+::  accumulator once per piece, which is quadratic in the piece count.
+::  +can truncates each piece to its own p and shifts by p, exactly as
+::  the fold did, so a piece with p=0 still contributes nothing and a
+::  piece whose atom is narrower than p still advances the offset by p.
+::
 ++  join-all
   |=  parts=(list octs)
   ^-  octs
-  (reel parts join)
+  :-  (roll parts |=([piece=octs total=@ud] (add p.piece total)))
+  (can 3 parts)
 ::
 ++  byte-at
   |=  [bytes=octs offset=@ud]
