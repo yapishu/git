@@ -1924,11 +1924,18 @@
       %+  ~(put by migrated)  -.i.remaining
       (repository-1-to-2:git-migrate +.i.remaining)
     $(remaining t.remaining)
-  [%2 migrated peers.stored github-token.stored ~]
+  [%2 migrated peers.stored github-token.stored]
+::
+::  a stored %2 predates the persistent fork queue; it starts empty
+::
+++  migrate-state-2
+  |=  stored=state-2:git
+  ^-  state-3:git
+  [%3 repositories.stored peers.stored github-token.stored ~]
 ::
 ++  settle-webhook-state
-  |=  stored=state-2:git
-  ^-  state-2:git
+  |=  stored=state-3:git
+  ^-  state-3:git
   =/  remaining=(list [@t repository:git])  ~(tap by repositories.stored)
   =/  settled=(map @t repository:git)  ~
   |-
@@ -2137,7 +2144,7 @@
 --
 ::
 %-  agent:dbug
-=|  state-2:git
+=|  state-3:git
 =*  state  -
 =/  in-flight  *(map @uv lfs-request)
 =/  lfs-deletes  *(map @uv lfs-delete)
@@ -2177,11 +2184,12 @@
 ++  on-load
   |=  old=vase
   ^-  (quip card _this)
-  =/  loaded=state-2:git
+  =/  loaded=state-3:git
     ?+  -.q.old  !!
-      %0  (migrate-state-1 (migrate-state-0 !<(state-0:git old)))
-      %1  (migrate-state-1 !<(state-1:git old))
-      %2  !<(state-2:git old)
+      %0  (migrate-state-2 (migrate-state-1 (migrate-state-0 !<(state-0:git old))))
+      %1  (migrate-state-2 (migrate-state-1 !<(state-1:git old)))
+      %2  (migrate-state-2 !<(state-2:git old))
+      %3  !<(state-3:git old)
     ==
   =.  loaded  (settle-webhook-state loaded)
   ::  re-arm the snapshot-build timer for every request still queued: a queue
@@ -8497,6 +8505,11 @@
       ::  successful scry here proves which source is running.
       ::
       [%x %visibility %build ~]  ``noun+!>(%transfer-visibility-t0-t1-t2)
+  ::
+      ::  the version tag of the state the agent is holding, so an upgrade can
+      ::  be read off a running ship rather than inferred from the source.
+      ::
+      [%x %state %version ~]  ``noun+!>(-.state)
   ::
       [%x %dbug %state ~]
     =/  transfers=(list peer-transfer-debug)

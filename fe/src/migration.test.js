@@ -61,9 +61,51 @@ test('published repository-1 remains reader-free and state-2 owns the current re
   assert.match(state1, /\$:\s+%1/)
   assert.match(state1, /repositories=\(map @t repository-1\)/)
 
-  const state2 = sourceBlock(surface, '+$  state-2', '+$  action')
+  const state2 = sourceBlock(surface, '+$  state-2', '+$  state-3')
   assert.match(state2, /\$:\s+%2/)
   assert.match(state2, /repositories=\(map @t repository\)/)
+
+  const state3 = sourceBlock(surface, '+$  state-3', '+$  action')
+  assert.match(state3, /\$:\s+%3/)
+  assert.match(state3, /repositories=\(map @t repository\)/)
+})
+
+test('state-2 keeps the four fields installed ships stored, and state-3 adds the queue', () => {
+  // A stored %2 noun predates the fork queue. If state-2 grows a field, every
+  // installed ship fails to load rather than migrating.
+  const state2 = sourceBlock(surface, '+$  state-2', '+$  state-3')
+  assert.deepEqual(moldFields(state2), [
+    'repositories',
+    'peers',
+    'github-token',
+  ])
+
+  const state3 = sourceBlock(surface, '+$  state-3', '+$  action')
+  assert.deepEqual(moldFields(state3), [
+    'repositories',
+    'peers',
+    'github-token',
+    'peer-prepare-queue',
+  ])
+  assert.match(state3, /peer-prepare-queue=\(map @uv peer-prepare-entry\)/)
+})
+
+test('migrate-state-2 carries the repositories forward and defaults the queue empty', () => {
+  const migrate = sourceBlock(agent, '++  migrate-state-2', '++  settle-webhook-state')
+  assert.match(migrate, /\|=  stored=state-2:git/)
+  assert.match(migrate, /\^-  state-3:git/)
+  // The repositories must come across; a migration that drops them is worse
+  // than the crash it replaces.
+  assert.match(
+    migrate,
+    /\[%3 repositories\.stored peers\.stored github-token\.stored ~\]/,
+  )
+
+  // migrate-state-1 must again produce a four-field %2, so the %0 and %1 paths
+  // hand migrate-state-2 the same shape an installed ship stored.
+  const migrateOne = sourceBlock(agent, '++  migrate-state-1', '++  migrate-state-2')
+  assert.match(migrateOne, /\^-  state-2:git/)
+  assert.match(migrateOne, /\[%2 migrated peers\.stored github-token\.stored\]/)
 })
 
 test('published pull mold is preserved while current pulls pin source and target refs', () => {
@@ -101,17 +143,21 @@ test('published pull mold is preserved while current pulls pin source and target
   assert.match(currentRepository, /native-pulls=\(list native-pull\)/)
 })
 
-test('on-load explicitly migrates zero and one while accepting two', () => {
-  assert.match(agent, /=\|  state-2:git/)
+test('on-load migrates zero, one and two forward while accepting three', () => {
+  assert.match(agent, /=\|  state-3:git/)
   const onLoad = sourceBlock(agent, '++  on-load', '++  on-poke')
   assert.match(onLoad, /\?\+\s+-\.q\.old\s+!!/)
+  assert.match(onLoad, /=\/  loaded=state-3:git/)
   assert.ok(
     onLoad.includes(
-      '%0  (migrate-state-1 (migrate-state-0 !<(state-0:git old)))',
+      '%0  (migrate-state-2 (migrate-state-1 (migrate-state-0 !<(state-0:git old))))',
     ),
   )
-  assert.ok(onLoad.includes('%1  (migrate-state-1 !<(state-1:git old))'))
-  assert.ok(onLoad.includes('%2  !<(state-2:git old)'))
+  assert.ok(
+    onLoad.includes('%1  (migrate-state-2 (migrate-state-1 !<(state-1:git old)))'),
+  )
+  assert.ok(onLoad.includes('%2  (migrate-state-2 !<(state-2:git old))'))
+  assert.ok(onLoad.includes('%3  !<(state-3:git old)'))
 })
 
 test('pure repository migration seam and non-empty Hoon vector are present', () => {

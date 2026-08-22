@@ -346,8 +346,17 @@
       req=peer-prepare-request
   ==
 ::
+::  the shape installed ships stored before the queue became persistent
+::
 +$  state-2
   $:  %2
+      repositories=(map @t repository)
+      peers=(set @p)
+      github-token=(unit @t)
+  ==
+::
++$  state-3
+  $:  %3
       repositories=(map @t repository)
       peers=(set @p)
       github-token=(unit @t)
