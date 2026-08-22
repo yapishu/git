@@ -7788,6 +7788,22 @@
     :_  this
     (give-http eyre-id status.p.decoded ~[['content-type' 'text/plain']] `(text:git-codec message.p.decoded))
   =/  body=octs  p.decoded
+  ::  Answer git's pre-upload probe before the protocol v2 dispatch and
+  ::  before the request parser.  The probe body is a lone flush packet:
+  ::  it names no v2 command and asks for no object, so nothing further
+  ::  down may see it.  git needs only the 200 to proceed with the real
+  ::  request.
+  ::
+  ?:  (flush-only-body:git-protocol body)
+    :_  this
+    %-  give-http
+    :*  eyre-id
+        200
+        :~  ['content-type' 'application/x-git-upload-pack-result']
+            ['cache-control' 'no-store']
+        ==
+        ~
+    ==
   =/  v2-command=(unit @tas)
     (v2-command:git-protocol body)
   ?:  ?&(?=(^ v2-command) =(%ls-refs u.v2-command))
@@ -8028,7 +8044,7 @@
   ::  update runs.  The probe body is a lone flush packet and carries no
   ::  commands; git needs only the 200 to proceed with the real request.
   ::
-  ?:  (receive-probe:git-protocol body)
+  ?:  (flush-only-body:git-protocol body)
     :_  this
     %-  give-http
     :*  eyre-id
