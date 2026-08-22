@@ -14,6 +14,8 @@ import Sidebar from './components/Sidebar'
 import UrbitSigil from './components/UrbitSigil'
 import { exactTime, newestRepositoriesFirst, relativeTime } from './format'
 import { readRemoteCache, remoteCacheIsUsable, writeRemoteCache } from './remoteCache'
+import { watchAgent } from './channel'
+import { emptyFeed, mergeFeed } from './transferFeed'
 
 function routeFromHash() {
   const raw = location.hash.replace(/^#\/?/, '').split('?')[0]
@@ -50,8 +52,10 @@ function PrivateApp() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [peerActivity, setPeerActivity] = useState([])
-  const [urgitNotifications, setUrgitNotifications] = useState([])
+  const [transferFeed, setTransferFeed] = useState(emptyFeed)
+  const [transfersSubscribed, setTransfersSubscribed] = useState(false)
+  const peerActivity = transferFeed.activity
+  const urgitNotifications = transferFeed.notifications
   const [activityOpen, setActivityOpen] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('urgit-theme') || 'system')
 
@@ -93,17 +97,36 @@ function PrivateApp() {
   const refreshActivity = useCallback(async () => {
     try {
       const data = await api.peerActivity()
-      setPeerActivity(data.activity || [])
-      setUrgitNotifications(data.notifications || [])
+      setTransferFeed((previous) => mergeFeed(previous, data))
     } catch {
       // Repository use remains available if the activity endpoint is reloading.
     }
   }, [])
+  // The ship pushes transfer state on /peer/activity. Polling stays as the
+  // fallback and runs only while the subscription is down.
+  useEffect(() => {
+    let channel = null
+    let live = true
+    ;(async () => {
+      let ship = ''
+      try { ship = (await publicApi.profile()).ship } catch { return }
+      if (!live || !ship) return
+      channel = watchAgent({
+        ship,
+        app: 'urgit',
+        path: '/peer/activity',
+        onFact: (json) => setTransferFeed((previous) => mergeFeed(previous, json)),
+        onStatus: (status) => setTransfersSubscribed(status === 'open'),
+      })
+    })()
+    return () => { live = false; setTransfersSubscribed(false); channel?.close() }
+  }, [])
   useEffect(() => {
     refreshActivity()
+    if (transfersSubscribed) return undefined
     const timer = setInterval(refreshActivity, 4000)
     return () => clearInterval(timer)
-  }, [refreshActivity])
+  }, [refreshActivity, transfersSubscribed])
   useEffect(() => {
     const pop = () => {
       const route = routeFromHash()
@@ -272,8 +295,7 @@ function PrivateApp() {
   async function clearActivity() {
     try {
       await api.clearPeerActivity()
-      setPeerActivity([])
-      setUrgitNotifications([])
+      setTransferFeed((previous) => mergeFeed(previous, { activity: [], notifications: [] }))
     } catch (cause) {
       setError(cause.message)
     }

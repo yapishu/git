@@ -394,7 +394,7 @@ test('Fine cancellation follows its mode while Mesa archives have no scries to c
   assert.match(objectBranch, /\(gulf 1 pages\)/)
   assert.match(objectBranch, /\(lte revision peer-stream-window\)/)
   assert.match(objectBranch, /\(sub revision peer-stream-window\)/)
-  assert.match(objectBranch, /!\(~\(has in completed\) revision\)/)
+  assert.match(objectBranch, /\?\.  issued  ~/)
 })
 
 test('streamed snapshots scale their source lifetime while Fine rates do not hide page stalls', () => {
