@@ -52,6 +52,17 @@
   ?:  (gth (add offset size) p.base)  ~
   `[[(slice:git-codec base offset size) next.u.s2]]
 ::
+::  Collect the chunks and concatenate once, instead of joining the
+::  accumulator to each chunk as it is produced.  The pairwise +join
+::  recopied the whole output on every instruction, which is quadratic
+::  in the instruction count.
+::
+::  Deferring is safe here because no instruction reads the accumulator:
+::  the copy branch slices from +base and the insert branch slices from
+::  +delta.  The running +size equals the +p the pairwise +join would
+::  have carried at the same point, so the result-size guard still fires
+::  on the same instruction and still returns ~.
+::
 ++  apply-delta
   |=  [base=octs delta=octs]
   ^-  (unit octs)
@@ -62,10 +73,11 @@
     (size-value delta next.u.base-size)
   ?~  result-size  ~
   =/  cursor=@ud  next.u.result-size
-  =/  output=octs  [0 0]
+  =/  parts=(list octs)  ~
+  =/  size=@ud  0
   |-
   ?:  =(cursor p.delta)
-    ?:  =(p.output value.u.result-size)  `output
+    ?:  =(size value.u.result-size)  `(join-all:git-codec (flop parts))
     ~
   ?:  (gth cursor p.delta)  ~
   =/  opcode=@ud  (byte-at:git-codec delta cursor)
@@ -75,14 +87,14 @@
     =/  copied=(unit [chunk=octs next=@ud])
       (copy-instruction delta cursor opcode base)
     ?~  copied  ~
-    =/  next-output=octs  (join:git-codec output chunk.u.copied)
-    ?:  (gth p.next-output value.u.result-size)  ~
-    $(cursor next.u.copied, output next-output)
+    =/  next-size=@ud  (add size p.chunk.u.copied)
+    ?:  (gth next-size value.u.result-size)  ~
+    $(cursor next.u.copied, parts [chunk.u.copied parts], size next-size)
   =/  length=@ud  (cut 0 [0 7] opcode)
   ?:  =(length 0)  ~
   ?:  (gth (add cursor length) p.delta)  ~
-  =/  next-output=octs
-    (join:git-codec output (slice:git-codec delta cursor length))
-  ?:  (gth p.next-output value.u.result-size)  ~
-  $(cursor (add cursor length), output next-output)
+  =/  chunk=octs  (slice:git-codec delta cursor length)
+  =/  next-size=@ud  (add size p.chunk)
+  ?:  (gth next-size value.u.result-size)  ~
+  $(cursor (add cursor length), parts [chunk parts], size next-size)
 --
