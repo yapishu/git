@@ -1,7 +1,7 @@
 ::  Native Git object database and Smart HTTP endpoint.
 ::
 /-  git, git-peer
-/+  dbug, default-agent, git-access, git-archive, git-blame, git-clay, git-clay-history, git-codec, git-github, git-graph, git-migrate, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
+/+  dbug, default-agent, git-access, git-archive, git-blame, git-clay, git-clay-history, git-codec, git-github, git-graph, git-gzip, git-migrate, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
 |%
 +$  card  card:agent:gall
 +$  profile-value  $@(~ [kind=@tas value=*])
@@ -7522,6 +7522,33 @@
       ['cache-control' 'no-store']
   ==
 ::
+::  The bytes of a Git request body, with Content-Encoding applied.
+::
+::  git compresses a request body once it grows past 1,024 bytes, so a
+::  clone of a repository with enough refs arrives gzipped.  Everything
+::  that reads the body -- the protocol v2 command dispatch as much as
+::  the request parsers -- has to see the same decompressed bytes, so the
+::  decoding happens once, here, ahead of every reader.
+::
+::  +gunzip is total, but it is called under +mule anyway: a body that
+::  claims gzip and is not gzip must answer 400, never take the agent
+::  down with it.
+::
+++  decoded-body
+  |=  req=inbound-request:eyre
+  ^-  (each octs [status=@ud message=@t])
+  =/  raw=octs  ?~(body.request.req [0 0] u.body.request.req)
+  =/  encoding=(unit @t)
+    (get-header:http 'content-encoding' header-list.request.req)
+  ?~  encoding  [%& raw]
+  ?:  ?|(=('' u.encoding) =('identity' u.encoding))  [%& raw]
+  ?.  ?|(=('gzip' u.encoding) =('x-gzip' u.encoding))
+    [%| 415 'unsupported content-encoding\0a']
+  =/  attempt  (mule |.((gunzip:git-gzip raw)))
+  ?:  ?=(%| -.attempt)  [%| 400 'invalid gzip request body\0a']
+  ?~  p.attempt  [%| 400 'invalid gzip request body\0a']
+  [%& u.p.attempt]
+::
 ++  public-base
   |=  req=inbound-request:eyre
   ^-  @t
@@ -7653,11 +7680,16 @@
   ?~  body.request.req
     :_  this
     (give-http eyre-id 400 ~[['content-type' 'text/plain']] `(text:git-codec 'missing upload-pack request\0a'))
+  =/  decoded=(each octs [status=@ud message=@t])  (decoded-body req)
+  ?:  ?=(%| -.decoded)
+    :_  this
+    (give-http eyre-id status.p.decoded ~[['content-type' 'text/plain']] `(text:git-codec message.p.decoded))
+  =/  body=octs  p.decoded
   =/  v2-command=(unit @tas)
-    (v2-command:git-protocol u.body.request.req)
+    (v2-command:git-protocol body)
   ?:  ?&(?=(^ v2-command) =(%ls-refs u.v2-command))
     =/  response=octs
-      (v2-ls-refs:git-protocol u.found u.body.request.req)
+      (v2-ls-refs:git-protocol u.found body)
     =/  headers=(list [@t @t])
       :~  ['content-type' 'application/x-git-upload-pack-result']
           ['cache-control' 'no-store']
@@ -7666,7 +7698,7 @@
     (give-http eyre-id 200 headers `response)
   ?:  ?&(?=(^ v2-command) =(%object-info u.v2-command))
     =/  requested=(unit (list oid:git))
-      (v2-object-info-oids:git-protocol u.body.request.req)
+      (v2-object-info-oids:git-protocol body)
     ?~  requested
       :_  this
       (give-http eyre-id 400 ~[['content-type' 'text/plain']] `(text:git-codec 'invalid protocol v2 object-info request\0a'))
@@ -7698,7 +7730,7 @@
     (give-http eyre-id 400 ~[['content-type' 'text/plain']] `(text:git-codec 'unsupported protocol v2 command\0a'))
   =/  use-v2=?  ?&(?=(^ v2-command) =(%fetch u.v2-command))
   =/  parsed=(unit upload-request:git)
-    (parse-upload-request:git-protocol u.body.request.req)
+    (parse-upload-request:git-protocol body)
   ?~  parsed
     :_  this
     (give-http eyre-id 400 ~[['content-type' 'text/plain']] `(text:git-codec 'invalid upload-pack request\0a'))
@@ -7879,8 +7911,32 @@
   ?~  body.request.req
     :_  this
     (give-http eyre-id 400 ~[['content-type' 'text/plain']] `(text:git-codec 'missing receive-pack request\0a'))
+  ::  git 2.55.0 never gzips a receive-pack body -- it streams the pack
+  ::  and compresses nothing -- but the header is decoded here too so a
+  ::  client that does gzip one is served, and a Content-Encoding this
+  ::  agent does not implement is refused instead of misparsed.
+  ::
+  =/  decoded=(each octs [status=@ud message=@t])  (decoded-body req)
+  ?:  ?=(%| -.decoded)
+    :_  this
+    (give-http eyre-id status.p.decoded ~[['content-type' 'text/plain']] `(text:git-codec message.p.decoded))
+  =/  body=octs  p.decoded
+  ::  Answer git's pre-upload probe before any parsing, policy, or ref
+  ::  update runs.  The probe body is a lone flush packet and carries no
+  ::  commands; git needs only the 200 to proceed with the real request.
+  ::
+  ?:  (receive-probe:git-protocol body)
+    :_  this
+    %-  give-http
+    :*  eyre-id
+        200
+        :~  ['content-type' 'application/x-git-receive-pack-result']
+            ['cache-control' 'no-store']
+        ==
+        ~
+    ==
   =/  parsed=(unit receive-request:git)
-    (parse-receive-request:git-protocol u.body.request.req)
+    (parse-receive-request:git-protocol body)
   ?~  parsed
     :_  this
     (give-http eyre-id 400 ~[['content-type' 'text/plain']] `(text:git-codec 'invalid receive-pack request\0a'))

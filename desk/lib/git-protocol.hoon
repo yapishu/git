@@ -173,20 +173,44 @@
   =/  new=(unit (unit oid:git))  (parsed-oid payload 41)
   ?~  old  ~
   ?~  new  ~
+  ::  The ref runs from byte 82 to a NUL, a line feed, or the end of the
+  ::  payload.  End-of-payload is a real terminator: git appends the
+  ::  capability list after a NUL on the first command line only, so
+  ::  every later line is <old> SP <new> SP <ref> and simply stops.
+  ::  Treating the end as a parse failure rejected any push of more than
+  ::  one ref.  The terminator set is the same rule for every line.
+  ::
   =/  cursor=@ud  82
   |-
-  ?:  (gte cursor p.payload)  ~
-  =/  byte=@ud  (byte-at:git-codec payload cursor)
-  ?:  ?|  =(byte 0)
-          =(byte 10)
-      ==
-    =/  length=@ud  (sub cursor 82)
-    ?:  =(length 0)  ~
-    =/  ref-bytes=octs  (slice:git-codec payload 82 length)
-    =/  ref=@t  q.ref-bytes
-    ?.  (valid-ref ref)  ~
-    `[[u.old u.new ref]]
-  $(cursor +(cursor))
+  =/  terminated=?
+    ?:  (gte cursor p.payload)  %.y
+    =/  byte=@ud  (byte-at:git-codec payload cursor)
+    ?|  =(byte 0)
+        =(byte 10)
+    ==
+  ?.  terminated
+    $(cursor +(cursor))
+  =/  length=@ud  (sub cursor 82)
+  ?:  =(length 0)  ~
+  =/  ref-bytes=octs  (slice:git-codec payload 82 length)
+  =/  ref=@t  q.ref-bytes
+  ?.  (valid-ref ref)  ~
+  `[[u.old u.new ref]]
+::
+::  A receive-pack body of one flush packet and nothing else is git's
+::  probe, sent ahead of any request larger than http.postBuffer to
+::  check auth and readiness before it commits to the upload.  It asks
+::  for no ref update, so it is not a receive-request and must not be
+::  parsed as one; the caller answers it before any policy runs.
+::
+++  receive-probe
+  |=  body=octs
+  ^-  ?
+  =/  next=(unit [pkt=packet:git-codec rest=octs])
+    (de-pkt:git-codec body)
+  ?~  next  %.n
+  ?.  ?=(%flush -.pkt.u.next)  %.n
+  =(0 p.rest.u.next)
 ::
 ++  parse-receive-request
   |=  body=octs
