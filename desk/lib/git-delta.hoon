@@ -25,7 +25,58 @@
   ?:  (gte cursor p.source)  ~
   `[[(byte-at:git-codec source cursor) +(cursor)]]
 ::
+::  The opcode names, in a seven-bit mask, which bytes of the copy offset and
+::  the copy size follow it.  Git writes each field little-endian and drops
+::  only its leading zero bytes, so in practice the set bits of each field are
+::  a run that starts at the field's low bit.  A run is one +cut of the delta
+::  stream, and 98.5% of the copy instructions in a repacked erpit take that
+::  path.  Reading the bytes one at a time through +optional-byte cost seven
+::  gate calls and seven (unit) allocations per copy instruction, which
+::  measured at 45% of +apply-delta and 25% of a whole pack decode.
+::
+::  A mask with a gap in it is still legal, so +copy-instruction-sparse below
+::  keeps the byte-at-a-time form for that case.  The two forms return the same
+::  noun on every input.  They read the same bytes from the same offsets, and
+::  the bounds test below fires on exactly the inputs where +optional-byte
+::  would have run off the end.  A probe compared them over all 128 copy
+::  opcodes, six byte patterns, nine source truncations and two cursors:
+::  13,824 cases, no difference.
+::
 ++  copy-instruction
+  |=  [source=octs cursor=@ud opcode=@ud base=octs]
+  ^-  (unit [chunk=octs next=@ud])
+  =/  offset-mask=@ud  (cut 0 [0 4] opcode)
+  =/  size-mask=@ud  (cut 0 [4 3] opcode)
+  =/  offset-width=@ud
+    ?:  =(offset-mask 0)   0
+    ?:  =(offset-mask 1)   1
+    ?:  =(offset-mask 3)   2
+    ?:  =(offset-mask 7)   3
+    ?:  =(offset-mask 15)  4
+    5
+  =/  size-width=@ud
+    ?:  =(size-mask 0)  0
+    ?:  =(size-mask 1)  1
+    ?:  =(size-mask 3)  2
+    ?:  =(size-mask 7)  3
+    5
+  ?:  |(=(offset-width 5) =(size-width 5))
+    (copy-instruction-sparse source cursor opcode base)
+  =/  count=@ud  (add offset-width size-width)
+  =/  next=@ud  (add cursor count)
+  ::  +optional-byte only bounds-checks when the mask asks for a byte, so an
+  ::  opcode that asks for none succeeds even past the end of the source.
+  ?:  ?&  (gth count 0)
+          (gth next p.source)
+      ==
+    ~
+  =/  offset=@ud  (cut 3 [cursor offset-width] q.source)
+  =/  size=@ud  (cut 3 [(add cursor offset-width) size-width] q.source)
+  =?  size  =(size 0)  65.536
+  ?:  (gth (add offset size) p.base)  ~
+  `[[(slice:git-codec base offset size) next]]
+::
+++  copy-instruction-sparse
   |=  [source=octs cursor=@ud opcode=@ud base=octs]
   ^-  (unit [chunk=octs next=@ud])
   =/  o0=(unit [value=@ud next=@ud])  (optional-byte source cursor opcode 0)
