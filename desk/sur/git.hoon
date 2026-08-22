@@ -330,11 +330,29 @@
       github-token=(unit @t)
   ==
 ::
+::  a queued serve request, awaiting the ~s1 snapshot-build timer
+::
+::    structurally identical to [target=ship request:git-peer]; declared here
+::    because sur/git-peer imports sur/git and cannot be imported back.
+::
++$  peer-prepare-request
+  $:  transfer=@uv
+      repository=@t
+      haves=(set oid)
+  ==
+::
++$  peer-prepare-entry
+  $:  target=@p
+      req=peer-prepare-request
+  ==
+::
 +$  state-2
   $:  %2
       repositories=(map @t repository)
       peers=(set @p)
       github-token=(unit @t)
+      ::  persisted so an agent reload cannot strand a queued fork
+      peer-prepare-queue=(map @uv peer-prepare-entry)
   ==
 ::
 +$  action

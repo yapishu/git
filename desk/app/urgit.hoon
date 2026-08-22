@@ -1924,7 +1924,7 @@
       %+  ~(put by migrated)  -.i.remaining
       (repository-1-to-2:git-migrate +.i.remaining)
     $(remaining t.remaining)
-  [%2 migrated peers.stored github-token.stored]
+  [%2 migrated peers.stored github-token.stored ~]
 ::
 ++  settle-webhook-state
   |=  stored=state-2:git
@@ -2024,7 +2024,6 @@
 =/  request-count=@ud  0
 =/  pending-clay  *(unit clay-push)
 =/  pending-publish  *(unit publish-job)
-=/  peer-prepare-queue  *(map @uv [target=ship req=request:git-peer])
 =/  peer-serving  *(map @uv peer-serve)
 =/  peer-receiving  *(map @uv peer-receive)
 =/  peer-stream-jobs  *(map @uv peer-stream-job)
@@ -2065,10 +2064,20 @@
       %2  !<(state-2:git old)
     ==
   =.  loaded  (settle-webhook-state loaded)
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-prepare-queue ~, peer-serving ~, peer-receiving ~, peer-stream-jobs ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-prepare-queue ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
-  :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
-      [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
-  ==
+  ::  re-arm the snapshot-build timer for every request still queued: a queue
+  ::  that survives the reload but loses its timer is the same strand.
+  ::
+  =/  requeued=(list card)
+    %+  turn  ~(tap by peer-prepare-queue.loaded)
+    |=  entry=[transfer=@uv peer-prepare-entry:git]
+    ^-  card
+    [%pass /peer/prepare-start/(scot %uv transfer.entry) %arvo %b %wait (add now.bowl ~s1)]
+  =/  connect-cards=(list card)
+    :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
+        [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
+    ==
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-stream-jobs ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-prepare-queue ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  (weld requeued connect-cards)
 ::
 ++  on-poke
   |=  [=mark =vase]
@@ -8394,6 +8403,11 @@
   |=  =path
   ^-  (unit (unit cage))
   ?+  path  (on-peek:def path)
+      ::  build marker: an arm that cannot exist in an earlier build, so a
+      ::  successful scry here proves which source is running.
+      ::
+      [%x %visibility %build ~]  ``noun+!>(%transfer-visibility-t0-t1-t2)
+  ::
       [%x %dbug %state ~]
     =/  transfers=(list peer-transfer-debug)
       %+  turn  ~(tap by peer-receiving)
